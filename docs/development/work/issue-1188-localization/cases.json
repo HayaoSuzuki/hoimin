@@ -1,0 +1,38 @@
+[
+  {
+    "name": "empty-query",
+    "repository": "https://github.com/csernazs/pytest-httpserver",
+    "fixed_revision": "3e6c80d01f344929743cc25efa6e98ac4021f6de",
+    "buggy_revision": "eadf7bbf3a3f84ec1eee523787f83b1cc31040f6",
+    "source": "pytest_httpserver/httpserver.py",
+    "tests": [
+      "tests/test_querymatcher.py"
+    ],
+    "targets": [
+      242
+    ],
+    "target_definition": "Changed parse_qsl call in the historical repair, on buggy-source coordinates.",
+    "import_roots": [
+      "."
+    ]
+  },
+  {
+    "name": "readiness",
+    "repository": "https://github.com/csernazs/pytest-httpserver",
+    "fixed_revision": "96bbe1990c985df132f21f243d5bb4fe1f33a7ba",
+    "buggy_revision": "b937308278bd191e01640aaea29c22cb2840b240",
+    "source": "pytest_httpserver/httpserver.py",
+    "tests": [
+      "tests/test_readiness.py",
+      "-k",
+      "double_start or called_without_timeout or called_with_timeout"
+    ],
+    "targets": [
+      985
+    ],
+    "target_definition": "Assignment moved after successful base start; only the double-start fault is evaluated, not the separate omitted cleanup.",
+    "import_roots": [
+      "."
+    ]
+  }
+]

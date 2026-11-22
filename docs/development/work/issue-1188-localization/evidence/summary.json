@@ -1,0 +1,210 @@
+[
+  {
+    "case": "empty-query",
+    "record_sha256": "276760833842c20299ac0c4e51afd5c4c7d5b09d5e800c22aa5ff07be933ff47",
+    "complete": true,
+    "sample_exhaustive": true,
+    "stop_reason": "sample_attempted",
+    "seconds": 128.6036635999917,
+    "preparation_seconds": 8.672579300007783,
+    "baseline_observation_seconds": 3.6078270000289194,
+    "generated": 557,
+    "plan_truncated": false,
+    "eligible": 35,
+    "selected": 35,
+    "attempted": 35,
+    "ranks": {
+      "coverage": {
+        "best": 1,
+        "worst": 3,
+        "tie_end": 3,
+        "score": 0.8660254037844387,
+        "target_lines_present": [
+          242
+        ]
+      },
+      "outcome": {
+        "best": 1,
+        "worst": 527,
+        "tie_end": 527,
+        "score": 0.0,
+        "target_lines_present": [
+          242
+        ]
+      },
+      "fingerprint": {
+        "best": 1,
+        "worst": 2,
+        "tie_end": 2,
+        "score": 0.8660254037844387,
+        "target_lines_present": [
+          242
+        ]
+      }
+    },
+    "top_k_bounds": {
+      "coverage": {
+        "1": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "3": {
+          "possible": true,
+          "guaranteed": true
+        },
+        "5": {
+          "possible": true,
+          "guaranteed": true
+        },
+        "10": {
+          "possible": true,
+          "guaranteed": true
+        }
+      },
+      "outcome": {
+        "1": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "3": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "5": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "10": {
+          "possible": true,
+          "guaranteed": false
+        }
+      },
+      "fingerprint": {
+        "1": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "3": {
+          "possible": true,
+          "guaranteed": true
+        },
+        "5": {
+          "possible": true,
+          "guaranteed": true
+        },
+        "10": {
+          "possible": true,
+          "guaranteed": true
+        }
+      }
+    },
+    "accepted_by_mode": {
+      "outcome": 27,
+      "fingerprint": 27
+    },
+    "rejected_by_mode": {
+      "outcome": 8,
+      "fingerprint": 8
+    },
+    "universe_lines": 527,
+    "failing_tests": 12,
+    "passing_tests": 7,
+    "unmapped_mutants": 9,
+    "traceback_lines": [],
+    "traceback_hits": []
+  },
+  {
+    "case": "readiness",
+    "record_sha256": "90b197290b0b60917b1eb24b7b0f77ef3270220a1b09501d67cab2f731ab51cc",
+    "complete": false,
+    "sample_exhaustive": false,
+    "stop_reason": "budget_exhausted",
+    "seconds": 600.0196199999773,
+    "preparation_seconds": 34.73438219999662,
+    "baseline_observation_seconds": 15.106637499993667,
+    "generated": 552,
+    "plan_truncated": false,
+    "eligible": 151,
+    "selected": 96,
+    "attempted": 42,
+    "ranks": {
+      "coverage": {
+        "best": 38,
+        "worst": 81,
+        "tie_end": 81,
+        "score": 0.5773502691896258,
+        "target_lines_present": [
+          985
+        ]
+      },
+      "outcome": {
+        "best": 1,
+        "worst": 511,
+        "tie_end": 511,
+        "score": 0.0,
+        "target_lines_present": [
+          985
+        ]
+      },
+      "fingerprint": null
+    },
+    "top_k_bounds": {
+      "coverage": {
+        "1": {
+          "possible": false,
+          "guaranteed": false
+        },
+        "3": {
+          "possible": false,
+          "guaranteed": false
+        },
+        "5": {
+          "possible": false,
+          "guaranteed": false
+        },
+        "10": {
+          "possible": false,
+          "guaranteed": false
+        }
+      },
+      "outcome": {
+        "1": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "3": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "5": {
+          "possible": true,
+          "guaranteed": false
+        },
+        "10": {
+          "possible": true,
+          "guaranteed": false
+        }
+      },
+      "fingerprint": {
+        "1": null,
+        "3": null,
+        "5": null,
+        "10": null
+      }
+    },
+    "accepted_by_mode": {
+      "outcome": 31,
+      "fingerprint": 0
+    },
+    "rejected_by_mode": {
+      "outcome": 11,
+      "fingerprint": 42
+    },
+    "universe_lines": 511,
+    "failing_tests": 1,
+    "passing_tests": 2,
+    "unmapped_mutants": 6,
+    "traceback_lines": [],
+    "traceback_hits": []
+  }
+]
