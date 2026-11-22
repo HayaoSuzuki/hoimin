@@ -1,0 +1,32 @@
+{
+  "version": "Lean (version 4.32.2, x86_64-w64-windows-gnu, commit f3b06c705e6c85f5314019d5d3baab0fec5b580c, Release)\n",
+  "limits": {
+    "wall_seconds_per_call": 30,
+    "lean_internal_memory_mib": 2048,
+    "threads": 1,
+    "aggregate_rss_guard": false
+  },
+  "checks": [
+    {
+      "name": "original",
+      "seconds": 5.746864700049628,
+      "exit_code": 0,
+      "stdout": "'parity_covers_three' does not depend on any axioms\n'parity_misses_fault' does not depend on any axioms\n'full_detects_fault' does not depend on any axioms\n'zero_permutation' does not depend on any axioms\n'zero_concatenation' does not depend on any axioms\n'zero_wrong_anchor' does not depend on any axioms\n",
+      "stderr": ""
+    },
+    {
+      "name": "gate_drops_last",
+      "seconds": 1.2198236999684013,
+      "exit_code": 1,
+      "stdout": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-research-model-7mr398pt\\Evaluation.lean:33:86: error: Tactic `decide` proved that the proposition\n  (allRows.any fun r => gate r != dropLast r) = true\nis false\n'parity_covers_three' does not depend on any axioms\n'parity_misses_fault' does not depend on any axioms\n'full_detects_fault' depends on axioms: [sorryAx]\n'zero_permutation' does not depend on any axioms\n'zero_concatenation' does not depend on any axioms\n'zero_wrong_anchor' does not depend on any axioms\n",
+      "stderr": ""
+    },
+    {
+      "name": "rows_are_exhaustive",
+      "seconds": 1.2185545999673195,
+      "exit_code": 1,
+      "stdout": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-research-model-bjrmah1t\\Evaluation.lean:32:88: error: Tactic `decide` proved that the proposition\n  (evenRows.all fun r => gate r == dropLast r) = true\nis false\n'parity_covers_three' does not depend on any axioms\n'parity_misses_fault' depends on axioms: [sorryAx]\n'full_detects_fault' does not depend on any axioms\n'zero_permutation' does not depend on any axioms\n'zero_concatenation' does not depend on any axioms\n'zero_wrong_anchor' does not depend on any axioms\n",
+      "stderr": ""
+    }
+  ]
+}

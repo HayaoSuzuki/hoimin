@@ -1,0 +1,15 @@
+{
+  "revision": "1e23185e7edea2fd2b1e97aed9b43ff47bf76b4f",
+  "sources": {
+    "tools\\ci_metrics.py": "3ea7b50a9b161a3069fe3f04e8789c0be0c6f1d766810fff13434174c2af86a9",
+    "tools\\ci_selection.py": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+    "tests\\test_ci_metrics.py": "ed5e7b305932e5a4fbacc7292ea7247aee5eb33c26620cf0e93700f5aabb04f6",
+    "tests\\test_ci_selection.py": "fd5004922d8c363dae3024fbcda5b1628767e6cf7c9d8dcab4c669efd266c95f"
+  },
+  "binary_sha256": "169fa79530f84d4205d8fc25d740ef68464f7434db95f70bcf9aace36ba11324",
+  "python": "3.14.9 (main, Oct 21 2026, 17:48:58) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "hypothesis": "6.170.15",
+  "allpairspy": "2.5.1",
+  "generator_sha256": "65e4b49e02325af2d91c0801b8b86adb640efc366e7ed007287ed44970072b0e"
+}

@@ -1,0 +1,274 @@
+[
+  {
+    "name": "narrow",
+    "seed": 1186,
+    "cases": 40,
+    "generated": 9,
+    "seconds": 0.06320949998917058
+  },
+  {
+    "name": "broad",
+    "seed": 1177,
+    "cases": 40,
+    "generated": 40,
+    "seconds": 0.013214599981438369
+  },
+  {
+    "name": "heldout",
+    "seed": 2177,
+    "cases": 40,
+    "generated": 40,
+    "seconds": 0.012716399971395731
+  },
+  {
+    "name": "way2",
+    "raw_rows": [
+      [
+        false,
+        false,
+        false,
+        false
+      ],
+      [
+        true,
+        true,
+        true,
+        false
+      ],
+      [
+        true,
+        false,
+        true,
+        true
+      ],
+      [
+        false,
+        true,
+        false,
+        true
+      ],
+      [
+        false,
+        true,
+        true,
+        true
+      ],
+      [
+        true,
+        true,
+        false,
+        true
+      ]
+    ],
+    "missing_projections": [],
+    "cases": 6,
+    "seconds": 0.0004050999996252358
+  },
+  {
+    "name": "way3completed",
+    "raw_rows": [
+      [
+        false,
+        false,
+        false,
+        false
+      ],
+      [
+        true,
+        true,
+        true,
+        false
+      ],
+      [
+        true,
+        true,
+        false,
+        true
+      ],
+      [
+        false,
+        false,
+        true,
+        true
+      ],
+      [
+        false,
+        false,
+        true,
+        false
+      ]
+    ],
+    "missing_projections": [
+      [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          false,
+          true,
+          false
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          false,
+          true,
+          true
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          true,
+          false,
+          false
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          2
+        ],
+        [
+          true,
+          false,
+          true
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          3
+        ],
+        [
+          false,
+          true,
+          false
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          3
+        ],
+        [
+          false,
+          true,
+          true
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          3
+        ],
+        [
+          true,
+          false,
+          false
+        ]
+      ],
+      [
+        [
+          0,
+          1,
+          3
+        ],
+        [
+          true,
+          false,
+          true
+        ]
+      ],
+      [
+        [
+          0,
+          2,
+          3
+        ],
+        [
+          false,
+          false,
+          true
+        ]
+      ],
+      [
+        [
+          0,
+          2,
+          3
+        ],
+        [
+          true,
+          false,
+          false
+        ]
+      ],
+      [
+        [
+          0,
+          2,
+          3
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ],
+      [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          false,
+          false,
+          true
+        ]
+      ],
+      [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          true,
+          false,
+          false
+        ]
+      ],
+      [
+        [
+          1,
+          2,
+          3
+        ],
+        [
+          true,
+          true,
+          true
+        ]
+      ]
+    ],
+    "cases": 10,
+    "seconds": 0.0005019000382162631
+  }
+]

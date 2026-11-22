@@ -1,0 +1,417 @@
+{
+  "schema_version": 10,
+  "kind": "plan",
+  "ranking_rule_version": 4,
+  "normalized_config": {
+    "discovery": {
+      "analyzer_timeout": {
+        "secs": 30,
+        "nanos": 0
+      }
+    },
+    "selection": {
+      "root": "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\docs\\development\\work\\reports\\issue-1177-1179-1182-1186\\project",
+      "sources": [],
+      "files": [],
+      "lines": [
+        {
+          "path": "tools/ci_selection.py",
+          "range": {
+            "start": 202,
+            "end": 207
+          }
+        }
+      ],
+      "symbols": [],
+      "changed": null,
+      "includes": [],
+      "excludes": []
+    },
+    "import_roots": [],
+    "limits": {
+      "jobs": 1,
+      "max_mutants": 24,
+      "max_candidates": 100,
+      "baseline_timeout": {
+        "secs": 15,
+        "nanos": 0
+      },
+      "mutant_timeout": {
+        "fixed": {
+          "secs": 8,
+          "nanos": 0
+        }
+      },
+      "total_timeout": {
+        "secs": 90,
+        "nanos": 0
+      },
+      "max_memory": 536870912,
+      "max_output": 262144,
+      "max_copy_size": 1073741824,
+      "max_workspace_size": 67108864,
+      "min_free_space": 10737418240,
+      "max_processes": 64
+    },
+    "test_argv": [
+      {
+        "windows": [
+          67,
+          58,
+          92,
+          85,
+          115,
+          101,
+          114,
+          115,
+          92,
+          104,
+          97,
+          121,
+          97,
+          111,
+          92,
+          46,
+          99,
+          111,
+          100,
+          101,
+          120,
+          92,
+          119,
+          111,
+          114,
+          107,
+          116,
+          114,
+          101,
+          101,
+          115,
+          92,
+          114,
+          101,
+          115,
+          101,
+          97,
+          114,
+          99,
+          104,
+          45,
+          109,
+          117,
+          116,
+          97,
+          116,
+          105,
+          111,
+          110,
+          115,
+          92,
+          104,
+          111,
+          105,
+          109,
+          105,
+          110,
+          92,
+          46,
+          118,
+          101,
+          110,
+          118,
+          92,
+          83,
+          99,
+          114,
+          105,
+          112,
+          116,
+          115,
+          92,
+          112,
+          121,
+          116,
+          104,
+          111,
+          110,
+          46,
+          101,
+          120,
+          101
+        ]
+      },
+      {
+        "windows": [
+          45,
+          109
+        ]
+      },
+      {
+        "windows": [
+          112,
+          121,
+          116,
+          101,
+          115,
+          116
+        ]
+      },
+      {
+        "windows": [
+          45,
+          113
+        ]
+      },
+      {
+        "windows": [
+          45,
+          45,
+          116,
+          98,
+          61,
+          115,
+          104,
+          111,
+          114,
+          116
+        ]
+      },
+      {
+        "windows": [
+          45,
+          120
+        ]
+      },
+      {
+        "windows": [
+          45,
+          107
+        ]
+      },
+      {
+        "windows": [
+          116,
+          101,
+          115,
+          116,
+          95,
+          99,
+          111,
+          109,
+          98,
+          105,
+          110,
+          97,
+          116,
+          105,
+          111,
+          110,
+          115,
+          32,
+          97,
+          110,
+          100,
+          32,
+          102,
+          117,
+          108,
+          108
+        ]
+      }
+    ],
+    "output": {
+      "metrics": null
+    },
+    "operators": [
+      "compare_eq_ne",
+      "boolean_and_or",
+      "condition_clause_delete"
+    ],
+    "allow_best_effort_memory": false,
+    "profile": "full",
+    "fingerprint_includes": [],
+    "fingerprint_files": [],
+    "environment": {
+      "state": "untracked"
+    },
+    "fingerprint_inputs": []
+  },
+  "sources": [
+    {
+      "path": "tools/ci_selection.py",
+      "hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "m1_3f64beab99f01b5aae86c9610f52fe1b317791e09c819af3766c533a69862400",
+      "sequence": 1,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 7396,
+        "length": 2
+      },
+      "original": "==",
+      "replacement": "!=",
+      "operator": "compare_eq_ne",
+      "line": 203,
+      "column": 19,
+      "symbol": "main",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 1,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    },
+    {
+      "id": "m1_0f3c68f379ca421f56cb3f6b5cce13e31dc9858e74e652ae2ace353d07995a89",
+      "sequence": 2,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 7415,
+        "length": 3
+      },
+      "original": "and",
+      "replacement": "or",
+      "operator": "boolean_and_or",
+      "line": 204,
+      "column": 8,
+      "symbol": "main",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 2,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    },
+    {
+      "id": "m1_73978dd2f5945f3645717136ccee93bbf08542a7de94329708d01d4125ad2384",
+      "sequence": 3,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 7448,
+        "length": 2
+      },
+      "original": "==",
+      "replacement": "!=",
+      "operator": "compare_eq_ne",
+      "line": 204,
+      "column": 41,
+      "symbol": "main",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 3,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    },
+    {
+      "id": "m1_d01b2730fe95acf5c30a91cba1a7f0f545511d736b2acb89da25cbe0dd290273",
+      "sequence": 4,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 7478,
+        "length": 3
+      },
+      "original": "and",
+      "replacement": "or",
+      "operator": "boolean_and_or",
+      "line": 205,
+      "column": 8,
+      "symbol": "main",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 4,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    },
+    {
+      "id": "m1_194696541fceb5143bca1d50992a300bb8d60f746a42d2e6d7ce6d02a46d926e",
+      "sequence": 5,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 7510,
+        "length": 2
+      },
+      "original": "==",
+      "replacement": "!=",
+      "operator": "compare_eq_ne",
+      "line": 205,
+      "column": 40,
+      "symbol": "main",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 5,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    },
+    {
+      "id": "m1_c96e42b3203f8469753b8e93eb1a850f35a7daeede441ae94d70632a282d010b",
+      "sequence": 6,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 7529,
+        "length": 3
+      },
+      "original": "and",
+      "replacement": "or",
+      "operator": "boolean_and_or",
+      "line": 206,
+      "column": 8,
+      "symbol": "main",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 6,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    }
+  ],
+  "truncated": false,
+  "diagnostics": []
+}

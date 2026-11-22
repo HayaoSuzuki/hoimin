@@ -1,0 +1,430 @@
+{
+  "arms": [
+    {
+      "name": "metrics-upstream",
+      "candidates": 4,
+      "killed": 3,
+      "plan_seconds": 0.025481700024101883,
+      "verify_seconds": 3.3538964000181295,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_total_preserves_missing_measurements"
+      ]
+    },
+    {
+      "name": "metrics-upstream_integration",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.029466700041666627,
+      "verify_seconds": 3.7127650000038557,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_upstream_ci_metrics"
+      ]
+    },
+    {
+      "name": "metrics-relations",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.027731600042898208,
+      "verify_seconds": 4.100831399962772,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_mr"
+      ]
+    },
+    {
+      "name": "metrics-base_relations",
+      "candidates": 4,
+      "killed": 3,
+      "plan_seconds": 0.030594099953304976,
+      "verify_seconds": 4.361989400000311,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_total_preserves_missing_measurements or test_mr"
+      ]
+    },
+    {
+      "name": "metrics-combined",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.03118930000346154,
+      "verify_seconds": 3.860412099980749,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_total_preserves_missing_measurements or test_mr or (test_amplification and broad-strong)"
+      ]
+    },
+    {
+      "name": "metrics-narrow-weak",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.027096699981484562,
+      "verify_seconds": 3.3429681999841705,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and narrow-weak"
+      ]
+    },
+    {
+      "name": "metrics-narrow-strong",
+      "candidates": 4,
+      "killed": 3,
+      "plan_seconds": 0.028810699994210154,
+      "verify_seconds": 3.4377086000167765,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and narrow-strong"
+      ]
+    },
+    {
+      "name": "metrics-broad-weak",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.02933140000095591,
+      "verify_seconds": 3.3095186999998987,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and broad-weak"
+      ]
+    },
+    {
+      "name": "metrics-broad-strong",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.028872299997601658,
+      "verify_seconds": 3.4768185999710113,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and broad-strong"
+      ]
+    },
+    {
+      "name": "metrics-heldout-weak",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.027383500011637807,
+      "verify_seconds": 3.3822518999804743,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and heldout-weak"
+      ]
+    },
+    {
+      "name": "metrics-heldout-strong",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.028416300017852336,
+      "verify_seconds": 3.429354800027795,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and heldout-strong"
+      ]
+    },
+    {
+      "name": "comb-upstream",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.02920700004324317,
+      "verify_seconds": 7.255579300050158,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_plan_cli_outputs_are_complete"
+      ]
+    },
+    {
+      "name": "comb-full",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.030419200018513948,
+      "verify_seconds": 5.087498300010338,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and full"
+      ]
+    },
+    {
+      "name": "comb-way2",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.03098749998025596,
+      "verify_seconds": 4.851573800027836,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and way2"
+      ]
+    },
+    {
+      "name": "comb-random2s1179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.029540399962570518,
+      "verify_seconds": 4.875277299957816,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random2s1179"
+      ]
+    },
+    {
+      "name": "comb-random2s2179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.0316416000132449,
+      "verify_seconds": 4.925364499969874,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random2s2179"
+      ]
+    },
+    {
+      "name": "comb-random2s3179",
+      "candidates": 6,
+      "killed": 4,
+      "plan_seconds": 0.030221399967558682,
+      "verify_seconds": 5.395253600028809,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random2s3179"
+      ]
+    },
+    {
+      "name": "comb-way3completed",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.03322789998492226,
+      "verify_seconds": 5.133398399979342,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and way3completed"
+      ]
+    },
+    {
+      "name": "comb-random3s1179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.02864369994495064,
+      "verify_seconds": 4.9583913999958895,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random3s1179"
+      ]
+    },
+    {
+      "name": "comb-random3s2179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.029320600035134703,
+      "verify_seconds": 5.0012243000091985,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random3s2179"
+      ]
+    },
+    {
+      "name": "comb-random3s3179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.030516899947542697,
+      "verify_seconds": 4.992002099985257,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random3s3179"
+      ]
+    },
+    {
+      "name": "contract-upstream",
+      "candidates": 9,
+      "killed": 8,
+      "plan_seconds": 0.03047540003899485,
+      "verify_seconds": 10.767736200010404,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_diff_includes_deleted"
+      ]
+    },
+    {
+      "name": "contract-fixed",
+      "candidates": 9,
+      "killed": 0,
+      "plan_seconds": 0.030655000009573996,
+      "verify_seconds": 10.174965199956205,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_dependency_contract and fixed"
+      ]
+    },
+    {
+      "name": "contract-strict",
+      "candidates": 9,
+      "killed": 9,
+      "plan_seconds": 0.03364529996179044,
+      "verify_seconds": 10.780810499971267,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_dependency_contract and strict"
+      ]
+    },
+    {
+      "name": "contract-real",
+      "candidates": 9,
+      "killed": 8,
+      "plan_seconds": 0.033301300019957125,
+      "verify_seconds": 10.983125200029463,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_dependency_contract and real"
+      ]
+    }
+  ],
+  "seconds": 140.40279819996795
+}
