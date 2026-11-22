@@ -47,7 +47,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-15]
+        os: [macos-15]
         python: ['3.14', '3.15']
     runs-on: ${{ matrix.os }}
     env:
@@ -65,7 +65,7 @@ jobs:
       - name: Install repository Rust toolchain
         run: rustup toolchain install
       - run: uv sync --frozen
-      # Run publication/initialization on both native platforms before the
+      # Run publication/initialization on macOS before the
       # longer workspace suite, so its result can be inspected independently.
       - name: Test completed review-store publication
         env:
@@ -75,20 +75,7 @@ jobs:
         env:
           CARGO_BUILD_JOBS: '2'
         run: cargo test --locked -p hoimin-cli --lib session::schema::tests -- --test-threads=2
-      # Native Job Object fixtures retain their six-second shared deadline.
-      # Bound harness contention during interpreter startup on Windows runners.
-      - name: Test Windows workspace with two harness threads
-        if: runner.os == 'Windows'
-        run: cargo test --workspace -- --test-threads=2
       - run: cargo test --workspace
-        if: runner.os != 'Windows'
-      - name: Show native Windows disk-name acceptance
-        if: runner.os == 'Windows'
-        env:
-          CARGO_BUILD_JOBS: '2'
-          CARGO_INCREMENTAL: '0'
-          RUST_TEST_THREADS: '2'
-        run: cargo test --locked -p hoimin-cli --lib workspace::disk::native_name_tests -- --nocapture
       - run: cargo test --locked -p hoimin-cli --example generate_cli_reference
       - name: Check generated CLI reference
         run: cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check
@@ -101,6 +88,63 @@ jobs:
           name: performance-gates-${{ matrix.os }}-${{ matrix.python }}
           path: ${{ runner.temp }}/performance-gates
       - run: uv run --frozen pytest tests/test_skills.py
+
+  windows-rust:
+    name: Manual Rust (Windows, Python ${{ matrix.python }}, ${{ matrix.suite }})
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.14', '3.15']
+        suite: [unit, integration, auxiliary]
+    env:
+      UV_PYTHON: ${{ matrix.python }}
+      CARGO_BUILD_JOBS: '2'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install repository Rust toolchain
+        run: rustup toolchain install
+      # Native Rust tests use the checkout and their Cargo-built executable.
+      # Wheel installation is verified by the separate wheel-smoke job.
+      - run: uv sync --frozen --no-install-project
+      # Cover every target kind without compiling/running the entire workspace
+      # plus release performance gates within one 30-minute Windows job.
+      # Keep two harness threads for the native Job Object timing fixtures.
+      - if: matrix.suite == 'unit'
+        run: cargo test --workspace --lib --bins -- --test-threads=2
+      - if: matrix.suite == 'unit'
+        run: cargo test --workspace --doc
+      - if: matrix.suite == 'integration'
+        run: cargo test --workspace --test '*' -- --test-threads=2
+      - name: Show native Windows disk-name acceptance
+        if: matrix.suite == 'unit'
+        env:
+          RUST_TEST_THREADS: '2'
+        run: cargo test --locked -p hoimin-cli --lib workspace::disk::native_name_tests -- --nocapture
+      - if: matrix.suite == 'auxiliary'
+        run: cargo test --locked -p hoimin-cli --example generate_cli_reference
+      - if: matrix.suite == 'auxiliary'
+        run: cargo run --locked -p hoimin-cli --example generate_cli_reference -- --check
+      - name: Performance shape gates
+        if: matrix.suite == 'auxiliary'
+        shell: bash
+        run: python tools/performance_shapes.py gate --output "$RUNNER_TEMP/performance-gates"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always() && matrix.suite == 'auxiliary'
+        with:
+          name: performance-gates-windows-latest-${{ matrix.python }}
+          path: ${{ runner.temp }}/performance-gates
+      - if: matrix.suite == 'auxiliary'
+        run: uv run --frozen --no-sync pytest tests/test_skills.py
 
   core-dependency-purity:
     name: Manual core dependency purity (windows-latest)

@@ -61,9 +61,9 @@ fn constructor_io_failures_roll_back_every_verified_staging_or_published_root(
 }
 
 #[rstest::rstest]
-#[case( "ready.inspect_partial", "open partial workspace marker", |dir: &cap_std::fs::Dir| dir.write(CLEANUP_READY_FILE, b"interrupted marker").unwrap())]
-#[case( "ready.partial_identity", "identify partial workspace marker", |dir: &cap_std::fs::Dir| dir.write(CLEANUP_READY_FILE, b"interrupted marker").unwrap())]
-#[case( "ready.remove_partial", "remove partial workspace marker", |dir: &cap_std::fs::Dir| dir.write(CLEANUP_READY_FILE, b"interrupted marker").unwrap())]
+#[case( "ready.inspect_partial", "open partial workspace marker", |dir: &cap_std::fs::Dir| write_owned_fixture(dir, CLEANUP_READY_FILE, b"interrupted marker"))]
+#[case( "ready.partial_identity", "identify partial workspace marker", |dir: &cap_std::fs::Dir| write_owned_fixture(dir, CLEANUP_READY_FILE, b"interrupted marker"))]
+#[case( "ready.remove_partial", "remove partial workspace marker", |dir: &cap_std::fs::Dir| write_owned_fixture(dir, CLEANUP_READY_FILE, b"interrupted marker"))]
 #[case("ready.create", "create workspace marker", |_: &cap_std::fs::Dir| {})]
 #[case("ready.write", "write workspace marker", |_: &cap_std::fs::Dir| {})]
 #[case("ready.newline", "write workspace marker", |_: &cap_std::fs::Dir| {})]
@@ -73,6 +73,7 @@ fn cleanup_ready_io_failures_leave_the_lease_live_and_retry_publishes_valid_evid
     #[case] operation: &str,
     #[case] prepare: fn(&cap_std::fs::Dir),
 ) {
+    // Arrange
     let parent = tempfile::tempdir().unwrap();
     let coordinator = setup(&parent);
     let root = ManagedRunRoot::create(&coordinator, OwnerKind::PublicDelivery).unwrap();
@@ -80,6 +81,7 @@ fn cleanup_ready_io_failures_leave_the_lease_live_and_retry_publishes_valid_evid
 
     let fault = io_faults::arm(point);
 
+    // Act
     let error = root.mark_cleanup_ready().unwrap_err();
     let fault_was_triggered = fault.triggered();
 
@@ -97,6 +99,7 @@ fn cleanup_ready_io_failures_leave_the_lease_live_and_retry_publishes_valid_evid
     let cleanup_ready_after_retry = root.lifecycle.lock().unwrap().cleanup_ready;
     let cleanup_disposition = root.cleanup(Duration::from_secs(1)).disposition;
 
+    // Assert
     assert_eq!(cleanup_disposition, CleanupDisposition::Clean);
     assert!(fault_was_triggered, "boundary {point} was not reached");
     assert!(
@@ -1992,13 +1995,13 @@ fn new_coordinator_initially_expired_deadline_removes_the_verified_new_file() {
 
 #[test]
 fn coordinator_reopen_rejects_an_identity_replacement_without_removing_either_file() {
+    // Arrange
     let parent = tempfile::tempdir().unwrap();
     let coordinator = setup(&parent);
     let path = coordinator.path.join(COORDINATOR_FILE);
     let parked = coordinator.path.join("parked-coordinator");
     let original = coordinator.dir.read(COORDINATOR_FILE).unwrap();
     let original_identity = file_identity(&coordinator.file).unwrap();
-    let replace_path = path.clone();
     let fixture_parent = coordinator.dir.try_clone().unwrap();
     let fixture_file = coordinator.file.try_clone().unwrap();
     let replacement_bytes = original.clone();
@@ -2010,11 +2013,11 @@ fn coordinator_reopen_rejects_an_identity_replacement_without_removing_either_fi
             COORDINATOR_FILE,
             "parked-coordinator",
         );
-        fs::write(replace_path, replacement_bytes)
-            .expect("install the replacement coordinator fixture");
+        write_owned_fixture(&fixture_parent, COORDINATOR_FILE, &replacement_bytes);
         Ok(())
     });
 
+    // Act
     let error = open_initialized_coordinator_until(
         &coordinator.dir,
         &path,
@@ -2042,6 +2045,7 @@ fn coordinator_reopen_rejects_an_identity_replacement_without_removing_either_fi
     )
     .unwrap();
 
+    // Assert
     assert_eq!(file_identity(&retry).unwrap(), replacement_identity);
     assert!(fault_was_triggered);
     assert!(matches!(&error, WorkspaceError::InvalidPath { path: actual } if actual == &path));

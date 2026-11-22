@@ -15,6 +15,21 @@ use serde::Serialize;
 use std::{collections::BTreeMap, ffi::OsString, sync::Arc, time::Duration};
 use tokio::time::Instant;
 
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
+
+// Normal cleanup can spend the unconsumed run budget. A stopped search gets
+// only the shutdown grace, never extending the original deadline plus grace.
+fn finalization_deadline(run_deadline: Instant, stopped: bool, now: Instant) -> Instant {
+    let deadline = run_deadline
+        .checked_add(SHUTDOWN_GRACE)
+        .unwrap_or(run_deadline);
+    if stopped {
+        deadline.min(now + SHUTDOWN_GRACE)
+    } else {
+        deadline
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct Observation {
     pub index: u64,
@@ -70,6 +85,7 @@ pub(super) struct Runner {
     pub start: Instant,
     pub deadline: Instant,
     interrupts: crate::interrupt::InterruptMonitor,
+    interrupt_seen: bool,
 }
 impl Runner {
     #[allow(
@@ -215,6 +231,7 @@ impl Runner {
             start,
             deadline,
             interrupts: crate::interrupt::InterruptMonitor::spawn(),
+            interrupt_seen: false,
         };
         Ok(runner)
     }
@@ -325,7 +342,10 @@ impl Runner {
         let (result, interrupted) = tokio::select! {
             biased;
             ()=tokio::time::sleep_until(self.deadline) => (Err(Stop::budget()),true),
-            signal=self.interrupts.first() => (Err(Stop {reason:signal.err().unwrap_or_else(||"cancelled".into()),exit_code:130}),true),
+            signal=self.interrupts.first() => {
+                self.interrupt_seen = true;
+                (Err(Stop {reason:signal.err().unwrap_or_else(||"cancelled".into()),exit_code:130}),true)
+            },
             _=disk.changed() => (Err(Stop {reason:format!("disk: {:?}",disk.borrow().as_ref()),exit_code:4}),true),
             result=&mut execution => (result.map_err(|e|Stop::infrastructure(format!("{e:?}"))),false),
         };
@@ -488,16 +508,45 @@ impl Runner {
         }
         hash.finalize().to_hex().to_string()
     }
+    // Poll between bounded shutdown waits/slices. A consumed first signal must
+    // never be polled again; the monitor still owns second-signal escalation.
+    async fn finalization_interrupt(&mut self) -> Option<Stop> {
+        if self.interrupt_seen {
+            return None;
+        }
+        tokio::select! {
+            biased;
+            signal = self.interrupts.first() => {
+                self.interrupt_seen = true;
+                let cutoff = finalization_deadline(self.deadline, true, Instant::now());
+                self.shutdown_deadline = Some(self.shutdown_deadline.map_or(cutoff, |d| d.min(cutoff)));
+                Some(Stop { reason: signal.err().unwrap_or_else(|| "cancelled".into()), exit_code: 130 })
+            }
+            () = std::future::ready(()) => None,
+        }
+    }
+    /// Normal completion retains the total budget; an existing stop caps shutdown
+    /// to its grace. The established deadline is shared with final cleanup.
     /// Stops dispatch and drains before releasing workspace/output children. The
     /// monitor observes execution until close; final artifact writes then use
     /// synchronous admission against the retained output-directory capability.
-    pub async fn finish_execution(&mut self) -> Result<(), Stop> {
-        let deadline = Instant::now() + Duration::from_secs(2);
-        self.shutdown_deadline = Some(deadline);
+    pub async fn finish_execution(&mut self, stop: Option<&Stop>) -> Result<(), Stop> {
+        self.shutdown_deadline.get_or_insert_with(|| {
+            finalization_deadline(self.deadline, stop.is_some(), Instant::now())
+        });
+        let mut interrupted = self.finalization_interrupt().await;
+        let deadline = self
+            .shutdown_deadline
+            .expect("established shutdown deadline");
         let drained = self
             .process
-            .drain_for_shutdown(deadline.saturating_duration_since(Instant::now()))
+            .drain_for_shutdown(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(SHUTDOWN_GRACE),
+            )
             .await;
+        interrupted = interrupted.or(self.finalization_interrupt().await);
         if !drained.all_reaped
             || !drained.output_drains_joined
             || !drained.secondary_errors.is_empty()
@@ -511,28 +560,54 @@ impl Runner {
         if let Some(spool) = self.spool.take() {
             spool.cleanup().map_err(Stop::infrastructure)?;
         }
-        Ok(())
+        interrupted = interrupted.or(self.finalization_interrupt().await);
+        interrupted.map_or(Ok(()), Err)
     }
     pub async fn close(&mut self) -> Result<(), Stop> {
+        let mut interrupted = self.finalization_interrupt().await;
         let deadline = self
             .shutdown_deadline
-            .unwrap_or_else(|| Instant::now() + Duration::from_secs(2));
+            .unwrap_or_else(|| finalization_deadline(self.deadline, true, Instant::now()));
         let joined = self
             .monitor
-            .stop_and_join(deadline.saturating_duration_since(Instant::now()))
+            .stop_and_join(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(SHUTDOWN_GRACE),
+            )
             .await;
         self.monitor_stopped = true;
+        interrupted = interrupted.or(self.finalization_interrupt().await);
         if !joined {
             return Err(Stop::infrastructure("disk monitor did not stop"));
         }
         self.root
             .mark_cleanup_ready()
             .map_err(Stop::infrastructure)?;
+        let mut progress = (0, 0);
         let record = loop {
-            let record = self
-                .root
-                .cleanup(deadline.saturating_duration_since(Instant::now()));
-            if !record.retryable_contention() || Instant::now() >= deadline {
+            interrupted = interrupted.or(self.finalization_interrupt().await);
+            let deadline = self.shutdown_deadline.unwrap_or(deadline);
+            let record = self.root.cleanup(
+                deadline
+                    .saturating_duration_since(Instant::now())
+                    .min(SHUTDOWN_GRACE),
+            );
+            // Partial slices keep their cursor in the root. Continue only after
+            // actual progress or typed coordinator contention, within one budget.
+            let observed = (
+                record.evidence.examined_entries,
+                record.evidence.removed_entries,
+            );
+            let progressed = matches!(
+                record.disposition,
+                crate::workspace::CleanupDisposition::Deferred(None)
+            ) && (observed.0 > progress.0 || observed.1 > progress.1);
+            progress = observed;
+            tokio::task::yield_now().await;
+            interrupted = interrupted.or(self.finalization_interrupt().await);
+            let deadline = self.shutdown_deadline.unwrap_or(deadline);
+            if (!record.retryable_contention() && !progressed) || Instant::now() >= deadline {
                 break record;
             }
             tokio::time::sleep(
@@ -544,9 +619,19 @@ impl Runner {
             record.disposition,
             crate::workspace::CleanupDisposition::Clean
         ) {
-            return Err(Stop::infrastructure(format!("cleanup: {record:?}")));
+            return Err(interrupted.map_or_else(
+                || Stop::infrastructure(format!("cleanup: {record:?}")),
+                |mut stop| {
+                    stop.reason = format!("{}; cleanup: {record:?}", stop.reason);
+                    stop
+                },
+            ));
         }
         self.root_closed = true;
-        Ok(())
+        interrupted.map_or(Ok(()), Err)
     }
 }
+
+#[cfg(test)]
+#[path = "runner_tests.rs"]
+mod tests;

@@ -9138,6 +9138,14 @@ impl ManagedChild {
     }
 }
 
+/// Give synthetic control files the same owner as managed files, including when
+/// an elevated Windows account defaults to the Administrators group as owner.
+#[cfg(test)]
+fn write_owned_fixture(parent: &cap_std::fs::Dir, name: &str, bytes: &[u8]) {
+    let mut file = create_owned_file(parent, name, OwnedFileAccess::Write).unwrap();
+    file.write_all(bytes).unwrap();
+}
+
 /// Verify the named entry still identifies its owning handle, then observe its bytes
 /// without reopening a locked file or changing the shared file position.
 #[cfg(test)]
