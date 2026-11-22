@@ -54,12 +54,15 @@ AUTOMATIC_LINUX_MATRIX_JOBS = {
 }
 MANUAL_NON_LINUX_MATRIX_JOBS = {
     "quality": ["windows-latest", "macos-15"],
-    "rust": ["windows-latest", "macos-15"],
+    "rust": ["macos-15"],
     "wheel-smoke": ["windows-latest", "macos-15"],
 }
 MANUAL_NON_LINUX_JOB_NAMES = {
     "quality": "Manual quality (${{ matrix.os }})",
     "rust": "Manual Rust (${{ matrix.os }}, Python ${{ matrix.python }})",
+    "windows-rust": (
+        "Manual Rust (Windows, Python ${{ matrix.python }}, ${{ matrix.suite }})"
+    ),
     "core-dependency-purity": ("Manual core dependency purity (windows-latest)"),
     "wheel-smoke": "Manual wheel smoke (${{ matrix.os }})",
 }
@@ -1734,6 +1737,65 @@ def test_manual_non_linux_jobs_are_complete() -> None:
 
 
 @pytest.mark.parametrize(
+    ("suite", "command"),
+    [
+        ("unit", "cargo test --workspace --lib --bins -- --test-threads=2"),
+        ("unit", "cargo test --workspace --doc"),
+        ("integration", "cargo test --workspace --test '*' -- --test-threads=2"),
+        (
+            "auxiliary",
+            "cargo test --locked -p hoimin-cli --example generate_cli_reference",
+        ),
+        (
+            "auxiliary",
+            (
+                "cargo run --locked -p hoimin-cli --example generate_cli_reference "
+                "-- --check"
+            ),
+        ),
+    ],
+    ids=["libraries-binaries", "doctests", "integration", "example", "reference"],
+)
+def test_windows_rust_partition_preserves_required_check(
+    suite: str, command: str
+) -> None:
+    # Arrange
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+
+    # Act
+    job = jobs.get("windows-rust", {})
+    selected = [step for step in job_steps(job) if step.get("run") == command]
+
+    # Assert
+    assert selected == [{"if": f"matrix.suite == '{suite}'", "run": command}]
+
+
+def test_windows_rust_partitions_keep_native_interpreters_and_deadline() -> None:
+    # Arrange
+    jobs = workflow_jobs(
+        workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
+    )
+
+    # Act
+    job = jobs.get("windows-rust", {})
+
+    # Assert
+    assert job.get("runs-on") == "windows-latest"
+    assert job["timeout-minutes"] == 30
+    assert job["strategy"] == {
+        "fail-fast": False,
+        "matrix": {
+            "python": ["3.14", "3.15"],
+            "suite": ["unit", "integration", "auxiliary"],
+        },
+    }
+    assert mapping(job["env"])["UV_PYTHON"] == "${{ matrix.python }}"
+    assert mapping(job["env"])["CARGO_BUILD_JOBS"] == "2"
+
+
+@pytest.mark.parametrize(
     ("job_name", "expected_name"),
     list(MANUAL_NON_LINUX_JOB_NAMES.items()),
     ids=list(MANUAL_NON_LINUX_JOB_NAMES),
@@ -1750,7 +1812,9 @@ def test_manual_non_linux_job_is_independent(job_name: str, expected_name: str) 
     assert "outputs" not in job
 
 
-@pytest.mark.parametrize("job_name", list(MANUAL_NON_LINUX_JOB_NAMES))
+@pytest.mark.parametrize(
+    "job_name", [name for name in MANUAL_NON_LINUX_JOB_NAMES if name != "windows-rust"]
+)
 def test_manual_non_linux_job_preserves_automatic_steps(job_name: str) -> None:
     automatic = workflow_jobs(
         workflow_document(CI_WORKFLOW.read_text(encoding="utf-8"))
@@ -1830,7 +1894,7 @@ def test_manual_rust_native_check_runs_before_workspace_suite(
     ("job_name", "expected_matrix"),
     [
         ("quality", {"os": ["windows-latest", "macos-15"]}),
-        ("rust", {"os": ["windows-latest", "macos-15"], "python": ["3.14", "3.15"]}),
+        ("rust", {"os": ["macos-15"], "python": ["3.14", "3.15"]}),
         ("wheel-smoke", {"os": ["windows-latest", "macos-15"]}),
     ],
     ids=["quality", "rust", "wheel-smoke"],
@@ -1865,11 +1929,12 @@ def test_manual_non_linux_step_conditions(*, upload: bool) -> None:
         workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
     )
     expected_conditions = {
-        True: {(True, "always()")},
+        True: {(True, "always()"), (True, "always() && matrix.suite == 'auxiliary'")},
         False: {
             (False, None),
-            (True, "runner.os == 'Windows'"),
-            (True, "runner.os != 'Windows'"),
+            (True, "matrix.suite == 'unit'"),
+            (True, "matrix.suite == 'integration'"),
+            (True, "matrix.suite == 'auxiliary'"),
         },
     }
     steps = [
@@ -2576,17 +2641,15 @@ def test_manual_windows_native_name_step_exposes_fixture_admission() -> None:
 
     steps = [
         step
-        for step in job_steps(jobs["rust"])
+        for step in job_steps(jobs["windows-rust"])
         if step.get("name") == "Show native Windows disk-name acceptance"
     ]
 
     assert steps == [
         {
             "name": "Show native Windows disk-name acceptance",
-            "if": "runner.os == 'Windows'",
+            "if": "matrix.suite == 'unit'",
             "env": {
-                "CARGO_BUILD_JOBS": "2",
-                "CARGO_INCREMENTAL": "0",
                 "RUST_TEST_THREADS": "2",
             },
             "run": (
@@ -2597,20 +2660,8 @@ def test_manual_windows_native_name_step_exposes_fixture_admission() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    ("condition", "expected_command"),
-    [
-        (
-            "runner.os == 'Windows'",
-            "cargo test --workspace -- --test-threads=2",
-        ),
-        ("runner.os != 'Windows'", "cargo test --workspace"),
-    ],
-    ids=["windows", "macos"],
-)
-def test_non_linux_workspace_suite_runs_once_with_controlled_windows_concurrency(
-    condition: str, expected_command: str
-) -> None:
+def test_macos_workspace_suite_runs_once() -> None:
+    # Arrange
     jobs = workflow_jobs(
         workflow_document(NON_LINUX_CI_WORKFLOW.read_text(encoding="utf-8"))
     )
@@ -2620,13 +2671,13 @@ def test_non_linux_workspace_suite_runs_once_with_controlled_windows_concurrency
         if string(step.get("run", "")).startswith("cargo test --workspace")
     ]
 
+    # Act
     selected = [
-        string(step["run"])
-        for step in workspace_steps
-        if step.get("if") in (None, condition)
+        string(step["run"]) for step in workspace_steps if step.get("if") is None
     ]
 
-    assert selected == [expected_command]
+    # Assert
+    assert selected == ["cargo test --workspace"]
 
 
 @pytest.mark.parametrize("name", ["ci.yml", "non-linux-ci.yml"])
