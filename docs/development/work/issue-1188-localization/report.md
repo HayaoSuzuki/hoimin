@@ -50,7 +50,7 @@ rank means the baseline messages aren't stable enough to compare.
 
 The run took place on 2026-11-22 with Windows 11, Python 3.14.9, and hoimin 0.15.0.
 The hoimin reference checkout is `8a262a1832e89057d3ce5d9de576411279caa6df`;
-this evaluation changes no Rust source. Each record retains binary and harness
+this evaluation changes no production Rust source. Each record retains binary and harness
 hashes, interpreter details, and observed dependency versions. Wall times describe
 this host and run, not a performance guarantee.
 

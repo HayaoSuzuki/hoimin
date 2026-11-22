@@ -115,5 +115,32 @@ generated candidate source hashes and byte spans match the pinned public source.
 The evidence checker and final public-case results are recorded in the
 [summary](evidence/summary.json). The repository suite doesn't discover the
 research directory by default; run its explicit command in the README when
-changing this harness. Rust source is unchanged, so this change adds no Rust
-execution or CLI contract claim.
+changing this harness. Production Rust source is unchanged; the CI follow-up
+below changes one existing integration-test helper.
+
+## CI follow-up: isolate name-binding test processes
+
+The [randomized-order job](https://github.com/HayaoSuzuki/hoimin/actions/runs/44992028342/job/137115463832)
+failed before running the mutation assertion: the shared temporary workspace's
+coordinator lock exhausted its five-second bootstrap deadline. Both real-run
+tests used the ambient managed-root namespace. Other integration fixtures already
+isolate that namespace, including `tests/disk_shutdown.rs`.
+
+A controlled Windows reproduction initializes a separate temporary managed root,
+holds its coordinator's byte lock, and runs
+`first_iterable_mutation_is_detected_by_real_run` with that ambient temporary root.
+Before the fix, the existing test fails with the same bootstrap deadline error
+after 5.02 seconds. After the fix, it passes under the same held lock in 0.52
+seconds. This demonstrates independence from a busy unrelated namespace; it
+doesn't identify which process held the lock in the hosted failure.
+
+The helper in `comprehension_named_bindings.rs` gives each child its own temporary
+root through `TMPDIR`, `TMP`, and `TEMP`. Review checked five boundaries: reuse of
+the established isolation pattern, child-only environment changes, temporary-root
+lifetime through child exit, separation from the source fixture, and preservation
+of production lock/deadline behavior. It doesn't retry or increase a timeout.
+
+Validation: all **82** cases in that integration target pass on Windows with eight
+test threads; `cargo fmt --all -- --check` passes. The CI run linked here is the
+failure evidence, not the post-fix result. Use the PR's latest checks for hosted
+verification of the fix.
