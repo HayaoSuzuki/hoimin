@@ -277,6 +277,42 @@ fn disk_stop_before_reporting_emits_start_then_reason_then_finalizes() {
     );
 }
 
+#[test]
+fn disk_stop_preserves_a_failure_already_waiting_for_run_started() {
+    // Arrange: an earlier preparation failure is waiting for its reporting prefix.
+    let mut state = ready_state(vec!["a".into()], Vec::new(), 1);
+    state.phase = RunPhase::Preflight;
+    state.flags.report.report_started = false;
+    state.pending_failure = Some(crate::EffectFailed::other(
+        crate::EffectId(0),
+        "synthetic.preparation.failed",
+        "earlier preparation failure",
+    ));
+
+    // Act
+    let (state, effects) = transition(state, disk_stop()).unwrap();
+    let outputs = drain_outputs(state, effects, &[]);
+    let diagnostics: Vec<_> = outputs
+        .iter()
+        .filter_map(|event| match event {
+            OutputEvent::Diagnostic(value) => Some(value.code.as_str()),
+            _ => None,
+        })
+        .collect();
+
+    // Assert
+    assert_eq!(
+        diagnostics,
+        [
+            crate::disk::FILESYSTEM_RESERVE_REACHED,
+            "synthetic.preparation.failed"
+        ]
+    );
+    assert!(
+        matches!(outputs.last(), Some(OutputEvent::RunFinished(summary)) if summary.exit_code == 2)
+    );
+}
+
 proptest::proptest! {
     #[test]
     fn repeated_stops_preserve_the_first_disk_diagnostic(

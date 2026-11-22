@@ -1942,7 +1942,15 @@ pub fn transition(
                 OutputContinuation::RunFinished => state.post_report_effects()?,
                 OutputContinuation::ContinueAfterDiskStopDiagnostic => {
                     state.flags.report.disk_stop_diagnostic = DiskStopDiagnostic::Complete;
-                    state.begin_stop()?
+                    if state.phase != RunPhase::Mutants
+                        && let Some(failed) = state.pending_failure.take()
+                    {
+                        // A preparation failure may already have been waiting for run_started
+                        // when disk monitoring stopped the run. Preserve its diagnostic too.
+                        state.diagnostic_effect(&failed)?
+                    } else {
+                        state.begin_stop()?
+                    }
                 }
                 OutputContinuation::Diagnostic => {
                     if state.flags.cleanup.cleanup_done {

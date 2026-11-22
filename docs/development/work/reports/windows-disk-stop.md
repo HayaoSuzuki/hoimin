@@ -75,7 +75,9 @@ serializer or a public lifecycle API. Reassess this after implementation.
 3. Failed delivery: review found that the new continuation could retry a failed
    diagnostic. It now shares ordinary diagnostic failure recovery and requests
    cleanup directly. Six parameterized cases cover both output stages and all
-   report-failure variants.
+   report-failure variants. A final interleaving review also found that an earlier
+   preparation failure could be lost behind the new disk diagnostic; its pending
+   diagnostic is now resumed, with a red/green regression test.
 4. Shutdown ownership: cancellation remains immediate. The shell drains pending
    owners before any subsequent non-output effect, using the first shutdown budget.
    External stop events cannot fall through to an unbounded completion join.
@@ -108,7 +110,7 @@ the added gate documents and enforces it without exposing a new public protocol.
    disk stop. Broader workspace checks and CI are recorded in the accompanying PR.
 
 Native Windows workspace library/binary tests passed: 8,429 passed and 42 ignored.
-With all core features enabled, 586 unit tests and 244 machine integration tests
+With all core features enabled, 587 unit tests and 244 machine integration tests
 passed. Workspace formatting and all-target/all-feature Clippy checks also passed.
 
 Each added test has one scenario with Arrange/Act/Assert phases. Parameterized tests
