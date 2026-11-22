@@ -81,7 +81,11 @@ unavailable. Removing ports or addresses after seeing the result would change th
 observation model; this experiment preserves the rejection. Outcome evidence is
 reported separately: after 42 attempted mutants, the 600-second budget expires
 without an outcome-based ordering of the 511 lines. This partial sample doesn't
-establish what the remaining mutants would show.
+establish what the remaining mutants would show. In particular, the frozen
+selection contains one candidate on target line 985, but execution doesn't reach
+it before the deadline. The empty-query target has one selected candidate, which
+does run. The second case therefore measures the information obtained within the
+budget, not the effectiveness of mutating its repair location.
 
 ## Cost and rejected observations
 
