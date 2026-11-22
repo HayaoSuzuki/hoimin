@@ -1,0 +1,32 @@
+{
+  "version": "Lean (version 4.32.2, x86_64-w64-windows-gnu, commit f3b06c705e6c85f5314019d5d3baab0fec5b580c, Release)\n",
+  "limits": {
+    "wall_seconds_per_call": 30,
+    "lean_internal_memory_mib": 2048,
+    "threads": 1,
+    "aggregate_rss_guard": false
+  },
+  "checks": [
+    {
+      "name": "original",
+      "seconds": 0.9328664999920875,
+      "exit_code": 0,
+      "stdout": "'Evaluation.expand_inputs' does not depend on any axioms\n'Evaluation.strengthen_property' does not depend on any axioms\n'Evaluation.strong_implies_weak' depends on axioms: [propext]\n'Evaluation.interaction' depends on axioms: [propext, Quot.sound]\n'Evaluation.fresh_reads_agree' does not depend on any axioms\n'Evaluation.warm_update_detects_stale' does not depend on any axioms\n'Evaluation.normal_does_not_distinguish' depends on axioms: [propext]\n'Evaluation.retry_schedule_distinguishes' depends on axioms: [propext]\n",
+      "stderr": ""
+    },
+    {
+      "name": "broad_is_narrow",
+      "seconds": 0.9281974000041373,
+      "exit_code": 1,
+      "stdout": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-research-model-zcddscvh\\Evaluation.lean:43:41: error: unsolved goals\n\u22a2 False\n'Evaluation.expand_inputs' does not depend on any axioms\n'Evaluation.strengthen_property' does not depend on any axioms\n'Evaluation.strong_implies_weak' depends on axioms: [propext]\n'Evaluation.interaction' depends on axioms: [propext, sorryAx, Quot.sound]\n'Evaluation.fresh_reads_agree' does not depend on any axioms\n'Evaluation.warm_update_detects_stale' does not depend on any axioms\n'Evaluation.normal_does_not_distinguish' depends on axioms: [propext]\n'Evaluation.retry_schedule_distinguishes' depends on axioms: [propext]\n",
+      "stderr": ""
+    },
+    {
+      "name": "stale_write_invalidates",
+      "seconds": 0.9495295999804512,
+      "exit_code": 1,
+      "stdout": "C:\\Users\\hayao\\AppData\\Local\\Temp\\hoimin-research-model-s6t639w1\\Evaluation.lean:60:2: error: Type mismatch\n  different\nhas type\n  value \u2260 old\nbut is expected to have type\n  read (correctWrite { stored := old, cached := some old } value) \u2260\n    read (staleWrite { stored := old, cached := some old } value)\n'Evaluation.expand_inputs' does not depend on any axioms\n'Evaluation.strengthen_property' does not depend on any axioms\n'Evaluation.strong_implies_weak' depends on axioms: [propext]\n'Evaluation.interaction' depends on axioms: [propext, Quot.sound]\n'Evaluation.fresh_reads_agree' does not depend on any axioms\n'Evaluation.warm_update_detects_stale' depends on axioms: [sorryAx]\n'Evaluation.normal_does_not_distinguish' depends on axioms: [propext]\n'Evaluation.retry_schedule_distinguishes' depends on axioms: [propext]\n",
+      "stderr": ""
+    }
+  ]
+}

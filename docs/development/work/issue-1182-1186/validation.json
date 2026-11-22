@@ -1,0 +1,42 @@
+{
+  "docs/development/knowledge/testing-research-evaluation.md": {
+    "source_hashes_verified": 4,
+    "frontmatter": "valid"
+  },
+  "docs/development/knowledge/references/audit-documents.md": {
+    "source_hashes_verified": 6,
+    "frontmatter": "valid"
+  },
+  "isolated_skill": {
+    "files": [
+      "LICENSE",
+      "SKILL.md",
+      "installation.md",
+      "test-design.md"
+    ],
+    "local_links": [
+      {
+        "from": "SKILL.md",
+        "to": "test-design.md"
+      },
+      {
+        "from": "SKILL.md",
+        "to": "installation.md"
+      },
+      {
+        "from": "test-design.md",
+        "to": "SKILL.md"
+      }
+    ]
+  },
+  "issue-1176-1178-1180": {
+    "arms": 12,
+    "distinct_candidates": 27,
+    "executions": 66
+  },
+  "issue-1177-1179-1182-1186": {
+    "arms": 25,
+    "distinct_candidates": 19,
+    "executions": 140
+  }
+}

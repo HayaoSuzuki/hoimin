@@ -1,0 +1,2 @@
+project/* -text whitespace=trailing-space,space-before-tab,cr-at-eol
+project/tools/* -text whitespace=trailing-space,space-before-tab,cr-at-eol

@@ -1,0 +1,1376 @@
+{
+  "arms": [
+    {
+      "name": "metrics-upstream",
+      "candidates": 4,
+      "killed": 3,
+      "plan_seconds": 0.025481700024101883,
+      "verify_seconds": 3.3538964000181295,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_total_preserves_missing_measurements"
+      ]
+    },
+    {
+      "name": "metrics-upstream_integration",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.029466700041666627,
+      "verify_seconds": 3.7127650000038557,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_upstream_ci_metrics"
+      ]
+    },
+    {
+      "name": "metrics-relations",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.027731600042898208,
+      "verify_seconds": 4.100831399962772,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_mr"
+      ]
+    },
+    {
+      "name": "metrics-base_relations",
+      "candidates": 4,
+      "killed": 3,
+      "plan_seconds": 0.030594099953304976,
+      "verify_seconds": 4.361989400000311,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_total_preserves_missing_measurements or test_mr"
+      ]
+    },
+    {
+      "name": "metrics-combined",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.03118930000346154,
+      "verify_seconds": 3.860412099980749,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_total_preserves_missing_measurements or test_mr or (test_amplification and broad-strong)"
+      ]
+    },
+    {
+      "name": "metrics-narrow-weak",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.027096699981484562,
+      "verify_seconds": 3.3429681999841705,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and narrow-weak"
+      ]
+    },
+    {
+      "name": "metrics-narrow-strong",
+      "candidates": 4,
+      "killed": 3,
+      "plan_seconds": 0.028810699994210154,
+      "verify_seconds": 3.4377086000167765,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and narrow-strong"
+      ]
+    },
+    {
+      "name": "metrics-broad-weak",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.02933140000095591,
+      "verify_seconds": 3.3095186999998987,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and broad-weak"
+      ]
+    },
+    {
+      "name": "metrics-broad-strong",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.028872299997601658,
+      "verify_seconds": 3.4768185999710113,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and broad-strong"
+      ]
+    },
+    {
+      "name": "metrics-heldout-weak",
+      "candidates": 4,
+      "killed": 2,
+      "plan_seconds": 0.027383500011637807,
+      "verify_seconds": 3.3822518999804743,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and heldout-weak"
+      ]
+    },
+    {
+      "name": "metrics-heldout-strong",
+      "candidates": 4,
+      "killed": 4,
+      "plan_seconds": 0.028416300017852336,
+      "verify_seconds": 3.429354800027795,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_amplification and heldout-strong"
+      ]
+    },
+    {
+      "name": "comb-upstream",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.02920700004324317,
+      "verify_seconds": 7.255579300050158,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_plan_cli_outputs_are_complete"
+      ]
+    },
+    {
+      "name": "comb-full",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.030419200018513948,
+      "verify_seconds": 5.087498300010338,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and full"
+      ]
+    },
+    {
+      "name": "comb-way2",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.03098749998025596,
+      "verify_seconds": 4.851573800027836,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and way2"
+      ]
+    },
+    {
+      "name": "comb-random2s1179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.029540399962570518,
+      "verify_seconds": 4.875277299957816,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random2s1179"
+      ]
+    },
+    {
+      "name": "comb-random2s2179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.0316416000132449,
+      "verify_seconds": 4.925364499969874,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random2s2179"
+      ]
+    },
+    {
+      "name": "comb-random2s3179",
+      "candidates": 6,
+      "killed": 4,
+      "plan_seconds": 0.030221399967558682,
+      "verify_seconds": 5.395253600028809,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random2s3179"
+      ]
+    },
+    {
+      "name": "comb-way3completed",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.03322789998492226,
+      "verify_seconds": 5.133398399979342,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and way3completed"
+      ]
+    },
+    {
+      "name": "comb-random3s1179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.02864369994495064,
+      "verify_seconds": 4.9583913999958895,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random3s1179"
+      ]
+    },
+    {
+      "name": "comb-random3s2179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.029320600035134703,
+      "verify_seconds": 5.0012243000091985,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random3s2179"
+      ]
+    },
+    {
+      "name": "comb-random3s3179",
+      "candidates": 6,
+      "killed": 6,
+      "plan_seconds": 0.030516899947542697,
+      "verify_seconds": 4.992002099985257,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_combinations and random3s3179"
+      ]
+    },
+    {
+      "name": "contract-upstream",
+      "candidates": 9,
+      "killed": 8,
+      "plan_seconds": 0.03047540003899485,
+      "verify_seconds": 10.767736200010404,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_diff_includes_deleted"
+      ]
+    },
+    {
+      "name": "contract-fixed",
+      "candidates": 9,
+      "killed": 0,
+      "plan_seconds": 0.030655000009573996,
+      "verify_seconds": 10.174965199956205,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_dependency_contract and fixed"
+      ]
+    },
+    {
+      "name": "contract-strict",
+      "candidates": 9,
+      "killed": 9,
+      "plan_seconds": 0.03364529996179044,
+      "verify_seconds": 10.780810499971267,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_dependency_contract and strict"
+      ]
+    },
+    {
+      "name": "contract-real",
+      "candidates": 9,
+      "killed": 8,
+      "plan_seconds": 0.033301300019957125,
+      "verify_seconds": 10.983125200029463,
+      "test_argv": [
+        "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+        "-m",
+        "pytest",
+        "-q",
+        "--tb=short",
+        "-x",
+        "-k",
+        "test_dependency_contract and real"
+      ]
+    }
+  ],
+  "matrix": {
+    "m1_1988c9fec929a0e19feac661c1394db7d466bba64181f82a28f97d4d355d3030": {
+      "candidate": {
+        "id": "m1_1988c9fec929a0e19feac661c1394db7d466bba64181f82a28f97d4d355d3030",
+        "sequence": 2,
+        "path": "tools/ci_metrics.py",
+        "span": {
+          "start": 1577,
+          "length": 2
+        },
+        "original": "is",
+        "replacement": "is not",
+        "operator": "identity",
+        "line": 54,
+        "column": 17,
+        "symbol": "total",
+        "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9"
+      },
+      "arms": {
+        "metrics-upstream": "killed",
+        "metrics-upstream_integration": "killed",
+        "metrics-relations": "killed",
+        "metrics-base_relations": "killed",
+        "metrics-combined": "killed",
+        "metrics-narrow-weak": "killed",
+        "metrics-narrow-strong": "killed",
+        "metrics-broad-weak": "killed",
+        "metrics-broad-strong": "killed",
+        "metrics-heldout-weak": "killed",
+        "metrics-heldout-strong": "killed"
+      }
+    },
+    "m1_46d6708249cde47e7a60b326c7be04b8c88070a5839439ecbb46483ca9bc60a1": {
+      "candidate": {
+        "id": "m1_46d6708249cde47e7a60b326c7be04b8c88070a5839439ecbb46483ca9bc60a1",
+        "sequence": 4,
+        "path": "tools/ci_metrics.py",
+        "span": {
+          "start": 1679,
+          "length": 6
+        },
+        "original": "is not",
+        "replacement": "is",
+        "operator": "identity",
+        "line": 56,
+        "column": 50,
+        "symbol": "total",
+        "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9"
+      },
+      "arms": {
+        "metrics-upstream": "survived",
+        "metrics-upstream_integration": "killed",
+        "metrics-relations": "survived",
+        "metrics-base_relations": "survived",
+        "metrics-combined": "killed",
+        "metrics-narrow-weak": "survived",
+        "metrics-narrow-strong": "survived",
+        "metrics-broad-weak": "survived",
+        "metrics-broad-strong": "killed",
+        "metrics-heldout-weak": "survived",
+        "metrics-heldout-strong": "killed"
+      }
+    },
+    "m1_dfe21d944f6b501d0137f58cbb962d20e004c264143352ec0707446a49bcedee": {
+      "candidate": {
+        "id": "m1_dfe21d944f6b501d0137f58cbb962d20e004c264143352ec0707446a49bcedee",
+        "sequence": 1,
+        "path": "tools/ci_metrics.py",
+        "span": {
+          "start": 1567,
+          "length": 3
+        },
+        "original": "any",
+        "replacement": "all",
+        "operator": "collection_any_all",
+        "line": 54,
+        "column": 7,
+        "symbol": "total",
+        "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9"
+      },
+      "arms": {
+        "metrics-upstream": "killed",
+        "metrics-upstream_integration": "killed",
+        "metrics-relations": "killed",
+        "metrics-base_relations": "killed",
+        "metrics-combined": "killed",
+        "metrics-narrow-weak": "killed",
+        "metrics-narrow-strong": "killed",
+        "metrics-broad-weak": "killed",
+        "metrics-broad-strong": "killed",
+        "metrics-heldout-weak": "killed",
+        "metrics-heldout-strong": "killed"
+      }
+    },
+    "m1_b51b960d494590366d513822beb25ff0a2516caa1f6d420c84430cd390a3595f": {
+      "candidate": {
+        "id": "m1_b51b960d494590366d513822beb25ff0a2516caa1f6d420c84430cd390a3595f",
+        "sequence": 3,
+        "path": "tools/ci_metrics.py",
+        "span": {
+          "start": 1644,
+          "length": 46
+        },
+        "original": "value for value in values if value is not None",
+        "replacement": "1 for _ in (value for value in values if value is not None)",
+        "operator": "aggregate_sum_count",
+        "line": 56,
+        "column": 15,
+        "symbol": "total",
+        "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9"
+      },
+      "arms": {
+        "metrics-upstream": "killed",
+        "metrics-upstream_integration": "killed",
+        "metrics-relations": "survived",
+        "metrics-base_relations": "killed",
+        "metrics-combined": "killed",
+        "metrics-narrow-weak": "survived",
+        "metrics-narrow-strong": "killed",
+        "metrics-broad-weak": "survived",
+        "metrics-broad-strong": "killed",
+        "metrics-heldout-weak": "survived",
+        "metrics-heldout-strong": "killed"
+      }
+    },
+    "m1_3f64beab99f01b5aae86c9610f52fe1b317791e09c819af3766c533a69862400": {
+      "candidate": {
+        "id": "m1_3f64beab99f01b5aae86c9610f52fe1b317791e09c819af3766c533a69862400",
+        "sequence": 1,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 7396,
+          "length": 2
+        },
+        "original": "==",
+        "replacement": "!=",
+        "operator": "compare_eq_ne",
+        "line": 203,
+        "column": 19,
+        "symbol": "main",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "comb-upstream": "killed",
+        "comb-full": "killed",
+        "comb-way2": "killed",
+        "comb-random2s1179": "killed",
+        "comb-random2s2179": "killed",
+        "comb-random2s3179": "killed",
+        "comb-way3completed": "killed",
+        "comb-random3s1179": "killed",
+        "comb-random3s2179": "killed",
+        "comb-random3s3179": "killed"
+      }
+    },
+    "m1_0f3c68f379ca421f56cb3f6b5cce13e31dc9858e74e652ae2ace353d07995a89": {
+      "candidate": {
+        "id": "m1_0f3c68f379ca421f56cb3f6b5cce13e31dc9858e74e652ae2ace353d07995a89",
+        "sequence": 2,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 7415,
+          "length": 3
+        },
+        "original": "and",
+        "replacement": "or",
+        "operator": "boolean_and_or",
+        "line": 204,
+        "column": 8,
+        "symbol": "main",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "comb-upstream": "killed",
+        "comb-full": "killed",
+        "comb-way2": "killed",
+        "comb-random2s1179": "killed",
+        "comb-random2s2179": "killed",
+        "comb-random2s3179": "killed",
+        "comb-way3completed": "killed",
+        "comb-random3s1179": "killed",
+        "comb-random3s2179": "killed",
+        "comb-random3s3179": "killed"
+      }
+    },
+    "m1_73978dd2f5945f3645717136ccee93bbf08542a7de94329708d01d4125ad2384": {
+      "candidate": {
+        "id": "m1_73978dd2f5945f3645717136ccee93bbf08542a7de94329708d01d4125ad2384",
+        "sequence": 3,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 7448,
+          "length": 2
+        },
+        "original": "==",
+        "replacement": "!=",
+        "operator": "compare_eq_ne",
+        "line": 204,
+        "column": 41,
+        "symbol": "main",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "comb-upstream": "killed",
+        "comb-full": "killed",
+        "comb-way2": "killed",
+        "comb-random2s1179": "killed",
+        "comb-random2s2179": "killed",
+        "comb-random2s3179": "survived",
+        "comb-way3completed": "killed",
+        "comb-random3s1179": "killed",
+        "comb-random3s2179": "killed",
+        "comb-random3s3179": "killed"
+      }
+    },
+    "m1_d01b2730fe95acf5c30a91cba1a7f0f545511d736b2acb89da25cbe0dd290273": {
+      "candidate": {
+        "id": "m1_d01b2730fe95acf5c30a91cba1a7f0f545511d736b2acb89da25cbe0dd290273",
+        "sequence": 4,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 7478,
+          "length": 3
+        },
+        "original": "and",
+        "replacement": "or",
+        "operator": "boolean_and_or",
+        "line": 205,
+        "column": 8,
+        "symbol": "main",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "comb-upstream": "killed",
+        "comb-full": "killed",
+        "comb-way2": "killed",
+        "comb-random2s1179": "killed",
+        "comb-random2s2179": "killed",
+        "comb-random2s3179": "killed",
+        "comb-way3completed": "killed",
+        "comb-random3s1179": "killed",
+        "comb-random3s2179": "killed",
+        "comb-random3s3179": "killed"
+      }
+    },
+    "m1_194696541fceb5143bca1d50992a300bb8d60f746a42d2e6d7ce6d02a46d926e": {
+      "candidate": {
+        "id": "m1_194696541fceb5143bca1d50992a300bb8d60f746a42d2e6d7ce6d02a46d926e",
+        "sequence": 5,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 7510,
+          "length": 2
+        },
+        "original": "==",
+        "replacement": "!=",
+        "operator": "compare_eq_ne",
+        "line": 205,
+        "column": 40,
+        "symbol": "main",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "comb-upstream": "killed",
+        "comb-full": "killed",
+        "comb-way2": "killed",
+        "comb-random2s1179": "killed",
+        "comb-random2s2179": "killed",
+        "comb-random2s3179": "survived",
+        "comb-way3completed": "killed",
+        "comb-random3s1179": "killed",
+        "comb-random3s2179": "killed",
+        "comb-random3s3179": "killed"
+      }
+    },
+    "m1_c96e42b3203f8469753b8e93eb1a850f35a7daeede441ae94d70632a282d010b": {
+      "candidate": {
+        "id": "m1_c96e42b3203f8469753b8e93eb1a850f35a7daeede441ae94d70632a282d010b",
+        "sequence": 6,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 7529,
+          "length": 3
+        },
+        "original": "and",
+        "replacement": "or",
+        "operator": "boolean_and_or",
+        "line": 206,
+        "column": 8,
+        "symbol": "main",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "comb-upstream": "killed",
+        "comb-full": "killed",
+        "comb-way2": "killed",
+        "comb-random2s1179": "killed",
+        "comb-random2s2179": "killed",
+        "comb-random2s3179": "killed",
+        "comb-way3completed": "killed",
+        "comb-random3s1179": "killed",
+        "comb-random3s2179": "killed",
+        "comb-random3s3179": "killed"
+      }
+    },
+    "m1_07141ae0fcf3e7ee033c9b568f55860e7d7e4b7c7cc166c211644a7701a28ba8": {
+      "candidate": {
+        "id": "m1_07141ae0fcf3e7ee033c9b568f55860e7d7e4b7c7cc166c211644a7701a28ba8",
+        "sequence": 5,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    },
+    "m1_37a5493e5072d1b5abce4b9e08a75a1121a99082644b0e594db148a674612b6d": {
+      "candidate": {
+        "id": "m1_37a5493e5072d1b5abce4b9e08a75a1121a99082644b0e594db148a674612b6d",
+        "sequence": 7,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    },
+    "m1_6e8bc5db04f5423827dc56dd17fa1a8999eaa886d896763d25f04ef75a9653fe": {
+      "candidate": {
+        "id": "m1_6e8bc5db04f5423827dc56dd17fa1a8999eaa886d896763d25f04ef75a9653fe",
+        "sequence": 1,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    },
+    "m1_87788ebca640771cdd60661aa66f5749361b88fbd4d359a9da33ed731d453ca7": {
+      "candidate": {
+        "id": "m1_87788ebca640771cdd60661aa66f5749361b88fbd4d359a9da33ed731d453ca7",
+        "sequence": 4,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(\"-C\"),(str(root)),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    },
+    "m1_901121ad54c8d5b4f4906ba07fcd296b5ffb1b8b7bad4f426938022b422fbb1e": {
+      "candidate": {
+        "id": "m1_901121ad54c8d5b4f4906ba07fcd296b5ffb1b8b7bad4f426938022b422fbb1e",
+        "sequence": 3,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(\"-C\"),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    },
+    "m1_90f1244dc6416dc02002458cf8f4c54b7c6ea80c58b68eecbef15f869c35cb6f": {
+      "candidate": {
+        "id": "m1_90f1244dc6416dc02002458cf8f4c54b7c6ea80c58b68eecbef15f869c35cb6f",
+        "sequence": 2,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    },
+    "m1_b3a48c4cef2172e598ec8c710dd4351af3794e3386d33ec75904ccc0811531c2": {
+      "candidate": {
+        "id": "m1_b3a48c4cef2172e598ec8c710dd4351af3794e3386d33ec75904ccc0811531c2",
+        "sequence": 9,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "survived",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "survived"
+      }
+    },
+    "m1_e4b34a9ad13f7996919ee80d9f45796fade07bafa67b4760568b8b063cda3639": {
+      "candidate": {
+        "id": "m1_e4b34a9ad13f7996919ee80d9f45796fade07bafa67b4760568b8b063cda3639",
+        "sequence": 6,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    },
+    "m1_f4bce0de3475dd8fe2e4fe04be3e18298a70f1297d02d9002b18ed624b9a98df": {
+      "candidate": {
+        "id": "m1_f4bce0de3475dd8fe2e4fe04be3e18298a70f1297d02d9002b18ed624b9a98df",
+        "sequence": 8,
+        "path": "tools/ci_selection.py",
+        "span": {
+          "start": 2720,
+          "length": 250
+        },
+        "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+        "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(\"--\"),]",
+        "operator": "container_element_delete",
+        "line": 74,
+        "column": 8,
+        "symbol": "changed_paths",
+        "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+      },
+      "arms": {
+        "contract-upstream": "killed",
+        "contract-fixed": "survived",
+        "contract-strict": "killed",
+        "contract-real": "killed"
+      }
+    }
+  },
+  "witnesses": [
+    {
+      "arm": "metrics-upstream_integration",
+      "candidate_id": "m1_1988c9fec929a0e19feac661c1394db7d466bba64181f82a28f97d4d355d3030",
+      "seconds": 0.6279511000029743,
+      "original_sha256": "3ea7b50a9b161a3069fe3f04e8789c0be0c6f1d766810fff13434174c2af86a9",
+      "mutated_sha256": "c7393c759fba12fbf6045d61e26f41d01cb64f23c34142b7935ddd672a61e7a0",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n__________ test_metrics_separate_queue_execution_skips_and_attempts ___________\ntest_upstream_ci_metrics.py:37: in test_metrics_separate_queue_execution_skips_and_attempts\n    assert result[\"job_seconds\"] == 60\nE   assert None == 60\n=========================== short test summary info ===========================\nFAILED test_upstream_ci_metrics.py::test_metrics_separate_queue_execution_skips_and_attempts\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 532 deselected in 0.12s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "metrics-upstream_integration",
+      "candidate_id": "m1_46d6708249cde47e7a60b326c7be04b8c88070a5839439ecbb46483ca9bc60a1",
+      "seconds": 0.6159921000362374,
+      "original_sha256": "3ea7b50a9b161a3069fe3f04e8789c0be0c6f1d766810fff13434174c2af86a9",
+      "mutated_sha256": "c8ac5ff12a579d14dfc1dc0415c4b61858467230202f79d307a71a2c54b0d9f7",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n__________ test_metrics_separate_queue_execution_skips_and_attempts ___________\ntest_upstream_ci_metrics.py:37: in test_metrics_separate_queue_execution_skips_and_attempts\n    assert result[\"job_seconds\"] == 60\nE   assert 0 == 60\n=========================== short test summary info ===========================\nFAILED test_upstream_ci_metrics.py::test_metrics_separate_queue_execution_skips_and_attempts\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 532 deselected in 0.12s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "metrics-upstream_integration",
+      "candidate_id": "m1_dfe21d944f6b501d0137f58cbb962d20e004c264143352ec0707446a49bcedee",
+      "seconds": 0.5840894000139087,
+      "original_sha256": "3ea7b50a9b161a3069fe3f04e8789c0be0c6f1d766810fff13434174c2af86a9",
+      "mutated_sha256": "089754bdd8ca67fedb5b0b5574ddde90823250b439d91f6b7eb768579ed1482d",
+      "returncode": 1,
+      "stdout": ".F\n================================== FAILURES ===================================\n___________ test_total_preserves_missing_measurements[missing-last] ___________\ntest_upstream_ci_metrics.py:54: in test_total_preserves_missing_measurements\n    assert result == expected\nE   assert 1.0 == None\n=========================== short test summary info ===========================\nFAILED test_upstream_ci_metrics.py::test_total_preserves_missing_measurements[missing-last]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 1 passed, 532 deselected in 0.12s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "metrics-upstream_integration",
+      "candidate_id": "m1_b51b960d494590366d513822beb25ff0a2516caa1f6d420c84430cd390a3595f",
+      "seconds": 0.5620401999913156,
+      "original_sha256": "3ea7b50a9b161a3069fe3f04e8789c0be0c6f1d766810fff13434174c2af86a9",
+      "mutated_sha256": "488d6ec23fc5b675b3b9f7a79f55b5ee1df0f9670dad4666586de0a4655fdba0",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n__________ test_metrics_separate_queue_execution_skips_and_attempts ___________\ntest_upstream_ci_metrics.py:37: in test_metrics_separate_queue_execution_skips_and_attempts\n    assert result[\"job_seconds\"] == 60\nE   assert 1 == 60\n=========================== short test summary info ===========================\nFAILED test_upstream_ci_metrics.py::test_metrics_separate_queue_execution_skips_and_attempts\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 532 deselected in 0.11s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "comb-full",
+      "candidate_id": "m1_3f64beab99f01b5aae86c9610f52fe1b317791e09c819af3766c533a69862400",
+      "seconds": 0.6040509999729693,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "355185e804117b208635cf67822df9e285c5aeda8c00c1dd0390ecb588e2ad26",
+      "returncode": 1,
+      "stdout": ".......F\n================================== FAILURES ===================================\n__________________________ test_combinations[full-7] __________________________\ntest_research.py:109: in test_combinations\n    assert status == 0 and actual[\"cgroup\"] is expected\nE   assert (0 == 0 and True is False)\n=========================== short test summary info ===========================\nFAILED test_research.py::test_combinations[full-7] - assert (0 == 0 and True ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 7 passed, 522 deselected in 0.16s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "comb-full",
+      "candidate_id": "m1_0f3c68f379ca421f56cb3f6b5cce13e31dc9858e74e652ae2ace353d07995a89",
+      "seconds": 0.6250708000152372,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "153ff8191bbbdf5a895ebd8dfd6a0fb20daf2d2bd664d1c194dcadeb38816982",
+      "returncode": 1,
+      "stdout": ".......F\n================================== FAILURES ===================================\n__________________________ test_combinations[full-7] __________________________\ntest_research.py:109: in test_combinations\n    assert status == 0 and actual[\"cgroup\"] is expected\nE   assert (0 == 0 and True is False)\n=========================== short test summary info ===========================\nFAILED test_research.py::test_combinations[full-7] - assert (0 == 0 and True ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 7 passed, 522 deselected in 0.16s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "comb-full",
+      "candidate_id": "m1_73978dd2f5945f3645717136ccee93bbf08542a7de94329708d01d4125ad2384",
+      "seconds": 0.6257778000435792,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "a33296501e389ce20f02d33c9100e10cb2e66382762f03bde86c8a86269abb9f",
+      "returncode": 1,
+      "stdout": "...........F\n================================== FAILURES ===================================\n_________________________ test_combinations[full-11] __________________________\ntest_research.py:109: in test_combinations\n    assert status == 0 and actual[\"cgroup\"] is expected\nE   assert (0 == 0 and True is False)\n=========================== short test summary info ===========================\nFAILED test_research.py::test_combinations[full-11] - assert (0 == 0 and True...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 11 passed, 522 deselected in 0.17s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "comb-full",
+      "candidate_id": "m1_d01b2730fe95acf5c30a91cba1a7f0f545511d736b2acb89da25cbe0dd290273",
+      "seconds": 0.6072263999958523,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "cb41465906ec3efcee1be570120e164b466c87b8428a33ff2c2344d36988285a",
+      "returncode": 1,
+      "stdout": "...F\n================================== FAILURES ===================================\n__________________________ test_combinations[full-3] __________________________\ntest_research.py:109: in test_combinations\n    assert status == 0 and actual[\"cgroup\"] is expected\nE   assert (0 == 0 and True is False)\n=========================== short test summary info ===========================\nFAILED test_research.py::test_combinations[full-3] - assert (0 == 0 and True ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 3 passed, 522 deselected in 0.14s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "comb-full",
+      "candidate_id": "m1_194696541fceb5143bca1d50992a300bb8d60f746a42d2e6d7ce6d02a46d926e",
+      "seconds": 0.6676057000295259,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "0a6341e02cc3e93d5852ca927b1b0714d3f1c7160a952857e7c57f8dc32ec570",
+      "returncode": 1,
+      "stdout": ".............F\n================================== FAILURES ===================================\n_________________________ test_combinations[full-13] __________________________\ntest_research.py:109: in test_combinations\n    assert status == 0 and actual[\"cgroup\"] is expected\nE   assert (0 == 0 and True is False)\n=========================== short test summary info ===========================\nFAILED test_research.py::test_combinations[full-13] - assert (0 == 0 and True...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 13 passed, 522 deselected in 0.17s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "comb-full",
+      "candidate_id": "m1_c96e42b3203f8469753b8e93eb1a850f35a7daeede441ae94d70632a282d010b",
+      "seconds": 0.612031200027559,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "47bbd09b153e3e9bdc6c70335dc3e15ee2aab5476475a33780c42042288e2f47",
+      "returncode": 1,
+      "stdout": ".F\n================================== FAILURES ===================================\n__________________________ test_combinations[full-1] __________________________\ntest_research.py:109: in test_combinations\n    assert status == 0 and actual[\"cgroup\"] is expected\nE   assert (0 == 0 and True is False)\n=========================== short test summary info ===========================\nFAILED test_research.py::test_combinations[full-1] - assert (0 == 0 and True ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 1 passed, 522 deselected in 0.14s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_07141ae0fcf3e7ee033c9b568f55860e7d7e4b7c7cc166c211644a7701a28ba8",
+      "seconds": 0.9859066000208259,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "062c613fbfa54f578f0f873e91a1c8f7453bfa63f0dd5dd2c62dc6527ce676ac",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:153: in test_dependency_contract\n    assert set(result) == expected\nE   AssertionError: assert {'���{��.py'} == {'old name.txt', '���{��.py'}\nE     \nE     Extra items in the right set:\nE     'old name.txt'\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - AssertionError: ass...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.50s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_37a5493e5072d1b5abce4b9e08a75a1121a99082644b0e594db148a674612b6d",
+      "seconds": 1.0182112000184134,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "15871f20eeb94331d2451ec57c9e96a12d73c129fb06413fcb5db9ef7cb83e32",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:153: in test_dependency_contract\n    assert set(result) == expected\nE   assert {'old name.tx...2\\\\236.py\"\\n'} == {'old name.txt', '���{��.py'}\nE     \nE     Extra items in the left set:\nE     'old name.txt\\n\"\\\\346\\\\227\\\\245\\\\346\\\\234\\\\254\\\\350\\\\252\\\\236.py\"\\n'\nE     Extra items in the right set:\nE     'old name.txt'\nE     '���{��.py'\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - assert {'old name.t...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.51s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_6e8bc5db04f5423827dc56dd17fa1a8999eaa886d896763d25f04ef75a9653fe",
+      "seconds": 0.986236699973233,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "571ba179d59e77a0682374eec1c9ab75cd930e62027f0a1de39596e9cd0999e6",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:150: in test_dependency_contract\n    result = ci_selection.changed_paths(root, base, \"HEAD\", merge_base=False)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntools\\ci_selection.py:73: in changed_paths\n    result = subprocess.run(  # noqa: S603 -- resolved executable and argv, no shell\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\subprocess.py:555: in run\n    with Popen(*popenargs, **kwargs) as process:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\subprocess.py:1039: in __init__\n    self._execute_child(args, executable, preexec_fn, close_fds,\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\subprocess.py:1553: in _execute_child\n    hp, ht, pid, tid = _winapi.CreateProcess(executable, args,\nE   FileNotFoundError: [WinError 2] �w�肳�ꂽ�t�@�C����������܂���B\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - FileNotFoundError: ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.49s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_87788ebca640771cdd60661aa66f5749361b88fbd4d359a9da33ed731d453ca7",
+      "seconds": 1.0490487000206485,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "370043c9b28b68d24580d1453191417538ccbfd1cd5cbc54b2fcb03eb1056ad0",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:150: in test_dependency_contract\n    result = ci_selection.changed_paths(root, base, \"HEAD\", merge_base=False)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntools\\ci_selection.py:73: in changed_paths\n    result = subprocess.run(  # noqa: S603 -- resolved executable and argv, no shell\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\subprocess.py:578: in run\n    raise CalledProcessError(retcode, process.args,\nE   subprocess.CalledProcessError: Command '['C:\\\\Program Files\\\\Git\\\\cmd\\\\git.EXE', '-C', 'C:\\\\Users\\\\hayao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-hayao\\\\pytest-3966\\\\test_dependency_contract_real_0', '--no-renames', '--name-only', '-z', '95178bf5bfb08dd82b1f1790f293a0f7618e2be8..HEAD', '--']' returned non-zero exit status 129.\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - subprocess.CalledPr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.55s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_901121ad54c8d5b4f4906ba07fcd296b5ffb1b8b7bad4f426938022b422fbb1e",
+      "seconds": 1.0250162000302225,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "ee67b6deca97e509af81ad0d011c8e05de83c68389437c3130cfe887d46f234f",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:150: in test_dependency_contract\n    result = ci_selection.changed_paths(root, base, \"HEAD\", merge_base=False)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntools\\ci_selection.py:73: in changed_paths\n    result = subprocess.run(  # noqa: S603 -- resolved executable and argv, no shell\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\subprocess.py:578: in run\n    raise CalledProcessError(retcode, process.args,\nE   subprocess.CalledProcessError: Command '['C:\\\\Program Files\\\\Git\\\\cmd\\\\git.EXE', '-C', 'diff', '--no-renames', '--name-only', '-z', 'ebdfc0df44cbf625d0775a88d799c8cd1e480cf6..HEAD', '--']' returned non-zero exit status 128.\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - subprocess.CalledPr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.54s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_90f1244dc6416dc02002458cf8f4c54b7c6ea80c58b68eecbef15f869c35cb6f",
+      "seconds": 1.0415759999887086,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "7c7adabd34e0cbd27a2849c4e63fc6381de75de27d9dd081b37efadf62e47595",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:150: in test_dependency_contract\n    result = ci_selection.changed_paths(root, base, \"HEAD\", merge_base=False)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntools\\ci_selection.py:73: in changed_paths\n    result = subprocess.run(  # noqa: S603 -- resolved executable and argv, no shell\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\subprocess.py:578: in run\n    raise CalledProcessError(retcode, process.args,\nE   subprocess.CalledProcessError: Command '['C:\\\\Program Files\\\\Git\\\\cmd\\\\git.EXE', 'C:\\\\Users\\\\hayao\\\\AppData\\\\Local\\\\Temp\\\\pytest-of-hayao\\\\pytest-3968\\\\test_dependency_contract_real_0', 'diff', '--no-renames', '--name-only', '-z', 'a9a35006321346e2281165356c1135d75caa5a93..HEAD', '--']' returned non-zero exit status 1.\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - subprocess.CalledPr...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.55s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-strict",
+      "candidate_id": "m1_b3a48c4cef2172e598ec8c710dd4351af3794e3386d33ec75904ccc0811531c2",
+      "seconds": 1.0102971000014804,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "50dbb4644245480823773b352f1c62b247e215ccb51c133e62b0872cc0d49bdd",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n______________________ test_dependency_contract[strict] _______________________\ntest_research.py:150: in test_dependency_contract\n    result = ci_selection.changed_paths(root, base, \"HEAD\", merge_base=False)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ntools\\ci_selection.py:73: in changed_paths\n    result = subprocess.run(  # noqa: S603 -- resolved executable and argv, no shell\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\unittest\\mock.py:1176: in __call__\n    return self._mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\unittest\\mock.py:1180: in _mock_call\n    return self._execute_mock_call(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\Lib\\unittest\\mock.py:1247: in _execute_mock_call\n    result = effect(*args, **kwargs)\n             ^^^^^^^^^^^^^^^^^^^^^^^\ntest_research.py:144: in fake\n    assert args == argv\nE   AssertionError: assert ['C:\\\\Program...me-only', ...] == ['C:\\\\Program...me-only', ...]\nE     \nE     Right contains one more item: '--'\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[strict] - AssertionError: a...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.52s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_e4b34a9ad13f7996919ee80d9f45796fade07bafa67b4760568b8b063cda3639",
+      "seconds": 1.030209599994123,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "264501cd4e43119da59b252c98c30f5fd81b662071f4b3963cdf144c32a4210e",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:153: in test_dependency_contract\n    assert set(result) == expected\nE   assert {'diff --git ...\\n+content\\n'} == {'old name.txt', '���{��.py'}\nE     \nE     Extra items in the left set:\nE     'diff --git a/old name.txt b/old name.txt\\ndeleted file mode 100644\\nindex d95f3ad..0000000\\n--- a/old name.txt\\t\\n+++...x 0000000..d95f3ad\\n--- /dev/null\\n+++ \"b/\\\\346\\\\227\\\\245\\\\346\\\\234\\\\254\\\\350\\\\252\\\\236.py\"\\n@@ -0,0 +1 @@\\n+content\\n'\nE     Extra items in the right set:\nE     'old name.txt'\nE     '���{��.py'\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - assert {'diff --git...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.52s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "contract-real",
+      "candidate_id": "m1_f4bce0de3475dd8fe2e4fe04be3e18298a70f1297d02d9002b18ed624b9a98df",
+      "seconds": 1.0279675999772735,
+      "original_sha256": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7",
+      "mutated_sha256": "2b2010bbb48e5e68f0b979bf1df5624aa1295d09588955758878462b18c68b26",
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_dependency_contract[real] ________________________\ntest_research.py:153: in test_dependency_contract\n    assert set(result) == expected\nE   AssertionError: assert set() == {'old name.txt', '���{��.py'}\nE     \nE     Extra items in the right set:\nE     'old name.txt'\nE     '���{��.py'\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_research.py::test_dependency_contract[real] - AssertionError: ass...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 537 deselected in 0.53s\n",
+      "stderr": ""
+    }
+  ],
+  "seeded_model_probes": {
+    "full": {
+      "cases": 16,
+      "coverage": {
+        "2": {
+          "covered": 24,
+          "required": 24
+        },
+        "3": {
+          "covered": 32,
+          "required": 32
+        },
+        "4": {
+          "covered": 16,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "way2": {
+      "cases": 6,
+      "coverage": {
+        "2": {
+          "covered": 24,
+          "required": 24
+        },
+        "3": {
+          "covered": 22,
+          "required": 32
+        },
+        "4": {
+          "covered": 6,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "random2s1179": {
+      "cases": 6,
+      "coverage": {
+        "2": {
+          "covered": 19,
+          "required": 24
+        },
+        "3": {
+          "covered": 18,
+          "required": 32
+        },
+        "4": {
+          "covered": 6,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        false,
+        true,
+        false,
+        false
+      ]
+    },
+    "random2s2179": {
+      "cases": 6,
+      "coverage": {
+        "2": {
+          "covered": 19,
+          "required": 24
+        },
+        "3": {
+          "covered": 18,
+          "required": 32
+        },
+        "4": {
+          "covered": 6,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "random2s3179": {
+      "cases": 6,
+      "coverage": {
+        "2": {
+          "covered": 20,
+          "required": 24
+        },
+        "3": {
+          "covered": 19,
+          "required": 32
+        },
+        "4": {
+          "covered": 6,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        false,
+        false,
+        false
+      ]
+    },
+    "way3completed": {
+      "cases": 10,
+      "coverage": {
+        "2": {
+          "covered": 24,
+          "required": 24
+        },
+        "3": {
+          "covered": 32,
+          "required": 32
+        },
+        "4": {
+          "covered": 10,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "random3s1179": {
+      "cases": 10,
+      "coverage": {
+        "2": {
+          "covered": 24,
+          "required": 24
+        },
+        "3": {
+          "covered": 27,
+          "required": 32
+        },
+        "4": {
+          "covered": 10,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        true,
+        true,
+        false
+      ]
+    },
+    "random3s2179": {
+      "cases": 10,
+      "coverage": {
+        "2": {
+          "covered": 24,
+          "required": 24
+        },
+        "3": {
+          "covered": 28,
+          "required": 32
+        },
+        "4": {
+          "covered": 10,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        true,
+        true,
+        true
+      ]
+    },
+    "random3s3179": {
+      "cases": 10,
+      "coverage": {
+        "2": {
+          "covered": 23,
+          "required": 24
+        },
+        "3": {
+          "covered": 27,
+          "required": 32
+        },
+        "4": {
+          "covered": 10,
+          "required": 16
+        }
+      },
+      "detected_seeded_clause_drops": [
+        true,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "rejected_relation_counterexamples": {
+    "unrestricted_float_permutation": [
+      "inf",
+      "1e+308"
+    ],
+    "duplicate_idempotence": [
+      "1",
+      "2"
+    ],
+    "missing_is_zero": [
+      "None",
+      "0"
+    ]
+  },
+  "audit_seconds": 15.502693099959288,
+  "project_hashes": {
+    "corpus.json": "8d7666fdcb821d82f22ccf890b26811a74a77bc08598732b5fe53e0d6076d5f5",
+    "pytest.ini": "aaabed120d2fb059160bb38bf8843dc0bbb6abca5f013dffb5228bfffb9a3404",
+    "test_research.py": "7afe365e1d0ef3b7ef3224d383a3bd94564526d1ad757928348de7047102286d",
+    "test_upstream_ci_metrics.py": "589e158bf411b4ba727419755815a6f7e4a47ed0449164084ee0557c28de332d",
+    "test_upstream_ci_selection.py": "99700f689a9cac950947c1918b80c5349e7fc880d8514c76d4abc5ad4381f58f",
+    "tools\\ci_metrics.py": "3ea7b50a9b161a3069fe3f04e8789c0be0c6f1d766810fff13434174c2af86a9",
+    "tools\\ci_selection.py": "fa610bb96d2dfdfa4a2ff0584818cb0e51d786b413c5ec6be627f927e684a0f7"
+  }
+}

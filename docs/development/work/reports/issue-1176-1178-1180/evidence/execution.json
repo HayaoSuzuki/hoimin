@@ -1,0 +1,102 @@
+{
+  "preparation_seconds": 0.253285999991931,
+  "arms": [
+    {
+      "name": "pbt-narrow_weak",
+      "normal_seconds": 0.9456383000360802,
+      "plan_seconds": 1.3105778999743052,
+      "verify_seconds": 4.242095900001004,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "pbt-broad_weak",
+      "normal_seconds": 0.9710907000117004,
+      "plan_seconds": 0.027106800000183284,
+      "verify_seconds": 4.228375600010622,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "pbt-narrow_strong",
+      "normal_seconds": 0.8307984999846667,
+      "plan_seconds": 0.024847500026226044,
+      "verify_seconds": 4.010856200009584,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "pbt-broad_strong",
+      "normal_seconds": 0.8981719000148587,
+      "plan_seconds": 0.026508500042837113,
+      "verify_seconds": 4.001164200017229,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "pbt-heldout_weak",
+      "normal_seconds": 0.8299905000021681,
+      "plan_seconds": 0.02326719998382032,
+      "verify_seconds": 4.087805500021204,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "pbt-heldout_strong",
+      "normal_seconds": 0.9157654999871738,
+      "plan_seconds": 0.024110800004564226,
+      "verify_seconds": 4.105303000018466,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "stateful-single",
+      "normal_seconds": 0.8288266999879852,
+      "plan_seconds": 0.027036599989514798,
+      "verify_seconds": 4.075151400000323,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "stateful-history",
+      "normal_seconds": 0.8511298000230454,
+      "plan_seconds": 0.02634869999019429,
+      "verify_seconds": 3.9081561000202782,
+      "returncode": 0,
+      "candidates": 3
+    },
+    {
+      "name": "resilience-happy",
+      "normal_seconds": 0.8069222000194713,
+      "plan_seconds": 0.02464650000911206,
+      "verify_seconds": 7.376109300006647,
+      "returncode": 0,
+      "candidates": 7
+    },
+    {
+      "name": "resilience-faults",
+      "normal_seconds": 0.819249399995897,
+      "plan_seconds": 0.02542860002722591,
+      "verify_seconds": 7.501384900009725,
+      "returncode": 0,
+      "candidates": 7
+    },
+    {
+      "name": "retry-happy",
+      "normal_seconds": 0.789226199965924,
+      "plan_seconds": 0.02562410000246018,
+      "verify_seconds": 13.26994080003351,
+      "returncode": 0,
+      "candidates": 14
+    },
+    {
+      "name": "retry-faults",
+      "normal_seconds": 0.8214123999932781,
+      "plan_seconds": 0.02720800001407042,
+      "verify_seconds": 13.998560099978931,
+      "returncode": 0,
+      "candidates": 14
+    }
+  ],
+  "total_seconds": 88.43113340000855
+}

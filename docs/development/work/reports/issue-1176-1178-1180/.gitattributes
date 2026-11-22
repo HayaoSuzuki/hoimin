@@ -1,0 +1,2 @@
+# Candidate spans and SHA-256 receipts refer to exact source and corpus bytes.
+project/* -text whitespace=trailing-space,space-before-tab,cr-at-eol

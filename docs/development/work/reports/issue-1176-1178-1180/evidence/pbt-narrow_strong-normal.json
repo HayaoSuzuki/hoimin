@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\.venv\\Scripts\\python.exe",
+    "-m",
+    "pytest",
+    "-q",
+    "--tb=short",
+    "-x",
+    "-k",
+    "test_pbt_narrow_strong"
+  ],
+  "returncode": 0,
+  "seconds": 0.8307984999846667,
+  "stdout": "........................................................................ [ 86%]\n...........                                                              [100%]\n83 passed, 563 deselected in 0.30s\n",
+  "stderr": ""
+}

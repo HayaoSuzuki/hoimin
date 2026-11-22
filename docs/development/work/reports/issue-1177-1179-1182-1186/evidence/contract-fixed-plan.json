@@ -1,0 +1,507 @@
+{
+  "schema_version": 10,
+  "kind": "plan",
+  "ranking_rule_version": 4,
+  "normalized_config": {
+    "discovery": {
+      "analyzer_timeout": {
+        "secs": 30,
+        "nanos": 0
+      }
+    },
+    "selection": {
+      "root": "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\docs\\development\\work\\reports\\issue-1177-1179-1182-1186\\project",
+      "sources": [],
+      "files": [],
+      "lines": [
+        {
+          "path": "tools/ci_selection.py",
+          "range": {
+            "start": 73,
+            "end": 88
+          }
+        }
+      ],
+      "symbols": [],
+      "changed": null,
+      "includes": [],
+      "excludes": []
+    },
+    "import_roots": [],
+    "limits": {
+      "jobs": 1,
+      "max_mutants": 24,
+      "max_candidates": 100,
+      "baseline_timeout": {
+        "secs": 15,
+        "nanos": 0
+      },
+      "mutant_timeout": {
+        "fixed": {
+          "secs": 8,
+          "nanos": 0
+        }
+      },
+      "total_timeout": {
+        "secs": 90,
+        "nanos": 0
+      },
+      "max_memory": 536870912,
+      "max_output": 262144,
+      "max_copy_size": 1073741824,
+      "max_workspace_size": 67108864,
+      "min_free_space": 10737418240,
+      "max_processes": 64
+    },
+    "test_argv": [
+      {
+        "windows": [
+          67,
+          58,
+          92,
+          85,
+          115,
+          101,
+          114,
+          115,
+          92,
+          104,
+          97,
+          121,
+          97,
+          111,
+          92,
+          46,
+          99,
+          111,
+          100,
+          101,
+          120,
+          92,
+          119,
+          111,
+          114,
+          107,
+          116,
+          114,
+          101,
+          101,
+          115,
+          92,
+          114,
+          101,
+          115,
+          101,
+          97,
+          114,
+          99,
+          104,
+          45,
+          109,
+          117,
+          116,
+          97,
+          116,
+          105,
+          111,
+          110,
+          115,
+          92,
+          104,
+          111,
+          105,
+          109,
+          105,
+          110,
+          92,
+          46,
+          118,
+          101,
+          110,
+          118,
+          92,
+          83,
+          99,
+          114,
+          105,
+          112,
+          116,
+          115,
+          92,
+          112,
+          121,
+          116,
+          104,
+          111,
+          110,
+          46,
+          101,
+          120,
+          101
+        ]
+      },
+      {
+        "windows": [
+          45,
+          109
+        ]
+      },
+      {
+        "windows": [
+          112,
+          121,
+          116,
+          101,
+          115,
+          116
+        ]
+      },
+      {
+        "windows": [
+          45,
+          113
+        ]
+      },
+      {
+        "windows": [
+          45,
+          45,
+          116,
+          98,
+          61,
+          115,
+          104,
+          111,
+          114,
+          116
+        ]
+      },
+      {
+        "windows": [
+          45,
+          120
+        ]
+      },
+      {
+        "windows": [
+          45,
+          107
+        ]
+      },
+      {
+        "windows": [
+          116,
+          101,
+          115,
+          116,
+          95,
+          100,
+          101,
+          112,
+          101,
+          110,
+          100,
+          101,
+          110,
+          99,
+          121,
+          95,
+          99,
+          111,
+          110,
+          116,
+          114,
+          97,
+          99,
+          116,
+          32,
+          97,
+          110,
+          100,
+          32,
+          102,
+          105,
+          120,
+          101,
+          100
+        ]
+      }
+    ],
+    "output": {
+      "metrics": null
+    },
+    "operators": [
+      "container_element_delete"
+    ],
+    "allow_best_effort_memory": false,
+    "profile": "full",
+    "fingerprint_includes": [],
+    "fingerprint_files": [],
+    "environment": {
+      "state": "untracked"
+    },
+    "fingerprint_inputs": []
+  },
+  "sources": [
+    {
+      "path": "tools/ci_selection.py",
+      "hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "m1_07141ae0fcf3e7ee033c9b568f55860e7d7e4b7c7cc166c211644a7701a28ba8",
+      "sequence": 5,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 1,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_37a5493e5072d1b5abce4b9e08a75a1121a99082644b0e594db148a674612b6d",
+      "sequence": 7,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 2,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_6e8bc5db04f5423827dc56dd17fa1a8999eaa886d896763d25f04ef75a9653fe",
+      "sequence": 1,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 3,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_87788ebca640771cdd60661aa66f5749361b88fbd4d359a9da33ed731d453ca7",
+      "sequence": 4,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(\"-C\"),(str(root)),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 4,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_901121ad54c8d5b4f4906ba07fcd296b5ffb1b8b7bad4f426938022b422fbb1e",
+      "sequence": 3,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(\"-C\"),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 5,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_90f1244dc6416dc02002458cf8f4c54b7c6ea80c58b68eecbef15f869c35cb6f",
+      "sequence": 2,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 6,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_b3a48c4cef2172e598ec8c710dd4351af3794e3386d33ec75904ccc0811531c2",
+      "sequence": 9,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 7,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_e4b34a9ad13f7996919ee80d9f45796fade07bafa67b4760568b8b063cda3639",
+      "sequence": 6,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"-z\"),(f\"{base}{'...' if merge_base else '..'}{head}\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 8,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_f4bce0de3475dd8fe2e4fe04be3e18298a70f1297d02d9002b18ed624b9a98df",
+      "sequence": 8,
+      "path": "tools/ci_selection.py",
+      "span": {
+        "start": 2720,
+        "length": 250
+      },
+      "original": "[\r\n            git,\r\n            \"-C\",\r\n            str(root),\r\n            \"diff\",\r\n            \"--no-renames\",\r\n            \"--name-only\",\r\n            \"-z\",\r\n            f\"{base}{'...' if merge_base else '..'}{head}\",\r\n            \"--\",\r\n        ]",
+      "replacement": "[(git),(\"-C\"),(str(root)),(\"diff\"),(\"--no-renames\"),(\"--name-only\"),(\"-z\"),(\"--\"),]",
+      "operator": "container_element_delete",
+      "line": 74,
+      "column": 8,
+      "symbol": "changed_paths",
+      "file_hash": "645dfe6c8ec4d42bce8451743abc02057f9f152c049a899096a19083555e08ed",
+      "rank": 9,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    }
+  ],
+  "truncated": false,
+  "diagnostics": []
+}

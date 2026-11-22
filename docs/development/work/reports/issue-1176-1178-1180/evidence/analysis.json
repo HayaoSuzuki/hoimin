@@ -1,0 +1,959 @@
+{
+  "arms": {
+    "pbt-narrow_weak": {
+      "name": "pbt-narrow_weak",
+      "normal_seconds": 0.9456383000360802,
+      "plan_seconds": 1.3105778999743052,
+      "verify_seconds": 4.242095900001004,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 0,
+      "survived": 3
+    },
+    "pbt-broad_weak": {
+      "name": "pbt-broad_weak",
+      "normal_seconds": 0.9710907000117004,
+      "plan_seconds": 0.027106800000183284,
+      "verify_seconds": 4.228375600010622,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 2,
+      "survived": 1
+    },
+    "pbt-narrow_strong": {
+      "name": "pbt-narrow_strong",
+      "normal_seconds": 0.8307984999846667,
+      "plan_seconds": 0.024847500026226044,
+      "verify_seconds": 4.010856200009584,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 1,
+      "survived": 2
+    },
+    "pbt-broad_strong": {
+      "name": "pbt-broad_strong",
+      "normal_seconds": 0.8981719000148587,
+      "plan_seconds": 0.026508500042837113,
+      "verify_seconds": 4.001164200017229,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 3,
+      "survived": 0
+    },
+    "pbt-heldout_weak": {
+      "name": "pbt-heldout_weak",
+      "normal_seconds": 0.8299905000021681,
+      "plan_seconds": 0.02326719998382032,
+      "verify_seconds": 4.087805500021204,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 2,
+      "survived": 1
+    },
+    "pbt-heldout_strong": {
+      "name": "pbt-heldout_strong",
+      "normal_seconds": 0.9157654999871738,
+      "plan_seconds": 0.024110800004564226,
+      "verify_seconds": 4.105303000018466,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 3,
+      "survived": 0
+    },
+    "stateful-single": {
+      "name": "stateful-single",
+      "normal_seconds": 0.8288266999879852,
+      "plan_seconds": 0.027036599989514798,
+      "verify_seconds": 4.075151400000323,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 0,
+      "survived": 3
+    },
+    "stateful-history": {
+      "name": "stateful-history",
+      "normal_seconds": 0.8511298000230454,
+      "plan_seconds": 0.02634869999019429,
+      "verify_seconds": 3.9081561000202782,
+      "returncode": 0,
+      "candidates": 3,
+      "killed": 3,
+      "survived": 0
+    },
+    "resilience-happy": {
+      "name": "resilience-happy",
+      "normal_seconds": 0.8069222000194713,
+      "plan_seconds": 0.02464650000911206,
+      "verify_seconds": 7.376109300006647,
+      "returncode": 0,
+      "candidates": 7,
+      "killed": 3,
+      "survived": 4
+    },
+    "resilience-faults": {
+      "name": "resilience-faults",
+      "normal_seconds": 0.819249399995897,
+      "plan_seconds": 0.02542860002722591,
+      "verify_seconds": 7.501384900009725,
+      "returncode": 0,
+      "candidates": 7,
+      "killed": 6,
+      "survived": 1
+    },
+    "retry-happy": {
+      "name": "retry-happy",
+      "normal_seconds": 0.789226199965924,
+      "plan_seconds": 0.02562410000246018,
+      "verify_seconds": 13.26994080003351,
+      "returncode": 0,
+      "candidates": 14,
+      "killed": 0,
+      "survived": 14
+    },
+    "retry-faults": {
+      "name": "retry-faults",
+      "normal_seconds": 0.8214123999932781,
+      "plan_seconds": 0.02720800001407042,
+      "verify_seconds": 13.998560099978931,
+      "returncode": 0,
+      "candidates": 14,
+      "killed": 9,
+      "survived": 5
+    }
+  },
+  "matrix": {
+    "m1_84784410f0097882b9a297ee3dc26d9deab5568813c701f04f45c4679b7038ec": {
+      "candidate": {
+        "id": "m1_84784410f0097882b9a297ee3dc26d9deab5568813c701f04f45c4679b7038ec",
+        "sequence": 3,
+        "path": "subjects.py",
+        "span": {
+          "start": 240,
+          "length": 2
+        },
+        "original": ">=",
+        "replacement": ">",
+        "operator": "compare_order",
+        "line": 6,
+        "column": 47,
+        "symbol": "nonnegative",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "pbt-narrow_weak": "survived",
+        "pbt-broad_weak": "survived",
+        "pbt-narrow_strong": "survived",
+        "pbt-broad_strong": "killed",
+        "pbt-heldout_weak": "survived",
+        "pbt-heldout_strong": "killed"
+      }
+    },
+    "m1_dfca90bee0f743fbb6be968b5484cbe39d571740b52cb6699fed757fbdb4956f": {
+      "candidate": {
+        "id": "m1_dfca90bee0f743fbb6be968b5484cbe39d571740b52cb6699fed757fbdb4956f",
+        "sequence": 1,
+        "path": "subjects.py",
+        "span": {
+          "start": 234,
+          "length": 10
+        },
+        "original": "value >= 0",
+        "replacement": "not (value >= 0)",
+        "operator": "comprehension_filter_invert",
+        "line": 6,
+        "column": 41,
+        "symbol": "nonnegative",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "pbt-narrow_weak": "survived",
+        "pbt-broad_weak": "killed",
+        "pbt-narrow_strong": "killed",
+        "pbt-broad_strong": "killed",
+        "pbt-heldout_weak": "killed",
+        "pbt-heldout_strong": "killed"
+      }
+    },
+    "m1_96e3c55127706554e91efdb74c06d24228d8298345dc8c1d7614e5f96ce39f74": {
+      "candidate": {
+        "id": "m1_96e3c55127706554e91efdb74c06d24228d8298345dc8c1d7614e5f96ce39f74",
+        "sequence": 2,
+        "path": "subjects.py",
+        "span": {
+          "start": 234,
+          "length": 10
+        },
+        "original": "value >= 0",
+        "replacement": "True",
+        "operator": "comprehension_filter_remove",
+        "line": 6,
+        "column": 41,
+        "symbol": "nonnegative",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "pbt-narrow_weak": "survived",
+        "pbt-broad_weak": "killed",
+        "pbt-narrow_strong": "survived",
+        "pbt-broad_strong": "killed",
+        "pbt-heldout_weak": "killed",
+        "pbt-heldout_strong": "killed"
+      }
+    },
+    "m1_12b8331f03104555016dc6f92ecde931e8f2f09a9ba50270cebbdb97f1a495bf": {
+      "candidate": {
+        "id": "m1_12b8331f03104555016dc6f92ecde931e8f2f09a9ba50270cebbdb97f1a495bf",
+        "sequence": 1,
+        "path": "subjects.py",
+        "span": {
+          "start": 489,
+          "length": 26
+        },
+        "original": "self.cached.pop(key, None)",
+        "replacement": "pass",
+        "operator": "statement_delete",
+        "line": 18,
+        "column": 8,
+        "symbol": "Cache.put",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "stateful-single": "survived",
+        "stateful-history": "killed"
+      }
+    },
+    "m1_42d64d51c1af6d59fbe3ea92f90b8c3df44d9b5247788b97a69da719976b8829": {
+      "candidate": {
+        "id": "m1_42d64d51c1af6d59fbe3ea92f90b8c3df44d9b5247788b97a69da719976b8829",
+        "sequence": 2,
+        "path": "subjects.py",
+        "span": {
+          "start": 693,
+          "length": 27
+        },
+        "original": "self.storage.pop(key, None)",
+        "replacement": "pass",
+        "operator": "statement_delete",
+        "line": 26,
+        "column": 8,
+        "symbol": "Cache.delete",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "stateful-single": "survived",
+        "stateful-history": "killed"
+      }
+    },
+    "m1_a557e55ba0b2911f8dbf36a6f267624ea1b77554881a9e233fd2a26d3510f69e": {
+      "candidate": {
+        "id": "m1_a557e55ba0b2911f8dbf36a6f267624ea1b77554881a9e233fd2a26d3510f69e",
+        "sequence": 3,
+        "path": "subjects.py",
+        "span": {
+          "start": 729,
+          "length": 26
+        },
+        "original": "self.cached.pop(key, None)",
+        "replacement": "pass",
+        "operator": "statement_delete",
+        "line": 27,
+        "column": 8,
+        "symbol": "Cache.delete",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "stateful-single": "survived",
+        "stateful-history": "killed"
+      }
+    },
+    "m1_7ac37598bbbf2cc6c91f71b788716bd6955813c87a560e70ba41a3fee1cfe2f7": {
+      "candidate": {
+        "id": "m1_7ac37598bbbf2cc6c91f71b788716bd6955813c87a560e70ba41a3fee1cfe2f7",
+        "sequence": 6,
+        "path": "subjects.py",
+        "span": {
+          "start": 1168,
+          "length": 7
+        },
+        "original": "finally",
+        "replacement": "if True",
+        "operator": "finally_unwrap",
+        "line": 44,
+        "column": 4,
+        "symbol": "publish",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "resilience-happy": "killed",
+        "resilience-faults": "killed"
+      }
+    },
+    "m1_8896a5d469f8195ce74963b08db02129cff5d9d46efc80570a93960862e1bc5e": {
+      "candidate": {
+        "id": "m1_8896a5d469f8195ce74963b08db02129cff5d9d46efc80570a93960862e1bc5e",
+        "sequence": 3,
+        "path": "subjects.py",
+        "span": {
+          "start": 966,
+          "length": 20
+        },
+        "original": "backend.write(value)",
+        "replacement": "pass",
+        "operator": "statement_delete",
+        "line": 36,
+        "column": 16,
+        "symbol": "publish",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "resilience-happy": "killed",
+        "resilience-faults": "killed"
+      }
+    },
+    "m1_a77565099c4803069576db54d19ae7e09132855b33be17d2f52c2cc40243ec7e": {
+      "candidate": {
+        "id": "m1_a77565099c4803069576db54d19ae7e09132855b33be17d2f52c2cc40243ec7e",
+        "sequence": 7,
+        "path": "subjects.py",
+        "span": {
+          "start": 1185,
+          "length": 15
+        },
+        "original": "backend.close()",
+        "replacement": "pass",
+        "operator": "statement_delete",
+        "line": 45,
+        "column": 8,
+        "symbol": "publish",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "resilience-happy": "killed",
+        "resilience-faults": "killed"
+      }
+    },
+    "m1_37853636549fd5288f854071a361c6dbaeb4c048e8ee7dfc41ad92f0e6a3baa9": {
+      "candidate": {
+        "id": "m1_37853636549fd5288f854071a361c6dbaeb4c048e8ee7dfc41ad92f0e6a3baa9",
+        "sequence": 1,
+        "path": "subjects.py",
+        "span": {
+          "start": 929,
+          "length": 1
+        },
+        "original": "3",
+        "replacement": "(2)",
+        "operator": "integer_literal_neighbor",
+        "line": 34,
+        "column": 29,
+        "symbol": "publish",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "resilience-happy": "survived",
+        "resilience-faults": "killed"
+      }
+    },
+    "m1_beb7d7ba0359e509c86aff0c7b3738218f68c3f3f75cd99d363772aa76cd4b8d": {
+      "candidate": {
+        "id": "m1_beb7d7ba0359e509c86aff0c7b3738218f68c3f3f75cd99d363772aa76cd4b8d",
+        "sequence": 2,
+        "path": "subjects.py",
+        "span": {
+          "start": 929,
+          "length": 1
+        },
+        "original": "3",
+        "replacement": "(4)",
+        "operator": "integer_literal_neighbor",
+        "line": 34,
+        "column": 29,
+        "symbol": "publish",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "resilience-happy": "survived",
+        "resilience-faults": "survived"
+      }
+    },
+    "m1_8f2f05dcd4014a26a02174853375868dc5c11f48cc170f67fe534d2c719619f1": {
+      "candidate": {
+        "id": "m1_8f2f05dcd4014a26a02174853375868dc5c11f48cc170f67fe534d2c719619f1",
+        "sequence": 4,
+        "path": "subjects.py",
+        "span": {
+          "start": 1068,
+          "length": 1
+        },
+        "original": "2",
+        "replacement": "(1)",
+        "operator": "integer_literal_neighbor",
+        "line": 39,
+        "column": 30,
+        "symbol": "publish",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "resilience-happy": "survived",
+        "resilience-faults": "killed"
+      }
+    },
+    "m1_d01677e56314b3d819b4d31ea8494a79c380287d66ab28d7e8325d7c064481b1": {
+      "candidate": {
+        "id": "m1_d01677e56314b3d819b4d31ea8494a79c380287d66ab28d7e8325d7c064481b1",
+        "sequence": 5,
+        "path": "subjects.py",
+        "span": {
+          "start": 1068,
+          "length": 1
+        },
+        "original": "2",
+        "replacement": "(3)",
+        "operator": "integer_literal_neighbor",
+        "line": 39,
+        "column": 30,
+        "symbol": "publish",
+        "file_hash": "8af567f2d6f851688e1223a2366454c745a6e6584a465e7767daaece7a6c6cba"
+      },
+      "arms": {
+        "resilience-happy": "survived",
+        "resilience-faults": "killed"
+      }
+    },
+    "m1_880b7370ad7fd622e89b14cfe376c20772b546542e3645ddcd7c06b35e17eddf": {
+      "candidate": {
+        "id": "m1_880b7370ad7fd622e89b14cfe376c20772b546542e3645ddcd7c06b35e17eddf",
+        "sequence": 11,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1408,
+          "length": 322
+        },
+        "original": "LOGGER.warning(\r\n                \"%s %s publication not yet visible (HTTP 404); \"\r\n                \"retry %d/%d in %.1fs (%.1fs remaining)\",\r\n                index,\r\n                tag,\r\n                attempt,\r\n                PROPAGATION_ATTEMPTS - 1,\r\n                delay,\r\n                remaining,\r\n            )",
+        "replacement": "pass",
+        "operator": "statement_delete",
+        "line": 41,
+        "column": 12,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "survived"
+      }
+    },
+    "m1_97948438a0949fbff2d524f24f8964630c4e9842ab0497ce60f68288ef67981b": {
+      "candidate": {
+        "id": "m1_97948438a0949fbff2d524f24f8964630c4e9842ab0497ce60f68288ef67981b",
+        "sequence": 14,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1744,
+          "length": 17
+        },
+        "original": "time.sleep(delay)",
+        "replacement": "pass",
+        "operator": "statement_delete",
+        "line": 51,
+        "column": 12,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_5d1e8a6d4d31173a92c6b03a99fd89017376c78c30665fff0c060b3a3c1b8b57": {
+      "candidate": {
+        "id": "m1_5d1e8a6d4d31173a92c6b03a99fd89017376c78c30665fff0c060b3a3c1b8b57",
+        "sequence": 2,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 706,
+          "length": 1
+        },
+        "original": "0",
+        "replacement": "(1)",
+        "operator": "integer_literal_neighbor",
+        "line": 20,
+        "column": 14,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_682d6fa4038b92989b00705f48fb37d7c9c2b0decb3c7557ee2a166dd40e0417": {
+      "candidate": {
+        "id": "m1_682d6fa4038b92989b00705f48fb37d7c9c2b0decb3c7557ee2a166dd40e0417",
+        "sequence": 1,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 706,
+          "length": 1
+        },
+        "original": "0",
+        "replacement": "(-1)",
+        "operator": "integer_literal_neighbor",
+        "line": 20,
+        "column": 14,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_6db09fee23d1f0e2549dd23e3abf2ed90b1592c14bcfaff54c30d480186b5c5f": {
+      "candidate": {
+        "id": "m1_6db09fee23d1f0e2549dd23e3abf2ed90b1592c14bcfaff54c30d480186b5c5f",
+        "sequence": 3,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 745,
+          "length": 1
+        },
+        "original": "1",
+        "replacement": "(0)",
+        "operator": "integer_literal_neighbor",
+        "line": 22,
+        "column": 19,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_928a6c0095287b688701d548e03f1773da517e74747aeabd9ba688c7e7a72a78": {
+      "candidate": {
+        "id": "m1_928a6c0095287b688701d548e03f1773da517e74747aeabd9ba688c7e7a72a78",
+        "sequence": 4,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 745,
+          "length": 1
+        },
+        "original": "1",
+        "replacement": "(2)",
+        "operator": "integer_literal_neighbor",
+        "line": 22,
+        "column": 19,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_86c87a50cefa7e9785341df755abe8cf8b5e8e68bc70e305275f754f29c96d46": {
+      "candidate": {
+        "id": "m1_86c87a50cefa7e9785341df755abe8cf8b5e8e68bc70e305275f754f29c96d46",
+        "sequence": 6,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1182,
+          "length": 1
+        },
+        "original": "0",
+        "replacement": "(1)",
+        "operator": "integer_literal_neighbor",
+        "line": 33,
+        "column": 32,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "survived"
+      }
+    },
+    "m1_8e7e9dfbce85b7f27924fe14e15debcc7c008a4ca1b18cee4c8ed6ce5395abbc": {
+      "candidate": {
+        "id": "m1_8e7e9dfbce85b7f27924fe14e15debcc7c008a4ca1b18cee4c8ed6ce5395abbc",
+        "sequence": 5,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1182,
+          "length": 1
+        },
+        "original": "0",
+        "replacement": "(-1)",
+        "operator": "integer_literal_neighbor",
+        "line": 33,
+        "column": 32,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "survived"
+      }
+    },
+    "m1_0c3a0b63eadffa2556d79fd14f9b969a5fe2d8bf6e19cc55460f375d290ccfa4": {
+      "candidate": {
+        "id": "m1_0c3a0b63eadffa2556d79fd14f9b969a5fe2d8bf6e19cc55460f375d290ccfa4",
+        "sequence": 8,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1289,
+          "length": 1
+        },
+        "original": "2",
+        "replacement": "(3)",
+        "operator": "integer_literal_neighbor",
+        "line": 37,
+        "column": 39,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_a10a89b2e2dd9acaae12e1715019d028b8657b42d5f3f14a2fdf9950ebdf9f23": {
+      "candidate": {
+        "id": "m1_a10a89b2e2dd9acaae12e1715019d028b8657b42d5f3f14a2fdf9950ebdf9f23",
+        "sequence": 7,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1289,
+          "length": 1
+        },
+        "original": "2",
+        "replacement": "(1)",
+        "operator": "integer_literal_neighbor",
+        "line": 37,
+        "column": 39,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_07f086b412da8d9aa557a0069e901ee8b7a59af55e67716085a1aa60e7864038": {
+      "candidate": {
+        "id": "m1_07f086b412da8d9aa557a0069e901ee8b7a59af55e67716085a1aa60e7864038",
+        "sequence": 10,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1305,
+          "length": 1
+        },
+        "original": "1",
+        "replacement": "(2)",
+        "operator": "integer_literal_neighbor",
+        "line": 37,
+        "column": 55,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_a0c8d6df8e903e7173905e243aa88acb4b48e2490d8db2b0fb2bcb25c2e24bfb": {
+      "candidate": {
+        "id": "m1_a0c8d6df8e903e7173905e243aa88acb4b48e2490d8db2b0fb2bcb25c2e24bfb",
+        "sequence": 9,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1305,
+          "length": 1
+        },
+        "original": "1",
+        "replacement": "(0)",
+        "operator": "integer_literal_neighbor",
+        "line": 37,
+        "column": 55,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "killed"
+      }
+    },
+    "m1_37f2dcbfcd49d51733ee1c893df149cb841e4999e2c723f8e917aa8029b9cc66": {
+      "candidate": {
+        "id": "m1_37f2dcbfcd49d51733ee1c893df149cb841e4999e2c723f8e917aa8029b9cc66",
+        "sequence": 12,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1661,
+          "length": 1
+        },
+        "original": "1",
+        "replacement": "(0)",
+        "operator": "integer_literal_neighbor",
+        "line": 47,
+        "column": 39,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "survived"
+      }
+    },
+    "m1_741e9e8b582ac7ded54d1264fb3e3bd3141d1b4afed166f8c58ef084212cf4a6": {
+      "candidate": {
+        "id": "m1_741e9e8b582ac7ded54d1264fb3e3bd3141d1b4afed166f8c58ef084212cf4a6",
+        "sequence": 13,
+        "path": "retry_subject.py",
+        "span": {
+          "start": 1661,
+          "length": 1
+        },
+        "original": "1",
+        "replacement": "(2)",
+        "operator": "integer_literal_neighbor",
+        "line": 47,
+        "column": 39,
+        "symbol": "verify_with_propagation",
+        "file_hash": "810224d7df9f1338e552178654d8affe5c107630e14e7fb8eb4c79ce15328f7b"
+      },
+      "arms": {
+        "retry-happy": "survived",
+        "retry-faults": "survived"
+      }
+    }
+  },
+  "witnesses": [
+    {
+      "arm": "pbt-broad_strong",
+      "candidate_id": "m1_84784410f0097882b9a297ee3dc26d9deab5568813c701f04f45c4679b7038ec",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "5e0f8ea22c20c4b1c6a9dad75cf02c3675d64ad099877e356f1a4e2e15804f8d",
+      "seconds": 1.0139502999954857,
+      "returncode": 1,
+      "stdout": "........................................................................ [ 43%]\n............F\n================================== FAILURES ===================================\n_______________________ test_pbt_broad_strong[values84] _______________________\ntest_subject.py:57: in test_pbt_broad_strong\n    assert actual == expected\nE   assert set() == {0}\nE     \nE     Extra items in the right set:\nE     0\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_pbt_broad_strong[values84] - assert set() == {0}\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 84 passed, 479 deselected in 0.43s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "pbt-broad_strong",
+      "candidate_id": "m1_dfca90bee0f743fbb6be968b5484cbe39d571740b52cb6699fed757fbdb4956f",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "920873a3f0618b665092205825f4c2e700d4ba87a7c0c28e7b7a2eb6e2b39f1d",
+      "seconds": 0.8956738000269979,
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n_______________________ test_pbt_broad_strong[values0] ________________________\ntest_subject.py:57: in test_pbt_broad_strong\n    assert actual == expected\nE   assert set() == {1}\nE     \nE     Extra items in the right set:\nE     1\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_pbt_broad_strong[values0] - assert set() == {1}\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 479 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "pbt-broad_strong",
+      "candidate_id": "m1_96e3c55127706554e91efdb74c06d24228d8298345dc8c1d7614e5f96ce39f74",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "2ef7b04054e6456a45611e268b67e5047b5a667f3d30595f098da74fad29b6d7",
+      "seconds": 0.9654251000029035,
+      "returncode": 1,
+      "stdout": "........................................................................ [ 43%]\n.............F\n================================== FAILURES ===================================\n_______________________ test_pbt_broad_strong[values85] _______________________\ntest_subject.py:57: in test_pbt_broad_strong\n    assert actual == expected\nE   assert {-1} == set()\nE     \nE     Extra items in the left set:\nE     -1\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_pbt_broad_strong[values85] - assert {-1} == set()\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 85 passed, 479 deselected in 0.41s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "stateful-history",
+      "candidate_id": "m1_12b8331f03104555016dc6f92ecde931e8f2f09a9ba50270cebbdb97f1a495bf",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "d0818f6891795a142e61c438740825ae0583237c16c57b72ae4036ab40f24f48",
+      "seconds": 0.9450954999774694,
+      "returncode": 1,
+      "stdout": "....F\n================================== FAILURES ===================================\n_____________________ test_stateful_history[operations4] ______________________\ntest_subject.py:135: in test_stateful_history\n    assert actual == expected\nE   assert [(0, 1), (0, 1)] == [(0, 1), (0, 2)]\nE     \nE     At index 1 diff: (0, 1) != (0, 2)\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_stateful_history[operations4] - assert [(0, 1), ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed, 599 deselected in 0.40s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "stateful-history",
+      "candidate_id": "m1_42d64d51c1af6d59fbe3ea92f90b8c3df44d9b5247788b97a69da719976b8829",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "d84e1d82545b2f3af8bc4a225a194b40f414571d57e2bf3d5a180c6eb1b90a3e",
+      "seconds": 0.8816031999886036,
+      "returncode": 1,
+      "stdout": ".....F\n================================== FAILURES ===================================\n_____________________ test_stateful_history[operations5] ______________________\ntest_subject.py:135: in test_stateful_history\n    assert actual == expected\nE   AssertionError: assert [(0, 1), (0, 1)] == [(0, 1), (0, 'missing')]\nE     \nE     At index 1 diff: (0, 1) != (0, 'missing')\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_stateful_history[operations5] - AssertionError: ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 5 passed, 599 deselected in 0.35s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "stateful-history",
+      "candidate_id": "m1_a557e55ba0b2911f8dbf36a6f267624ea1b77554881a9e233fd2a26d3510f69e",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "fd13bb9bba5e6410ba2eb4ed74638616534fec71bf6146898ceb72c3a09b7a1a",
+      "seconds": 0.9115951000130735,
+      "returncode": 1,
+      "stdout": ".....F\n================================== FAILURES ===================================\n_____________________ test_stateful_history[operations5] ______________________\ntest_subject.py:135: in test_stateful_history\n    assert actual == expected\nE   AssertionError: assert [(0, 1), (0, 1)] == [(0, 1), (0, 'missing')]\nE     \nE     At index 1 diff: (0, 1) != (0, 'missing')\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_stateful_history[operations5] - AssertionError: ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 5 passed, 599 deselected in 0.37s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "resilience-faults",
+      "candidate_id": "m1_7ac37598bbbf2cc6c91f71b788716bd6955813c87a560e70ba41a3fee1cfe2f7",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "ab5df88790b8a5ec35133c003aeadb8c028082b9f97b97fd501566b65a33ebb4",
+      "seconds": 0.9245389999705367,
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n____________________________ test_resilience_happy ____________________________\ntest_subject.py:175: in test_resilience_happy\n    assert (backend.value, backend.closed, backend.attempts) == (\"new\", True, 1)\nE   AssertionError: assert ('new', False, 1) == ('new', True, 1)\nE     \nE     At index 1 diff: False != True\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_resilience_happy - AssertionError: assert ('new'...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 641 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "resilience-faults",
+      "candidate_id": "m1_8896a5d469f8195ce74963b08db02129cff5d9d46efc80570a93960862e1bc5e",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "2c5df24791caf719fc995f47290b7416177b5b5d914bc59d328740ab1711abb9",
+      "seconds": 0.9306361999479122,
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n____________________________ test_resilience_happy ____________________________\ntest_subject.py:175: in test_resilience_happy\n    assert (backend.value, backend.closed, backend.attempts) == (\"new\", True, 1)\nE   AssertionError: assert ('old', True, 0) == ('new', True, 1)\nE     \nE     At index 0 diff: 'old' != 'new'\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_resilience_happy - AssertionError: assert ('old'...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 641 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "resilience-faults",
+      "candidate_id": "m1_a77565099c4803069576db54d19ae7e09132855b33be17d2f52c2cc40243ec7e",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "358866cba4b9dd119791cd1d9c77716d9b6b7635321a59c766f6fad856cd19d8",
+      "seconds": 0.9441028999863192,
+      "returncode": 1,
+      "stdout": "F\n================================== FAILURES ===================================\n____________________________ test_resilience_happy ____________________________\ntest_subject.py:175: in test_resilience_happy\n    assert (backend.value, backend.closed, backend.attempts) == (\"new\", True, 1)\nE   AssertionError: assert ('new', False, 1) == ('new', True, 1)\nE     \nE     At index 1 diff: False != True\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_resilience_happy - AssertionError: assert ('new'...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 641 deselected in 0.38s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "resilience-faults",
+      "candidate_id": "m1_37853636549fd5288f854071a361c6dbaeb4c048e8ee7dfc41ad92f0e6a3baa9",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "1d64788b2c9f26047dcabf0823729abebac32d052087a26f4d73c6cea5da167c",
+      "seconds": 0.8911605000030249,
+      "returncode": 1,
+      "stdout": "...F\n================================== FAILURES ===================================\n_________________________ test_resilience_recovery[2] _________________________\ntest_subject.py:184: in test_resilience_recovery\n    assert (backend.value, backend.closed, backend.attempts) == (\nE   AssertionError: assert ('partial', True, 2) == ('new', True, 3)\nE     \nE     At index 0 diff: 'partial' != 'new'\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_resilience_recovery[2] - AssertionError: assert ...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 3 passed, 641 deselected in 0.35s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "resilience-faults",
+      "candidate_id": "m1_8f2f05dcd4014a26a02174853375868dc5c11f48cc170f67fe534d2c719619f1",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "43e2d01aca0fa32fb0723794da3c2517c8cb344a7cbea68d5458928f9cc84720",
+      "seconds": 0.9775911999749951,
+      "returncode": 1,
+      "stdout": "...F\n================================== FAILURES ===================================\n_________________________ test_resilience_recovery[2] _________________________\ntest_subject.py:182: in test_resilience_recovery\n    subjects.publish(backend, \"new\")\nsubjects.py:36: in publish\n    backend.write(value)\ntest_subject.py:163: in write\n    raise OSError(\"injected write failure\")\nE   OSError: injected write failure\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_resilience_recovery[2] - OSError: injected write...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 3 passed, 641 deselected in 0.38s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "resilience-faults",
+      "candidate_id": "m1_d01677e56314b3d819b4d31ea8494a79c380287d66ab28d7e8325d7c064481b1",
+      "original_sha256": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+      "mutated_sha256": "731b2bbe5f3267fd5d91de15668c18d0ef6a7116e7546c2c4016358d1ddb9d9c",
+      "seconds": 0.9037095999810845,
+      "returncode": 1,
+      "stdout": "....F\n================================== FAILURES ===================================\n_________________________ test_resilience_exhaustion __________________________\ntest_subject.py:192: in test_resilience_exhaustion\n    with pytest.raises(OSError, match=\"injected write failure\"):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   Failed: DID NOT RAISE OSError\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_resilience_exhaustion - Failed: DID NOT RAISE OS...\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 4 passed, 641 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_97948438a0949fbff2d524f24f8964630c4e9842ab0497ce60f68288ef67981b",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "5c871cf56226e3f914e085544ed85261256afda6fbc985d048dba819d030a08b",
+      "seconds": 0.8801218000007793,
+      "returncode": 1,
+      "stdout": "..F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[1] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [] == [10]\nE     \nE     Right contains one more item: 10\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 1/60 in 10.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[1] - assert [] == [10]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed, 638 deselected in 0.37s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_5d1e8a6d4d31173a92c6b03a99fd89017376c78c30665fff0c060b3a3c1b8b57",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "33d9f5dc10e49ccc991610f8408b63a9776cf9a5eb2a8c508b3af382036c6cd1",
+      "seconds": 0.9309296999708749,
+      "returncode": 1,
+      "stdout": "..F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[1] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [20] == [10]\nE     \nE     At index 0 diff: 20 != 10\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 2/60 in 20.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[1] - assert [20] == [10]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed, 638 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_682d6fa4038b92989b00705f48fb37d7c9c2b0decb3c7557ee2a166dd40e0417",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "2a8969ea54dd78236399e3149480106a9b3fd9adbfb4f7a7c8ac415a69332cdf",
+      "seconds": 0.867598699987866,
+      "returncode": 1,
+      "stdout": "..F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[1] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [5.0] == [10]\nE     \nE     At index 0 diff: 5.0 != 10\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 0/60 in 5.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[1] - assert [5.0] == [10]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed, 638 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_6db09fee23d1f0e2549dd23e3abf2ed90b1592c14bcfaff54c30d480186b5c5f",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "c447f1c48929b36ed30876ff02d962fb749f4bd4fa09575332bf4cac2b7f33b8",
+      "seconds": 0.8983987999963574,
+      "returncode": 1,
+      "stdout": "..F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[1] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [5.0] == [10]\nE     \nE     At index 0 diff: 5.0 != 10\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 0/60 in 5.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[1] - assert [5.0] == [10]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed, 638 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_928a6c0095287b688701d548e03f1773da517e74747aeabd9ba688c7e7a72a78",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "d03188990fe70e232de4c0ec3e09c9b81766761954a672078f81b9a0cb6402c6",
+      "seconds": 0.8695614999742247,
+      "returncode": 1,
+      "stdout": "..F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[1] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [20] == [10]\nE     \nE     At index 0 diff: 20 != 10\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 2/60 in 20.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[1] - assert [20] == [10]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed, 638 deselected in 0.35s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_0c3a0b63eadffa2556d79fd14f9b969a5fe2d8bf6e19cc55460f375d290ccfa4",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "d31d9191710facd068e896ecb17d18bfaf7374e8bf8b21e3ada16fec6cb86725",
+      "seconds": 0.8971072000567801,
+      "returncode": 1,
+      "stdout": "...F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[2] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [10, 30] == [10, 20]\nE     \nE     At index 1 diff: 30 != 20\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 1/60 in 10.0s (600.0s remaining)\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 2/60 in 30.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[2] - assert [10, 30] == [10, 20]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 3 passed, 638 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_a10a89b2e2dd9acaae12e1715019d028b8657b42d5f3f14a2fdf9950ebdf9f23",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "6dc08b078b54551cfc6412586623661b05f1d34366115ca3e56a1f268b0ce287",
+      "seconds": 0.9117756999912672,
+      "returncode": 1,
+      "stdout": "...F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[2] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [10, 10] == [10, 20]\nE     \nE     At index 1 diff: 10 != 20\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 1/60 in 10.0s (600.0s remaining)\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 2/60 in 10.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[2] - assert [10, 10] == [10, 20]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 3 passed, 638 deselected in 0.37s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_07f086b412da8d9aa557a0069e901ee8b7a59af55e67716085a1aa60e7864038",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "0ba65bf5f65bb3f34bdae7e462c3c984ca88985a4195642873d65976c1c773cc",
+      "seconds": 0.8913036999874748,
+      "returncode": 1,
+      "stdout": "..F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[1] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [5.0] == [10]\nE     \nE     At index 0 diff: 5.0 != 10\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 1/60 in 5.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[1] - assert [5.0] == [10]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed, 638 deselected in 0.36s\n",
+      "stderr": ""
+    },
+    {
+      "arm": "retry-faults",
+      "candidate_id": "m1_a0c8d6df8e903e7173905e243aa88acb4b48e2490d8db2b0fb2bcb25c2e24bfb",
+      "original_sha256": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+      "mutated_sha256": "6e44d52260b9a2b00ddba577c90288efd2594014ed6d17dda7b66ca45e3bccd4",
+      "seconds": 0.9054046000237577,
+      "returncode": 1,
+      "stdout": "..F\n================================== FAILURES ===================================\n___________________________ test_retry_recovery[1] ____________________________\ntest_subject.py:226: in test_retry_recovery\n    assert [call.args[0] for call in sleep.call_args_list] == expected_delays\nE   assert [20] == [10]\nE     \nE     At index 0 diff: 20 != 10\nE     Use -v to get more diff\n------------------------------ Captured log call ------------------------------\nWARNING  retry_subject:retry_subject.py:41 pypi v0.15.0 publication not yet visible (HTTP 404); retry 1/60 in 20.0s (600.0s remaining)\n=========================== short test summary info ===========================\nFAILED test_subject.py::test_retry_recovery[1] - assert [20] == [10]\n!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!\n1 failed, 2 passed, 638 deselected in 0.37s\n",
+      "stderr": ""
+    }
+  ],
+  "audit_seconds": 20.068099099968094,
+  "reset": {
+    "samples": 1000,
+    "median_ns": 300.0,
+    "max_ns": 7600,
+    "total_ns": 285700,
+    "scope": "construction of one Cache and one Backend; no external I/O"
+  },
+  "source_hashes": {
+    "corpus.json": "a926046e30b0fee9e2be6eec64183f24c6b09dffb36dccf0ec43f73f176c3549",
+    "pytest.ini": "508680afe563279b32e439d6e2a645f364dcccdc1b781b40d2df4c7438d13b5f",
+    "retry_subject.py": "02719a60cc7b60a9d24f1de4df6542c5ac5c82535d69680560b3fd3491492ae2",
+    "subjects.py": "19a8849ddb6a514139a9dae539cfae1523d3a0ed9d3064267c79255e27fc95ee",
+    "test_subject.py": "5328dc199bc20e62dd4ac25d4dd8d8ec7424228968482902d1e44da346220145"
+  }
+}

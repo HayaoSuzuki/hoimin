@@ -25,6 +25,30 @@ authorized task, following the usage guide for identity and evidence rules. Keep
 assessments separate from actual execution outcomes; they do not rewrite scores
 or suppress candidates. Do not chase a target kill ratio or exhaust every survivor.
 
+## Diagnose the test gap
+
+Before changing a test, read the bundled [test-design guide](test-design.md).
+Check existing unit, property and integration tests for the same requirement.
+If another test already detects the candidate, record that coverage and its command;
+do not count it as a new improvement. Before verifying with a broader test command,
+create a new plan; citing an existing result does not itself require a new run.
+
+For a justified gap, distinguish missing inputs from missing observations. When
+the cause is unclear, compare the original test with input-only, assertion-only,
+and combined changes within the agreed budget. Keep the requirement and selected
+candidates fixed; record interactions rather than forcing one cause per survivor.
+
+If a mock or fake intercepts the affected behavior, identify the caller/dependency
+boundary first. Compare the real local dependency and its substitute against the
+same observable contract when needed. Check specified results, exceptions and
+state changes; allow differences the contract permits. Replaced dependency internals
+need not execute in a caller unit test. An exact-call mismatch establishes a useful
+failure only when the contract requires that call, not merely because it kills more
+mutants. Start with ordinary contract tests before attributing value to mutation.
+
+Use the guide's review record to separate observed execution, proposed test changes,
+and human acceptance. Leave unmeasured costs and unreviewed proposals explicit.
+
 ## Respect resource stops
 
 Resource guards are essential to unattended local use. Check the backend and the
@@ -132,3 +156,7 @@ State the production target, test argv, plan profile and fingerprint inputs, sel
 IDs, each candidate's final status, tests added or strengthened, any replan reason, and unverified
 or truncated-away candidates with their rationale. Keep temporary manifests and reports out of the
 repository unless the user asks to retain them.
+For each proposed improvement, include the requirement, existing coverage,
+input/assertion or dependency-boundary diagnosis, intended failure evidence,
+adopt/reject/defer recommendation, and any unmeasured review or maintenance cost.
+An agent recommendation is not human acceptance.

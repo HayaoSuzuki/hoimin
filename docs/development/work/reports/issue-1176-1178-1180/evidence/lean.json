@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "C:/Users/hayao/.elan/toolchains/leanprover--lean4---v4.32.2/bin/lean.exe",
+    "-j1",
+    "-M2048",
+    "-DElab.async=false",
+    "docs\\development\\work\\reports\\issue-1176-1178-1180\\Evaluation.lean"
+  ],
+  "seconds": 1.2017935999901965,
+  "exit_code": 0,
+  "stdout": "'Evaluation.expand_inputs' does not depend on any axioms\n'Evaluation.strengthen_property' does not depend on any axioms\n'Evaluation.strong_implies_weak' depends on axioms: [propext]\n'Evaluation.interaction' depends on axioms: [propext, Quot.sound]\n'Evaluation.fresh_reads_agree' does not depend on any axioms\n'Evaluation.warm_update_detects_stale' does not depend on any axioms\n'Evaluation.normal_does_not_distinguish' depends on axioms: [propext]\n'Evaluation.retry_schedule_distinguishes' depends on axioms: [propext]\n",
+  "stderr": "",
+  "limits": {
+    "wall_seconds": 30,
+    "lean_internal_memory_mib": 2048,
+    "threads": 1,
+    "aggregate_rss_guard": false
+  }
+}

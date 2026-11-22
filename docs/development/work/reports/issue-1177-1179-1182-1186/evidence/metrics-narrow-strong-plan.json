@@ -1,0 +1,373 @@
+{
+  "schema_version": 10,
+  "kind": "plan",
+  "ranking_rule_version": 4,
+  "normalized_config": {
+    "discovery": {
+      "analyzer_timeout": {
+        "secs": 30,
+        "nanos": 0
+      }
+    },
+    "selection": {
+      "root": "C:\\Users\\hayao\\.codex\\worktrees\\research-mutations\\hoimin\\docs\\development\\work\\reports\\issue-1177-1179-1182-1186\\project",
+      "sources": [],
+      "files": [],
+      "lines": [
+        {
+          "path": "tools/ci_metrics.py",
+          "range": {
+            "start": 53,
+            "end": 56
+          }
+        }
+      ],
+      "symbols": [],
+      "changed": null,
+      "includes": [],
+      "excludes": []
+    },
+    "import_roots": [],
+    "limits": {
+      "jobs": 1,
+      "max_mutants": 24,
+      "max_candidates": 100,
+      "baseline_timeout": {
+        "secs": 15,
+        "nanos": 0
+      },
+      "mutant_timeout": {
+        "fixed": {
+          "secs": 8,
+          "nanos": 0
+        }
+      },
+      "total_timeout": {
+        "secs": 90,
+        "nanos": 0
+      },
+      "max_memory": 536870912,
+      "max_output": 262144,
+      "max_copy_size": 1073741824,
+      "max_workspace_size": 67108864,
+      "min_free_space": 10737418240,
+      "max_processes": 64
+    },
+    "test_argv": [
+      {
+        "windows": [
+          67,
+          58,
+          92,
+          85,
+          115,
+          101,
+          114,
+          115,
+          92,
+          104,
+          97,
+          121,
+          97,
+          111,
+          92,
+          46,
+          99,
+          111,
+          100,
+          101,
+          120,
+          92,
+          119,
+          111,
+          114,
+          107,
+          116,
+          114,
+          101,
+          101,
+          115,
+          92,
+          114,
+          101,
+          115,
+          101,
+          97,
+          114,
+          99,
+          104,
+          45,
+          109,
+          117,
+          116,
+          97,
+          116,
+          105,
+          111,
+          110,
+          115,
+          92,
+          104,
+          111,
+          105,
+          109,
+          105,
+          110,
+          92,
+          46,
+          118,
+          101,
+          110,
+          118,
+          92,
+          83,
+          99,
+          114,
+          105,
+          112,
+          116,
+          115,
+          92,
+          112,
+          121,
+          116,
+          104,
+          111,
+          110,
+          46,
+          101,
+          120,
+          101
+        ]
+      },
+      {
+        "windows": [
+          45,
+          109
+        ]
+      },
+      {
+        "windows": [
+          112,
+          121,
+          116,
+          101,
+          115,
+          116
+        ]
+      },
+      {
+        "windows": [
+          45,
+          113
+        ]
+      },
+      {
+        "windows": [
+          45,
+          45,
+          116,
+          98,
+          61,
+          115,
+          104,
+          111,
+          114,
+          116
+        ]
+      },
+      {
+        "windows": [
+          45,
+          120
+        ]
+      },
+      {
+        "windows": [
+          45,
+          107
+        ]
+      },
+      {
+        "windows": [
+          116,
+          101,
+          115,
+          116,
+          95,
+          97,
+          109,
+          112,
+          108,
+          105,
+          102,
+          105,
+          99,
+          97,
+          116,
+          105,
+          111,
+          110,
+          32,
+          97,
+          110,
+          100,
+          32,
+          110,
+          97,
+          114,
+          114,
+          111,
+          119,
+          45,
+          115,
+          116,
+          114,
+          111,
+          110,
+          103
+        ]
+      }
+    ],
+    "output": {
+      "metrics": null
+    },
+    "operators": [
+      "identity",
+      "collection_any_all",
+      "function_body_return_constant",
+      "comprehension_filter_invert",
+      "aggregate_sum_count"
+    ],
+    "allow_best_effort_memory": false,
+    "profile": "full",
+    "fingerprint_includes": [],
+    "fingerprint_files": [],
+    "environment": {
+      "state": "untracked"
+    },
+    "fingerprint_inputs": []
+  },
+  "sources": [
+    {
+      "path": "tools/ci_metrics.py",
+      "hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "m1_1988c9fec929a0e19feac661c1394db7d466bba64181f82a28f97d4d355d3030",
+      "sequence": 2,
+      "path": "tools/ci_metrics.py",
+      "span": {
+        "start": 1577,
+        "length": 2
+      },
+      "original": "is",
+      "replacement": "is not",
+      "operator": "identity",
+      "line": 54,
+      "column": 17,
+      "symbol": "total",
+      "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9",
+      "rank": 1,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    },
+    {
+      "id": "m1_46d6708249cde47e7a60b326c7be04b8c88070a5839439ecbb46483ca9bc60a1",
+      "sequence": 4,
+      "path": "tools/ci_metrics.py",
+      "span": {
+        "start": 1679,
+        "length": 6
+      },
+      "original": "is not",
+      "replacement": "is",
+      "operator": "identity",
+      "line": 56,
+      "column": 50,
+      "symbol": "total",
+      "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9",
+      "rank": 2,
+      "score": 400,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "high_value_control",
+          "score": 100
+        }
+      ]
+    },
+    {
+      "id": "m1_dfe21d944f6b501d0137f58cbb962d20e004c264143352ec0707446a49bcedee",
+      "sequence": 1,
+      "path": "tools/ci_metrics.py",
+      "span": {
+        "start": 1567,
+        "length": 3
+      },
+      "original": "any",
+      "replacement": "all",
+      "operator": "collection_any_all",
+      "line": 54,
+      "column": 7,
+      "symbol": "total",
+      "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9",
+      "rank": 3,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    },
+    {
+      "id": "m1_b51b960d494590366d513822beb25ff0a2516caa1f6d420c84430cd390a3595f",
+      "sequence": 3,
+      "path": "tools/ci_metrics.py",
+      "span": {
+        "start": 1644,
+        "length": 46
+      },
+      "original": "value for value in values if value is not None",
+      "replacement": "1 for _ in (value for value in values if value is not None)",
+      "operator": "aggregate_sum_count",
+      "line": 56,
+      "column": 15,
+      "symbol": "total",
+      "file_hash": "5b931128e3afa22cb05971f95d0429c062427f136da002cab66bd8c084ace8e9",
+      "rank": 4,
+      "score": 380,
+      "ranking_reasons": [
+        {
+          "code": "explicit_line",
+          "score": 300
+        },
+        {
+          "code": "behavioral",
+          "score": 80
+        }
+      ]
+    }
+  ],
+  "truncated": false,
+  "diagnostics": []
+}
