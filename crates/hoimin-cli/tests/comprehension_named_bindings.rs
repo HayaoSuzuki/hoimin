@@ -18,7 +18,14 @@ fn python() -> PathBuf {
 }
 
 async fn output(mut command: tokio::process::Command) -> std::process::Output {
-    command.kill_on_drop(true);
+    // These cases test name binding, not contention with unrelated managed roots.
+    // Keep the namespace alive until the child exits; never change process globals.
+    let runtime_temp = tempfile::tempdir().unwrap();
+    command
+        .env("TMPDIR", runtime_temp.path())
+        .env("TMP", runtime_temp.path())
+        .env("TEMP", runtime_temp.path())
+        .kill_on_drop(true);
     let output = tokio::time::timeout(Duration::from_secs(20), command.output())
         .await
         .expect("bounded child execution")

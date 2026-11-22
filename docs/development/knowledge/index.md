@@ -129,6 +129,7 @@ not a claim that every current host or commit passed the same checks:
 
 Read the conclusion and limitations before reviving a deferred feature:
 
+- [Mutation-based fault localization](../work/issue-1188-localization/README.md) - Historical Python failures, coverage comparison, bounded mutation evidence, and remaining adoption questions for #1188.
 - [Runtime performance and maintenance](../work/performance/2026-10-12-runtime-improvements.md) - Measured decisions for #813–#815 and artifact-reader/release-policy ownership for #816–#817.
 - [Second-order mutation adoption](second-order-mutation.md) - Bounded research, first-order comparison and the decision to defer composite infrastructure.
 - [Constrained mutation search and differential test generation](mutation-search.md) - Measurements on fixed functions, adopted scope, guided search and CrossHair limits.
