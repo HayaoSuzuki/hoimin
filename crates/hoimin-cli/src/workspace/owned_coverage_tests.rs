@@ -445,9 +445,11 @@ fn serialization_failure_keeps_marker_error_context() {
 #[case(LEASE_FILE)]
 #[case(HEARTBEAT_FILE)]
 fn publication_marker_collisions_roll_back_the_staging_directory(#[case] marker_name: &str) {
+    // Arrange
     let parent = tempfile::tempdir().unwrap();
     let coordinator = coordinator_in(&parent);
 
+    // Act
     let error = ManagedRunRoot::create_with_publish_hook(
         &coordinator,
         OwnerKind::PublicExecution,
@@ -458,6 +460,7 @@ fn publication_marker_collisions_roll_back_the_staging_directory(#[case] marker_
     )
     .unwrap_err();
 
+    // Assert
     assert!(matches!(
         error,
         WorkspaceError::Io {
@@ -713,6 +716,7 @@ fn cleanup_reopens_and_repairs_an_inaccessible_directory() {
 #[case(|marker: &mut LeaseMarker| marker.run_id = "different".into())]
 #[case(|marker: &mut LeaseMarker| marker.owner = OwnerKind::PublicDelivery)]
 fn stale_evidence_rejects_mismatched_heartbeat_identity(#[case] configure: fn(&mut LeaseMarker)) {
+    // Arrange
     let parent = tempfile::tempdir().unwrap();
     let dir =
         cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority()).unwrap();
@@ -725,13 +729,14 @@ fn stale_evidence_rejects_mismatched_heartbeat_identity(#[case] configure: fn(&m
     let mut marker = lease.clone();
     configure(&mut marker);
 
-    dir.write(HEARTBEAT_FILE, serde_json::to_vec(&marker).unwrap())
-        .unwrap();
+    write_owned_fixture(&dir, HEARTBEAT_FILE, &serde_json::to_vec(&marker).unwrap());
 
+    // Act
     let failure = candidate_is_stale(&dir, &lease, SystemTime::now())
         .err()
         .unwrap();
 
+    // Assert
     assert_eq!(failure.reason, JanitorReason::HeartbeatInvalid);
 }
 
@@ -749,6 +754,7 @@ fn stale_timestamp_overflow_is_unverifiable() {
 fn invalid_cleanup_ready_markers_retain_typed_diagnostics_and_fall_back_to_age(
     #[case] encode: fn(&CleanupReadyMarker) -> Vec<u8>,
 ) {
+    // Arrange
     let parent = tempfile::tempdir().unwrap();
     let dir =
         cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority()).unwrap();
@@ -759,8 +765,7 @@ fn invalid_cleanup_ready_markers_retain_typed_diagnostics_and_fall_back_to_age(
         created_unix_seconds: 0,
         owner: OwnerKind::PublicExecution,
     };
-    dir.write(HEARTBEAT_FILE, serde_json::to_vec(&marker).unwrap())
-        .unwrap();
+    write_owned_fixture(&dir, HEARTBEAT_FILE, &serde_json::to_vec(&marker).unwrap());
     let lease = create_owned_file(&dir, LEASE_FILE, OwnedFileAccess::ReadWrite).unwrap();
     let mismatched = CleanupReadyMarker {
         schema: LEASE_SCHEMA,
@@ -770,14 +775,16 @@ fn invalid_cleanup_ready_markers_retain_typed_diagnostics_and_fall_back_to_age(
         lease_inode: u64::MAX,
     };
 
-    dir.write(CLEANUP_READY_FILE, encode(&mismatched)).unwrap();
+    write_owned_fixture(&dir, CLEANUP_READY_FILE, &encode(&mismatched));
     let mut ledger = ReclaimLedger::default();
 
+    // Act
     let failure =
         candidate_is_reclaimable(&dir, &marker, &lease, SystemTime::now(), &mut ledger, path)
             .err()
             .unwrap();
 
+    // Assert
     assert_eq!(failure.reason, JanitorReason::Young);
     assert!(
         ledger
@@ -1132,9 +1139,12 @@ fn cleanup_at_checkpoint(stop_at: usize) -> CleanupCheckpointObservation {
     let parent = tempfile::tempdir().unwrap();
     let dir =
         cap_std::fs::Dir::open_ambient_dir(parent.path(), cap_std::ambient_authority()).unwrap();
-    dir.create_dir_all("root/inner").unwrap();
-    dir.write("root/inner/payload", b"payload").unwrap();
-    dir.write(format!("root/{RETAIN_FILE}"), b"marker").unwrap();
+    let root = create_owned_directory(&dir, "root").unwrap();
+    let inner = create_owned_directory(&root, "inner").unwrap();
+    write_owned_fixture(&inner, "payload", b"payload");
+    write_owned_fixture(&root, RETAIN_FILE, b"marker");
+    drop(inner);
+    drop(root);
     let identity = metadata_identity(&dir.symlink_metadata("root").unwrap());
     let checks = std::cell::Cell::new(0);
     let stopped = || {
@@ -1180,8 +1190,12 @@ fn cleanup_checkpoint_boundaries_exercise_cancellation_and_completion(
     #[case] stop_at: usize,
     #[case] expected_complete: bool,
 ) {
+    // Arrange: the case selects one cancellation checkpoint.
+
+    // Act
     let observation = cleanup_at_checkpoint(stop_at);
 
+    // Assert
     assert_eq!(
         observation
             .result
@@ -1201,8 +1215,12 @@ proptest::proptest! {
 
     #[test]
     fn cancellation_at_each_cleanup_checkpoint_preserves_exact_deletion_evidence(stop_at in 0usize..160) {
+        // Arrange: the generated case selects one cancellation checkpoint.
+
+        // Act
         let observation = cleanup_at_checkpoint(stop_at);
 
+        // Assert
         proptest::prop_assert!(observation.result.as_ref().err().is_none_or(|error| error.kind() == std::io::ErrorKind::TimedOut));
         proptest::prop_assert_eq!(observation.progress.removed_entries, u64::try_from(4 - observation.remaining).unwrap());
         proptest::prop_assert_eq!(observation.progress.root_removed, !observation.root_exists);
@@ -1975,7 +1993,8 @@ fn install_publication_marker_collision(
                     .starts_with(STAGING_PREFIX)
             })
             .unwrap();
-        fs::write(staging.path().join(marker_name), b"preexisting").unwrap();
+        let staging = open_owned_directory(&coordinator.dir, staging.file_name()).unwrap();
+        write_owned_fixture(&staging, marker_name, b"preexisting");
     }
 }
 
