@@ -5,6 +5,11 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: stdlib-contract-mutations
+  resource: ../../work/designs/2026-11-23-stdlib-contract-mutations.md
+  revision: 35df3468f4ad56dd6e4e5c1390d6802242c45d62
+  working_tree: modified
+  sha256: e4f6940cc6e6cc03a48bc8f676ae1b193c870a4d7e106853f9f42f9e187fc10d
 - id: python-behavior-mutations
   resource: ../../work/designs/2026-11-23-python-behavior-mutations.md
   working_tree: untracked
@@ -1898,3 +1903,45 @@ records this change's reviews and verification separately from historical audits
 [^python-behavior-mutations]
 
 [^python-behavior-mutations]: [Python behavior mutation expansion](../../work/designs/2026-11-23-python-behavior-mutations.md).
+
+## Standard-library contracts
+
+Private standard-library producers own callable identity, signature binding and
+behavioral changes. The collector receives a source edit, selection offset and deferred renderer;
+it does not dispatch on library or keyword names. Imported functions use existing
+family-local identity proofs. Text and codec method edits remain nominal, so a
+matching method name does not establish a builtin receiver type. The
+[operator reference](../../../user/reference/operators.md) describes applicability
+and intended effects. [^stdlib-contract-mutations]
+
+Package roots bound by unaliased sibling imports participate in write and escape
+checks without proving that the target submodule is loaded. Omitted policy
+insertions select the call line independently of the edited argument span.
+[^stdlib-contract-mutations]
+
+Family proofs first check for a possible eager top-level import before building
+heavy hazard and class-lookup indexes. Present imports still require the full
+proof. Public math float constants are safe reads; writes and module escapes
+remain hazards. URL replacements reuse a proven source-safe destination before
+falling back to a dotted import. Omitted-keyword layout has one owner, while each
+producer retains its original edit range and selection anchor.
+[^stdlib-contract-mutations]
+
+Policy changes distinguish omitted defaults, explicit Boolean literals and
+dynamic objects. Existing literal mutation owns explicit True/False changes.
+Dynamic Boolean objects must be tested when the target API requests their truth
+value, including repeated or skipped requests. A custom JSON encoder can inspect
+an option without that protocol, so explicit custom encoder classes do not
+qualify for the allow_nan adapter. [^stdlib-contract-mutations]
+
+Selection, profile and rank checks precede replacement rendering. Retained
+candidate payload is charged afterwards: one transient rendered replacement is
+outside that logical budget. Do not describe it as a bound on peak process memory.
+Render one candidate at a time with work proportional to its source call or
+expression; retain cancellation and delimiter checks. Runtime witnesses execute
+actual analyzer edits on both supported Python versions. The
+[implementation plan](../../work/plans/2026-11-23-stdlib-contract-mutations.md)
+records adoption decisions, review passes and verification scope.
+[^stdlib-contract-mutations]
+
+[^stdlib-contract-mutations]: [Standard-library contract mutations](../../work/designs/2026-11-23-stdlib-contract-mutations.md).

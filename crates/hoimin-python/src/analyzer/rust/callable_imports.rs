@@ -13,6 +13,11 @@ use ruff_python_ast::{
 use ruff_text_size::{Ranged, TextRange};
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
+thread_local! {
+    pub(super) static CLASS_LOOKUP_INDEX_BUILDS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 fn dynamic_namespace_name(name: &str) -> bool {
     super::exposes_module_namespace(name)
         || matches!(
@@ -35,6 +40,7 @@ fn dynamic_namespace_name(name: &str) -> bool {
 /// Reading these values does not expose the defining module or a callable.
 fn is_library_constant(module: &str, member: &str) -> bool {
     match module {
+        "math" => matches!(member, "pi" | "e" | "tau" | "inf" | "nan"),
         "re" => matches!(
             member,
             "A" | "ASCII"
@@ -93,13 +99,44 @@ pub(super) struct CallableImports {
     class_ranges: ContainmentIndex,
     class_lookups: HashSet<(usize, usize)>,
     first_submodule_import: Option<TextRange>,
-    preferred_module: Option<ImportSpelling>,
+    preferred_module: Option<ModuleSpelling>,
     preferred_members: HashMap<String, ImportSpelling>,
 }
 
 struct ImportSpelling {
     name: String,
     available_after: ruff_text_size::TextSize,
+}
+
+struct ModuleSpelling {
+    root: ImportSpelling,
+    package_prefix: Option<&'static str>,
+}
+
+/// Eager aliases in a destination have normalized names that are valid Python
+/// loads. Keep their spelling borrowed until the candidate is admitted.
+pub(super) enum Destination<'a> {
+    Name(&'a str),
+    Attribute(&'a str, Option<&'a str>, &'a str),
+    Import(&'a str, &'a str),
+}
+
+impl std::fmt::Display for Destination<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Name(name) => f.write_str(name),
+            Self::Attribute(module, None, member) => write!(f, "{module}.{member}"),
+            Self::Attribute(root, Some(prefix), member) => write!(f, "{root}.{prefix}.{member}"),
+            Self::Import(module, member) => {
+                // __import__ without a fromlist yields the top-level package.
+                write!(f, "__import__('{module}')")?;
+                if let Some((_, suffix)) = module.split_once('.') {
+                    write!(f, ".{suffix}")?;
+                }
+                write!(f, ".{member}")
+            }
+        }
+    }
 }
 
 impl ImportSpelling {
@@ -126,6 +163,49 @@ impl CallableImports {
         family: &'static [&'static str; 1],
     ) -> Result<Self, AnalysisCancelled> {
         Self::build_with_policy(module, cancelled, family, ImportPolicy::Family)
+    }
+
+    /// A resolved library call needs an eager top-level binding. Check only
+    /// import statements before paying for the file-wide hazard and class scans.
+    /// Builtins and negative-only alias checks have separate proof requirements.
+    pub(super) fn build_imported_family(
+        module: &ModModule,
+        cancelled: &impl Fn() -> bool,
+        family: &'static [&'static str; 1],
+    ) -> Result<Option<Self>, AnalysisCancelled> {
+        let [name] = *family;
+        let path = name.split_once('.');
+        for statement in &module.body {
+            if cancelled() {
+                return Err(AnalysisCancelled);
+            }
+            let (aliases, wanted) = match statement {
+                Stmt::Import(import) if !import.is_lazy => (&import.names, name),
+                Stmt::ImportFrom(import) if !import.is_lazy && import.level == 0 => {
+                    let source = import
+                        .module
+                        .as_ref()
+                        .map(ruff_python_ast::Identifier::as_str);
+                    if source == Some(name) {
+                        return Self::build_family(module, cancelled, family).map(Some);
+                    }
+                    let Some((_, child)) = path.filter(|(root, _)| source == Some(*root)) else {
+                        continue;
+                    };
+                    (&import.names, child)
+                }
+                _ => continue,
+            };
+            for alias in aliases {
+                if cancelled() {
+                    return Err(AnalysisCancelled);
+                }
+                if alias.name.as_str() == wanted {
+                    return Self::build_family(module, cancelled, family).map(Some);
+                }
+            }
+        }
+        Ok(None)
     }
 
     fn build_with_policy(
@@ -168,6 +248,8 @@ impl CallableImports {
         }
         scan.trusted
             .retain(|name, _| scan.bindings.get(name) == Some(&1));
+        #[cfg(test)]
+        CLASS_LOOKUP_INDEX_BUILDS.with(|count| count.set(count.get() + 1));
         let mut lookup_scan = ClassLookupScan {
             cancelled,
             cancelled_observed: false,
@@ -179,7 +261,7 @@ impl CallableImports {
             return Err(AnalysisCancelled);
         }
         let (preferred_module, preferred_members) = if policy == ImportPolicy::Family {
-            preferred_spellings(&scan.trusted, cancelled)?
+            preferred_spellings(&scan.trusted, scan.first_submodule_import, cancelled)?
         } else {
             (None, HashMap::new())
         };
@@ -223,12 +305,23 @@ impl CallableImports {
         if self.class_lookups.contains(&(start, end)) {
             return None;
         }
-        // Class compilation can mangle private names or provide implicit names
-        // such as __class__. Raw AST spelling cannot prove identity there.
-        if name.starts_with("__") && self.class_ranges.contains(start, end) {
+        if self.ambiguous_class_binding(name, range) {
             return None;
         }
         self.trusted.get(name)
+    }
+
+    /// Raw AST bindings do not account for compiler-mangled private names.
+    /// A parameter `__dst` can capture an imported `_C__dst` in class C.
+    /// Exclude potential mangled spellings as well as private/implicit names
+    /// within class-contained scopes, for both original and generated loads.
+    fn ambiguous_class_binding(&self, name: &str, range: TextRange) -> bool {
+        let private_spelling = name.starts_with("__")
+            || (name.starts_with('_') && name.contains("__") && !name.ends_with("__"));
+        private_spelling
+            && self
+                .class_ranges
+                .contains(usize::from(range.start()), usize::from(range.end()))
     }
 
     pub(super) fn resolve<'a>(&'a self, expression: &'a Expr) -> Option<ResolvedCallable<'a>> {
@@ -409,37 +502,56 @@ impl CallableImports {
             })
     }
 
-    /// Prefer an existing eager alias in this module family to a new import.
+    /// Render an existing eager alias that can be written as a Python load.
     /// The anchor is an actual load so class namespace restrictions still apply.
     pub(super) fn destination_spelling(&self, member: &str, anchor: &Expr) -> Option<String> {
+        self.destination(member, anchor)
+            .map(|dest| dest.to_string())
+    }
+
+    pub(super) fn destination<'a>(
+        &'a self,
+        member: &'a str,
+        anchor: &Expr,
+    ) -> Option<Destination<'a>> {
         let start = usize::from(anchor.start());
         let end = usize::from(anchor.end());
         if self.class_lookups.contains(&(start, end)) {
             return None;
         }
-        self.destination_spelling_at(member, anchor.start(), |local| {
-            !(local.starts_with("__") && self.class_ranges.contains(start, end))
+        self.destination_at(member, anchor.start(), |local| {
+            !self.ambiguous_class_binding(local, anchor.range())
         })
     }
 
-    /// Resolve an eager alias for a generated load after its caller proves
-    /// that the local spelling is visible at the insertion point.
+    /// Render a source-safe eager alias for a generated load after its caller
+    /// proves that the normalized name is visible at the insertion point.
     pub(super) fn destination_spelling_at(
         &self,
         member: &str,
         offset: ruff_text_size::TextSize,
         visible: impl Fn(&str) -> bool,
     ) -> Option<String> {
-        let available = |spelling: &&ImportSpelling| {
+        self.destination_at(member, offset, visible)
+            .map(|dest| dest.to_string())
+    }
+
+    fn destination_at<'a>(
+        &'a self,
+        member: &'a str,
+        offset: ruff_text_size::TextSize,
+        visible: impl Fn(&str) -> bool,
+    ) -> Option<Destination<'a>> {
+        let available = |spelling: &ImportSpelling| {
             spelling.available_after <= offset && visible(&spelling.name)
         };
-        if let Some(alias) = self.preferred_members.get(member).filter(available) {
-            Some(alias.name.clone())
+        if let Some(alias) = self.preferred_members.get(member).filter(|a| available(a)) {
+            Some(Destination::Name(&alias.name))
         } else {
             self.preferred_module
                 .as_ref()
-                .filter(available)
-                .map(|alias| format!("{}.{member}", alias.name))
+                .filter(|alias| available(&alias.root))
+                .map(|alias| Destination::Attribute(&alias.root.name, alias.package_prefix, member))
         }
     }
 
@@ -458,15 +570,25 @@ impl CallableImports {
 
 fn preferred_spellings(
     trusted: &HashMap<String, ImportedBinding>,
+    first_submodule_import: Option<TextRange>,
     cancelled: &impl Fn() -> bool,
-) -> Result<(Option<ImportSpelling>, HashMap<String, ImportSpelling>), AnalysisCancelled> {
-    let mut module: Option<ImportSpelling> = None;
+) -> Result<(Option<ModuleSpelling>, HashMap<String, ImportSpelling>), AnalysisCancelled> {
+    let mut module: Option<ModuleSpelling> = None;
     let mut members = HashMap::<String, ImportSpelling>::new();
     for (name, binding) in trusted {
         if cancelled() {
             return Err(AnalysisCancelled);
         }
-        let spelling = ImportSpelling {
+        // A normalized lookup key can lex as a hard keyword even though its
+        // original Unicode spelling was an identifier. Exclude it before
+        // ranking aliases, so another eager spelling can still be chosen.
+        if ruff_python_parser::lexer::lex(name, ruff_python_parser::Mode::Expression)
+            .next_token()
+            .is_non_soft_keyword()
+        {
+            continue;
+        }
+        let mut spelling = ImportSpelling {
             name: name.clone(),
             available_after: binding.import_range.end(),
         };
@@ -481,12 +603,22 @@ fn preferred_spellings(
                 }
                 Entry::Occupied(_) => {}
             }
-        } else if binding.package_prefix.is_none()
-            && module
+        } else {
+            if binding.package_prefix.is_some() {
+                let Some(loaded) = first_submodule_import else {
+                    continue;
+                };
+                spelling.available_after = spelling.available_after.max(loaded.end());
+            }
+            if module
                 .as_ref()
-                .is_none_or(|previous| spelling.order() < previous.order())
-        {
-            module = Some(spelling);
+                .is_none_or(|previous| spelling.order() < previous.root.order())
+            {
+                module = Some(ModuleSpelling {
+                    root: spelling,
+                    package_prefix: binding.package_prefix,
+                });
+            }
         }
     }
     Ok((module, members))
@@ -747,6 +879,11 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
             return false;
         };
         if imported != module && imported != package {
+            // An unaliased sibling binds the package root. Its uses may
+            // invalidate this family's proof, but it does not load our member.
+            if !aliased && local == package {
+                self.module_names.insert(local.to_owned());
+            }
             return false;
         }
         self.import(local, module, None, range, eager);

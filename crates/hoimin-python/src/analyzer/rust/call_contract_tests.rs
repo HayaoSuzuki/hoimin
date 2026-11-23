@@ -353,3 +353,33 @@ fn wide_signature_binding_waits_for_an_argument_candidate(
     assert_eq!(output.candidates.len(), expected);
     assert_eq!(SIGNATURE_BINDINGS.get(), expected);
 }
+#[rstest::rstest]
+#[case::sibling_only("import urllib.response\nurllib.parse.quote(s)", false)]
+#[case::aliased_sibling(
+    "import urllib.response as r\nfrom urllib.parse import quote as q\nexpose(r)\nq(s)",
+    true
+)]
+#[case::sibling_root_escape(
+    "import urllib.response\nfrom urllib.parse import quote as q\nexpose(urllib)\nq(s)",
+    false
+)]
+fn sibling_package_identity(#[case] source: &str, #[case] trusted: bool) {
+    // Arrange
+    let parsed = ruff_python_parser::parse_module(source).unwrap();
+    let module = parsed.syntax();
+    let call = module
+        .body
+        .last()
+        .unwrap()
+        .as_expr_stmt()
+        .unwrap()
+        .value
+        .as_call_expr()
+        .unwrap();
+    // Act
+    let imports =
+        callable_imports::CallableImports::build_family(module, &|| false, &["urllib.parse"])
+            .unwrap();
+    // Assert
+    assert_eq!(imports.resolve(&call.func).is_some(), trusted);
+}

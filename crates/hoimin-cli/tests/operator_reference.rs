@@ -220,10 +220,10 @@ fn website_publishes_the_actual_command_help(#[case] subcommand: Option<&str>) {
     "import asyncio\nasyncio.gather(task, return_exceptions=False)\n",
     &[]
 )]
-#[case::strict_encoding_excluded(
+#[case::strict_encoding_to_ignore(
     "encoding_errors_ignore",
     "text.encode('ascii', errors='strict')\n",
-    &[]
+    &["text.encode('ascii', errors='ignore')\n"]
 )]
 fn reference_example_has_the_documented_candidate(
     #[case] id: &str,

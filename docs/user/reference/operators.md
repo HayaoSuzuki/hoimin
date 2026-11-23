@@ -749,18 +749,157 @@ async/unpacking targets, nested scope crossings, the matched loop's `else`, and
 positional-only/keyword-only/variadic parameters are excluded. An added getter
 closure and sentinel object change defaults/closure metadata and traceback shape.
 
+### `unicode_digit_predicate_swap`
+
+Exchanges a no-argument `isdecimal()`, `isdigit()` or `isnumeric()` call
+with either of the other predicates. Superscript two (`²`) is a digit but
+has no decimal value. One-half (`½`) has a numeric value and fails both
+`isdigit()` and `isdecimal()`. Method names are matched syntactically,
+so custom receivers may expose different behavior.
+
+### `unicode_digit_ascii`
+
+Narrows each of those three predicates to ASCII. For example, fullwidth
+two (`２`) passes `isdigit()` and fails the narrowed check. A generated
+lambda evaluates the receiver once, calls the original predicate and calls
+`isascii()` only when the predicate succeeds. This also applies to custom
+receivers and can expose an additional method lookup, frame or reference lifetime.
+
+### `unicode_normalization_form`
+
+Changes a recognized normalization form in `unicodedata.normalize` or
+`unicodedata.is_normalized` along one axis. For example, NFC can become
+NFD (decomposition) or NFKC (compatibility). The analyzer uses the decoded
+form of a string literal and accepts trusted module and direct import aliases.
+
+### `unicode_normalization_remove`
+
+Returns the supplied text from `unicodedata.normalize(form, text)`. The
+mutation evaluates the original callee, form and text in order. The synthetic
+call omits the normalization function's type and form validation, and can
+change frame and temporary-reference lifetimes.
+
+### `string_casefold_lower`
+
+Exchanges `s.casefold()` and `s.lower()`. For example, case folding maps
+German sharp s (`ß`) to `ss`, while lowercasing keeps `ß`. A custom receiver
+with either method name also qualifies.
+
+### `string_affix_strip`
+
+Exchanges `removeprefix(prefix)` and `lstrip(prefix)`, or
+`removesuffix(suffix)` and `rstrip(suffix)`. Removing the prefix `ab`
+from `ababaX` yields `abaX`. Stripping the character set `ab` yields
+`X`. A single positional argument is required. Custom methods can match.
+
 ### `encoding_errors_ignore`
 
-`data.decode("utf-8", errors="surrogateescape")` → an `errors="ignore"` policy
-is one example. Probe preservation versus loss of undecodable bytes and round-trip
-behavior. Requires a supported encoding/decoding method shape with the explicit
-literal `"surrogateescape"` policy; `"strict"` and dynamic policies are excluded.
-Simple method receivers are recognized syntactically, without proving their type.
+Changes the error policy of an encoding or decoding call to `ignore`.
+For example, `data.decode('utf-8')` silently discards invalid byte
+sequences under the mutation. An explicit policy expression still evaluates
+at its original position. The rule accepts simple method receivers, matched
+by name, and trusted `codecs.encode` or `codecs.decode` aliases.
 
-Trusted `codecs.encode`/`decode` import aliases also qualify. Computed receivers,
-positional `errors`, unpacking, implicitly concatenated strings and formatted
-string policies are excluded. Uncertain imported codecs bindings are not treated
-as nominal methods.
+### `encoding_errors_replace`
+
+Changes the encoding or decoding error policy to `replace`. Invalid UTF-8
+then decodes to replacement characters. This operator and
+`encoding_errors_ignore` handle omitted, positional and keyword policies.
+Both skip a literal policy already equal to the destination.
+
+### `encoding_errors_strict`
+
+Changes an explicit encoding or decoding policy to `strict`. Invalid input
+can now raise an exception. All three encoding operators preserve evaluation
+of dynamic policies and reject unpacked arguments, duplicate slots and
+uncertain imported codec identities.
+
+### `map_strict_toggle`
+
+Adds `strict=True` to builtin `map` calls with at least two explicit
+iterables. Unequal lengths then raise `ValueError` during iteration.
+A dynamic strict option is inverted when `map` tests its truth value.
+
+### `batched_strict_toggle`
+
+Adds `strict=True` to `itertools.batched`, or inverts a dynamic strict
+option at iterator construction. Consuming a final incomplete batch can
+then raise `ValueError`.
+
+### `url_quote_swap`
+
+Exchanges `urllib.parse.quote` with `quote_plus`, or `unquote` with
+`unquote_plus`, in either direction. With default arguments, quoting
+`a b/c` produces `a%20b/c` or `a+b%2Fc`. When decoding, the plus
+variant interprets a literal plus sign as a space.
+
+Direct imports reuse a proven destination alias or module when available,
+otherwise a guarded builtin import. The conservative resolver can omit a
+candidate when its preferred alias is unavailable in the current scope, even
+if another alias could work; it does not search every alternate binding.
+Class-contained private names and possible compiler-mangled spellings are
+excluded when their imported identity cannot be established.
+
+### `url_query_policy`
+
+Toggles `doseq` in `urllib.parse.urlencode`, which controls expansion
+of sequence values into repeated fields. In `parse_qs` and `parse_qsl`,
+toggles `keep_blank_values`. A dynamic policy is tested each time the
+parser needs a decision, including zero times for a query without blank
+fields.
+
+### `base64_validate_toggle`
+
+Toggles `validate` on `base64.b64decode`. Strict validation rejects
+characters outside the accepted alphabet that permissive decoding may
+discard. Python 3.15 uses strict validation by default when `ignorechars`
+is supplied, so the mutation inserts `validate=False` in that case.
+
+### `json_allow_nan_toggle`
+
+Toggles `allow_nan` on `json.dump` and `json.dumps`. With the default
+encoder, adding `allow_nan=False` causes serialization of NaN or
+infinity to raise `ValueError`. Calls must omit `cls` or pass literal
+`None`. For all Boolean option operators in this group, explicit
+`True` and `False` remain covered by `boolean_literal`.
+
+### `math_isclose_tolerance`
+
+Sets one tolerance in `math.isclose` to `0.0`. Each explicit tolerance
+gets its own candidate unless the analyzer recognizes a zero. A dynamic tolerance
+expression still evaluates once in its original position. The operator
+adds `rel_tol=0.0` when the call omits the relative
+tolerance. The default absolute tolerance is already zero.
+For example, `math.isclose(0, 1e-10, abs_tol=1e-9)` changes from `True`
+to `False` when the absolute tolerance becomes zero.
+
+### `math_precision_loss`
+
+Changes `math.expm1(x)` to `math.exp(x) - 1` or `math.log1p(x)` to
+`math.log(1 + x)`. Both mutations evaluate `x` once. At `x = 1e-16`,
+floating-point rounding gives zero for both expanded expressions.
+
+For a direct import such as `from math import expm1 as tiny`, Hoimin
+needs a way to call `exp`. It can use another trusted import alias or
+the unshadowed builtin import function. A Unicode alias that normalizes
+to a reserved keyword cannot supply the generated name. Hoimin skips
+the candidate if it cannot resolve a usable destination.
+
+### `statistics_sample_population`
+
+Exchanges `statistics.variance` with `pvariance`, or `statistics.stdev`
+with `pstdev`, in either direction. When you supply the center by keyword,
+the mutation translates `xbar` to `mu` or vice versa and keeps the
+original argument order. For `[1, 2, 3]`, sample variance is `1` and
+population variance is `2/3`.
+
+### `heap_pushpop_replace`
+
+Exchanges `heapq.heappushpop` with `heapq.heapreplace` in either
+direction. Given the heap `[5, 9]` and the item `3`, `heappushpop`
+returns `3` and leaves `[5, 9]`. The `heapreplace` mutation returns
+`5` and leaves `[3, 9]`. On an empty heap, `heappushpop` returns the
+supplied item and `heapreplace` raises `IndexError`.
 
 ### `base_order_shuffle`
 

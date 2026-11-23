@@ -66,6 +66,8 @@ mod optional_keywords;
 mod return_tuple;
 #[path = "rust/selection.rs"]
 mod selection;
+#[path = "rust/stdlib_contracts.rs"]
+mod stdlib_contracts;
 #[path = "rust/string_literals.rs"]
 mod string_literals;
 #[path = "rust/string_segments.rs"]
@@ -3371,6 +3373,7 @@ const CALL_CONTRACT_BUILTINS: &[&str] = &[
     "type",
     "range",
     "zip",
+    "map",
     "ascii",
     "bin",
     "callable",
@@ -3507,7 +3510,7 @@ struct AstCandidateCollector<'a, F> {
     string_exclusions: string_literals::Exclusions,
     enum_index: &'a enum_members::EnumIndex,
     dataclass_factories: &'a dataclass_factory::DataclassFactories,
-    followup_calls: &'a followup_calls::Imports,
+    stdlib_contracts: &'a stdlib_contracts::Imports,
     optional_functions: &'a optional_keywords::FunctionIndex<'a>,
     call_contracts: &'a call_contracts::Contracts,
     collections: &'a collection_processing::Collections,
@@ -3601,7 +3604,8 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         };
         let dataclass_factories =
             dataclass_factory::DataclassFactories::build(module, request.operators, cancelled)?;
-        let followup_calls = followup_calls::Imports::build(module, request.operators, cancelled)?;
+        let stdlib_contracts =
+            stdlib_contracts::Imports::build(module, request.operators, cancelled)?;
         let additional_signatures = [
             MutationOperator::CallArgumentSwap,
             MutationOperator::CallResultDefault,
@@ -3622,39 +3626,40 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         } else {
             optional_keywords::FunctionIndex::default()
         };
-        let delimiters = if [
-            MutationOperator::ContextExitOmit,
-            MutationOperator::ContextExitResultNegate,
-            MutationOperator::YieldStatementRemove,
-            MutationOperator::AugmentedToBinary,
-            MutationOperator::ZipStrictToggle,
-            MutationOperator::RangeBoundNeighbor,
-            MutationOperator::ReturnTupleSwap,
-            MutationOperator::IntegerLiteralNeighbor,
-            MutationOperator::FloatLiteralNeighbor,
-            MutationOperator::StructureIndexNeighbor,
-            MutationOperator::StructureSliceNeighbor,
-            MutationOperator::FStringFormatSpecRemove,
-            MutationOperator::ConditionalBranchSwap,
-            MutationOperator::ConditionConstant,
-            MutationOperator::ConditionClauseDelete,
-            MutationOperator::AwaitRemove,
-            MutationOperator::DictUnpackOrderSwap,
-            MutationOperator::DictUnpackDelete,
-            MutationOperator::DelRemove,
-            MutationOperator::CallArgumentSwap,
-            MutationOperator::CallResultDefault,
-            MutationOperator::ComprehensionFilterInvert,
-            MutationOperator::FilterPredicateSwap,
-            MutationOperator::AggregateSumCount,
-            MutationOperator::RegexMatchBoundary,
-            MutationOperator::RoundingFunctionSwap,
-            MutationOperator::RoundDigitsRemove,
-            MutationOperator::DecimalRoundingModeSwap,
-            MutationOperator::IntermediateRoundingRemove,
-        ]
-        .into_iter()
-        .any(|op| request.operators.contains(op))
+        let delimiters = if stdlib_contracts::needs_delimiter_index(request.operators)
+            || [
+                MutationOperator::ContextExitOmit,
+                MutationOperator::ContextExitResultNegate,
+                MutationOperator::YieldStatementRemove,
+                MutationOperator::AugmentedToBinary,
+                MutationOperator::ZipStrictToggle,
+                MutationOperator::RangeBoundNeighbor,
+                MutationOperator::ReturnTupleSwap,
+                MutationOperator::IntegerLiteralNeighbor,
+                MutationOperator::FloatLiteralNeighbor,
+                MutationOperator::StructureIndexNeighbor,
+                MutationOperator::StructureSliceNeighbor,
+                MutationOperator::FStringFormatSpecRemove,
+                MutationOperator::ConditionalBranchSwap,
+                MutationOperator::ConditionConstant,
+                MutationOperator::ConditionClauseDelete,
+                MutationOperator::AwaitRemove,
+                MutationOperator::DictUnpackOrderSwap,
+                MutationOperator::DictUnpackDelete,
+                MutationOperator::DelRemove,
+                MutationOperator::CallArgumentSwap,
+                MutationOperator::CallResultDefault,
+                MutationOperator::ComprehensionFilterInvert,
+                MutationOperator::FilterPredicateSwap,
+                MutationOperator::AggregateSumCount,
+                MutationOperator::RegexMatchBoundary,
+                MutationOperator::RoundingFunctionSwap,
+                MutationOperator::RoundDigitsRemove,
+                MutationOperator::DecimalRoundingModeSwap,
+                MutationOperator::IntermediateRoundingRemove,
+            ]
+            .into_iter()
+            .any(|op| request.operators.contains(op))
         {
             source_delimiters::DelimiterDepth::build(
                 facts.tokens.expect("checked parse"),
@@ -3664,6 +3669,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             source_delimiters::DelimiterDepth::default()
         };
         let builtins = if [
+            MutationOperator::MathPrecisionLoss,
+            MutationOperator::StatisticsSamplePopulation,
+            MutationOperator::HeapPushpopReplace,
+            MutationOperator::MapStrictToggle,
+            MutationOperator::UrlQuoteSwap,
             MutationOperator::ContextExitOmit,
             MutationOperator::ZipStrictToggle,
             MutationOperator::RangeBoundNeighbor,
@@ -3755,7 +3765,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             },
             enum_index: &enum_index,
             dataclass_factories: &dataclass_factories,
-            followup_calls: &followup_calls,
+            stdlib_contracts: &stdlib_contracts,
             return_scope: ReturnScope::Excluded,
             enclosing_body: EnclosingBody::Module,
             comparison_scope: ComparisonReturnScope::Excluded,
@@ -5834,8 +5844,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     dynamic_boundaries::call(
                         call,
                         self.processing_site,
-                        |range, operator, render| {
-                            self.add_deferred_candidate(range, operator, range, render);
+                        |range, anchor, operator, render| {
+                            self.add_deferred_candidate_at(range, operator, range, anchor, render);
                             !self.check_cancelled()
                         },
                     );
@@ -5844,11 +5854,18 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     }
                     let sorted_builtin = matches!(call.func.as_ref(), Expr::Name(name)
                         if name.id.as_str() == "sorted" && self.facts.name_resolution.resolution(usize::from(name.start()), "sorted") == NameResolution::DefinitelyBuiltin);
-                    let calls = self.followup_calls;
+                    self.stdlib_contracts.emit(
+                        call,
+                        self.processing_site,
+                        |range, anchor, operator, render| {
+                            self.add_deferred_candidate_at(range, operator, range, anchor, render);
+                            !self.check_cancelled()
+                        },
+                    );
                     let facts = self.facts;
                     let line_index = self.line_index;
                     let selection = self.selection;
-                    calls.emit(
+                    followup_calls::emit(
                         call,
                         self.source,
                         self.facts.tokens.expect("parser tokens are set"),

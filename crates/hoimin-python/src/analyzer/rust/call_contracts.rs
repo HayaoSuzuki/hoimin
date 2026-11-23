@@ -52,8 +52,10 @@ impl Contracts {
         let mut escapes = Vec::new();
         if [ESCAPE, SWAP].into_iter().any(|op| operators.contains(op)) {
             for family in [&["re"], &["html"], &["urllib.parse"]] {
-                if has_import_family(module, family[0], cancelled)? {
-                    escapes.push(CallableImports::build_family(module, cancelled, family)?);
+                if let Some(imports) =
+                    CallableImports::build_imported_family(module, cancelled, family)?
+                {
+                    escapes.push(imports);
                 }
             }
         }
@@ -325,43 +327,6 @@ impl StaticSignature {
     fn positional_keyword_name(self, index: usize) -> Option<&'static str> {
         (index >= self.positional_only && index < self.positional).then(|| self.names[index])
     }
-}
-
-fn has_import_family(
-    module: &ModModule,
-    name: &str,
-    cancelled: &impl Fn() -> bool,
-) -> Result<bool, AnalysisCancelled> {
-    let package = name.split_once('.').map_or(name, |(package, _)| package);
-    for statement in &module.body {
-        if cancelled() {
-            return Err(AnalysisCancelled);
-        }
-        match statement {
-            Stmt::Import(import) if !import.is_lazy => {
-                for alias in &import.names {
-                    if cancelled() {
-                        return Err(AnalysisCancelled);
-                    }
-                    if [name, package].contains(&alias.name.as_str()) {
-                        return Ok(true);
-                    }
-                }
-            }
-            Stmt::ImportFrom(import)
-                if !import.is_lazy
-                    && import.level == 0
-                    && import
-                        .module
-                        .as_ref()
-                        .is_some_and(|source| [name, package].contains(&source.as_str())) =>
-            {
-                return Ok(true);
-            }
-            _ => {}
-        }
-    }
-    Ok(false)
 }
 
 fn explicit_arguments(call: &ExprCall, cancelled: &impl Fn() -> bool) -> bool {

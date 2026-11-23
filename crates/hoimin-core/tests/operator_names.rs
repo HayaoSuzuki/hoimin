@@ -246,6 +246,47 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::EncodingErrorsIgnore,
         "encoding_errors_ignore",
     ),
+    (
+        MutationOperator::UnicodeDigitPredicateSwap,
+        "unicode_digit_predicate_swap",
+    ),
+    (MutationOperator::UnicodeDigitAscii, "unicode_digit_ascii"),
+    (
+        MutationOperator::UnicodeNormalizationForm,
+        "unicode_normalization_form",
+    ),
+    (
+        MutationOperator::UnicodeNormalizationRemove,
+        "unicode_normalization_remove",
+    ),
+    (
+        MutationOperator::StringCasefoldLower,
+        "string_casefold_lower",
+    ),
+    (MutationOperator::StringAffixStrip, "string_affix_strip"),
+    (
+        MutationOperator::EncodingErrorsReplace,
+        "encoding_errors_replace",
+    ),
+    (MutationOperator::MapStrictToggle, "map_strict_toggle"),
+    (
+        MutationOperator::BatchedStrictToggle,
+        "batched_strict_toggle",
+    ),
+    (MutationOperator::UrlQuoteSwap, "url_quote_swap"),
+    (MutationOperator::UrlQueryPolicy, "url_query_policy"),
+    (
+        MutationOperator::Base64ValidateToggle,
+        "base64_validate_toggle",
+    ),
+    (
+        MutationOperator::JsonAllowNanToggle,
+        "json_allow_nan_toggle",
+    ),
+    (
+        MutationOperator::EncodingErrorsStrict,
+        "encoding_errors_strict",
+    ),
     (MutationOperator::BaseOrderShuffle, "base_order_shuffle"),
     (
         MutationOperator::OverrideMethodDelete,
@@ -381,6 +422,16 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::YieldStatementRemove,
         "yield_statement_remove",
     ),
+    (
+        MutationOperator::MathIscloseTolerance,
+        "math_isclose_tolerance",
+    ),
+    (MutationOperator::MathPrecisionLoss, "math_precision_loss"),
+    (
+        MutationOperator::StatisticsSamplePopulation,
+        "statistics_sample_population",
+    ),
+    (MutationOperator::HeapPushpopReplace, "heap_pushpop_replace"),
 ];
 
 const FAMILIES: [&str; 12] = [
@@ -500,60 +551,78 @@ const FAMILIES: [&str; 12] = [
 #[case::mutationoperator_sortkeyswap_99(98)]
 #[case::mutationoperator_lambdacapturelate_100(99)]
 #[case::mutationoperator_encodingerrorsignore_101(100)]
-#[case::mutationoperator_baseordershuffle_102(101)]
-#[case::mutationoperator_overridemethoddelete_103(102)]
-#[case::mutationoperator_supercallmove_104(103)]
-#[case::finally_unwrap(104)]
-#[case::match_case_delete(105)]
-#[case::match_guard_constant(106)]
-#[case::match_or_alternative_delete(107)]
-#[case::statement_order_swap(108)]
-#[case::stdlib_escape_remove(109)]
-#[case::call_argument_swap(110)]
-#[case::call_result_default(111)]
-#[case::comprehension_filter_remove(112)]
-#[case::comprehension_filter_invert(113)]
-#[case::filter_predicate_swap(114)]
-#[case::set_union_intersection_swap(115)]
-#[case::aggregate_sum_count(116)]
-#[case::rounding_function_swap(117)]
-#[case::round_digits_remove(118)]
-#[case::decimal_rounding_mode_swap(119)]
-#[case::decimal_quantum_shift(120)]
-#[case::decimal_context_precision(121)]
-#[case::intermediate_rounding_remove(122)]
-#[case::regex_match_boundary(123)]
-#[case::regex_character_set(124)]
-#[case::regex_ascii_mode(125)]
-#[case::float_literal_neighbor(126)]
-#[case::bytes_literal_empty(127)]
-#[case::fstring_format_spec_remove(128)]
-#[case::fstring_format_value_neighbor(129)]
-#[case::conditional_branch_swap(130)]
-#[case::await_remove(131)]
-#[case::dict_unpack_order_swap(132)]
-#[case::dict_unpack_delete(133)]
-#[case::del_remove(134)]
-#[case::exception_handler_swap(135)]
-#[case::exception_cause_omit(136)]
-#[case::match_case_swap(137)]
-#[case::match_pattern_wildcard(138)]
-#[case::match_class_position_swap(139)]
-#[case::augmented_to_binary(140)]
-#[case::assignment_target_swap(141)]
-#[case::return_value_none(142)]
-#[case::identity_equality_swap(143)]
-#[case::else_suite_remove(144)]
-#[case::zip_strict_toggle(145)]
-#[case::range_bound_neighbor(146)]
-#[case::compare_direction(147)]
-#[case::regex_quantifier_neighbor(148)]
-#[case::regex_greediness_toggle(149)]
-#[case::regex_alternative_delete(150)]
-#[case::fstring_format_option_swap(151)]
-#[case::context_exit_omit(152)]
-#[case::context_exit_result_negate(153)]
-#[case::yield_statement_remove(154)]
+#[case::unicode_digit_predicate_swap(101)]
+#[case::unicode_digit_ascii(102)]
+#[case::unicode_normalization_form(103)]
+#[case::unicode_normalization_remove(104)]
+#[case::string_casefold_lower(105)]
+#[case::string_affix_strip(106)]
+#[case::encoding_errors_replace(107)]
+#[case::map_strict_toggle(108)]
+#[case::batched_strict_toggle(109)]
+#[case::url_quote_swap(110)]
+#[case::url_query_policy(111)]
+#[case::base64_validate_toggle(112)]
+#[case::json_allow_nan_toggle(113)]
+#[case::encoding_errors_strict(114)]
+#[case::base_order_shuffle(115)]
+#[case::override_method_delete(116)]
+#[case::super_call_move(117)]
+#[case::finally_unwrap(118)]
+#[case::match_case_delete(119)]
+#[case::match_guard_constant(120)]
+#[case::match_or_alternative_delete(121)]
+#[case::statement_order_swap(122)]
+#[case::stdlib_escape_remove(123)]
+#[case::call_argument_swap(124)]
+#[case::call_result_default(125)]
+#[case::comprehension_filter_remove(126)]
+#[case::comprehension_filter_invert(127)]
+#[case::filter_predicate_swap(128)]
+#[case::set_union_intersection_swap(129)]
+#[case::aggregate_sum_count(130)]
+#[case::rounding_function_swap(131)]
+#[case::round_digits_remove(132)]
+#[case::decimal_rounding_mode_swap(133)]
+#[case::decimal_quantum_shift(134)]
+#[case::decimal_context_precision(135)]
+#[case::intermediate_rounding_remove(136)]
+#[case::regex_match_boundary(137)]
+#[case::regex_character_set(138)]
+#[case::regex_ascii_mode(139)]
+#[case::float_literal_neighbor(140)]
+#[case::bytes_literal_empty(141)]
+#[case::fstring_format_spec_remove(142)]
+#[case::fstring_format_value_neighbor(143)]
+#[case::conditional_branch_swap(144)]
+#[case::await_remove(145)]
+#[case::dict_unpack_order_swap(146)]
+#[case::dict_unpack_delete(147)]
+#[case::del_remove(148)]
+#[case::exception_handler_swap(149)]
+#[case::exception_cause_omit(150)]
+#[case::match_case_swap(151)]
+#[case::match_pattern_wildcard(152)]
+#[case::match_class_position_swap(153)]
+#[case::augmented_to_binary(154)]
+#[case::assignment_target_swap(155)]
+#[case::return_value_none(156)]
+#[case::identity_equality_swap(157)]
+#[case::else_suite_remove(158)]
+#[case::zip_strict_toggle(159)]
+#[case::range_bound_neighbor(160)]
+#[case::compare_direction(161)]
+#[case::regex_quantifier_neighbor(162)]
+#[case::regex_greediness_toggle(163)]
+#[case::regex_alternative_delete(164)]
+#[case::fstring_format_option_swap(165)]
+#[case::context_exit_omit(166)]
+#[case::context_exit_result_negate(167)]
+#[case::yield_statement_remove(168)]
+#[case::math_isclose_tolerance(169)]
+#[case::math_precision_loss(170)]
+#[case::statistics_sample_population(171)]
+#[case::heap_pushpop_replace(172)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

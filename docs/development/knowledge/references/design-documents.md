@@ -5,6 +5,11 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: stdlib-contract-mutations
+  resource: ../../work/designs/2026-11-23-stdlib-contract-mutations.md
+  revision: 35df3468f4ad56dd6e4e5c1390d6802242c45d62
+  working_tree: modified
+  sha256: e4f6940cc6e6cc03a48bc8f676ae1b193c870a4d7e106853f9f42f9e187fc10d
 - id: python-behavior-mutations
   resource: ../../work/designs/2026-11-23-python-behavior-mutations.md
   working_tree: untracked
@@ -1934,3 +1939,13 @@ These records distinguish design decisions, intermediate findings and the final 
 | [Python behavior mutation expansion](../../work/designs/2026-11-23-python-behavior-mutations.md) [^python-behavior-mutations] | Fifteen opt-out IDs and four existing-operator extensions, with operand, protocol, lexical and bounded-discovery contracts |
 
 [^python-behavior-mutations]: [Python behavior mutation expansion](../../work/designs/2026-11-23-python-behavior-mutations.md).
+
+## Standard-library contract mutations
+
+The design records the adopted operators, API identity and evaluation contracts:
+
+| Original | Scope |
+| --- | --- |
+| [Standard-library contract mutations](../../work/designs/2026-11-23-stdlib-contract-mutations.md) [^stdlib-contract-mutations] | Unicode, string, iterator, codec, URL, numerical and serialization contracts; default opt-out policy and deferred candidates |
+
+[^stdlib-contract-mutations]: [Standard-library contract mutations](../../work/designs/2026-11-23-stdlib-contract-mutations.md).

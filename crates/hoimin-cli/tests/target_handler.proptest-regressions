@@ -1,0 +1,4 @@
+# This seed generated directory = "env", filename = "a" before the strategy
+# was restricted to eligible, portable paths. Keep it to catch regressions in
+# the round-trip property's input domain.
+cc b4b67675103b79d7cb5480af21b1e86a8de55255cee39b4ea8dbed93ea22bcb9

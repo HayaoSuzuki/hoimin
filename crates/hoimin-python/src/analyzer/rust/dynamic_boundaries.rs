@@ -1,8 +1,8 @@
 //! Integer position mutations and call options for statically resolved builtins.
 use super::numeric_literals;
-use super::processing_calls::{Site, implicit_generator_interior};
+use super::processing_calls::Site;
 use hoimin_core::MutationOperator;
-use ruff_python_ast::token::{TokenKind, parenthesized_range};
+use ruff_python_ast::token::parenthesized_range;
 use ruff_python_ast::{AnyNodeRef, Expr, ExprCall, ExprSubscript};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
@@ -62,7 +62,7 @@ impl RangeBound {
 pub(super) fn call(
     call: &ExprCall,
     site: &Site<'_>,
-    mut emit: impl FnMut(TextRange, MutationOperator, &dyn Fn() -> String) -> bool,
+    mut emit: impl FnMut(TextRange, TextSize, MutationOperator, &dyn Fn() -> String) -> bool,
 ) {
     if site.supports(MutationOperator::ZipStrictToggle)
         && site.builtins.resolves(&call.func, "zip", site)
@@ -72,74 +72,33 @@ pub(super) fn call(
     if site.supports(MutationOperator::RangeBoundNeighbor)
         && site.builtins.resolves(&call.func, "range", site)
     {
-        range_neighbors(call, site, &mut emit);
+        range_neighbors(call, site, &mut |r, op, render| {
+            emit(r, r.start(), op, render)
+        });
     }
 }
 
 fn zip_strict(
     call: &ExprCall,
     site: &Site<'_>,
-    emit: &mut impl FnMut(TextRange, MutationOperator, &dyn Fn() -> String) -> bool,
+    emit: &mut impl FnMut(TextRange, TextSize, MutationOperator, &dyn Fn() -> String) -> bool,
 ) {
-    let operator = MutationOperator::ZipStrictToggle;
-    match call.arguments.keywords.as_ref() {
-        [] => {
-            if let Some(interior) = implicit_generator_interior(call) {
-                if site.delimiters.can_enclose(interior, 1)
-                    && let Some(generator) = site.text(interior)
-                {
-                    emit(interior, operator, &|| {
-                        format!("({generator}), strict=True")
-                    });
-                }
-                return;
-            }
-            let range = call.arguments.range();
-            let closing = range.end() - TextSize::new(1);
-            let prefix = TextRange::new(range.start(), closing);
-            let last = site
-                .tokens()
-                .in_range(prefix)
-                .iter()
-                .rev()
-                .find(|token| (site.cancelled)() || !token.kind().is_trivia());
-            if !(site.cancelled)()
-                && let (Some(last), Some(text)) = (last, site.text(prefix))
-            {
-                let comma = if matches!(last.kind(), TokenKind::Comma | TokenKind::Lpar) {
-                    ""
-                } else {
-                    ", "
-                };
-                emit(range, operator, &|| format!("{text}{comma}strict=True)"));
-            }
-        }
+    let policy = match call.arguments.keywords.as_ref() {
+        [] => None,
         [keyword] if keyword.arg.as_ref().is_some_and(|name| name == "strict") => {
-            let range = keyword.value.range();
-            // BooleanLiteral already generates the same behavior change.
-            if !keyword.value.is_boolean_literal_expr()
-                && site.delimiters.can_enclose(range, 2)
-                && site.delimiters.room_before(range.start(), 5)
-                && let Some(flag) = site.text(range)
-            {
-                // A literal tuple's metatype is the builtin type constructor.
-                // Keep the original flag through iterator creation, but clear
-                // its holder while testing truth so a traceback cannot keep a
-                // failed temporary alive through the synthetic frame.
-                emit(range, operator, &|| {
-                    format!(
-                        "().__class__.__class__('_HoiminStrict', (), {{\
-                         '__slots__': ('flag',), \
-                         '__init__': lambda self, value: self.__setattr__('flag', [value]), \
-                         '__bool__': lambda self: self.flag.extend((self.flag[-1], not self.flag.pop())) \
-                         or self.flag.pop()}})(({flag}))"
-                    )
-                });
-            }
+            Some(&keyword.value)
         }
-        // Unknown/duplicate keywords cannot establish whether strict is omitted.
-        _ => {}
-    }
+        _ => return,
+    };
+    super::stdlib_contracts::boolean_policy(
+        call,
+        site,
+        MutationOperator::ZipStrictToggle,
+        "strict",
+        false,
+        policy,
+        emit,
+    );
 }
 
 fn range_neighbors(
