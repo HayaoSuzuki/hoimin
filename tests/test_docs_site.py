@@ -3,18 +3,79 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import create_autospec
 
 import markdown
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from pytest_mock import MockerFixture
 
 from tools import docs_site
 from tools.docs_site import RepositoryLinks, rewrite_url
 
 REVISION = "a" * 40
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("/docs/user/guides/usage.md", "docs/usage.md"),
+        (
+            "/docs/user/guides/usage.md?mode=plain#mutation-operators",
+            "docs/usage.md?mode=plain#mutation-operators",
+        ),
+        ("/docs/user/guides/%75sage.md", "docs/usage.md"),
+    ],
+    ids=["published", "query-and-fragment", "encoded"],
+)
+def test_repository_root_link_uses_publication_map(
+    tmp_path: Path, url: str, expected: str
+) -> None:
+    # Arrange
+    target = tmp_path / "docs/user/guides/usage.md"
+    target.parent.mkdir(parents=True)
+    target.write_text("# Usage", encoding="utf-8")
+
+    # Act
+    result = rewrite_url(tmp_path, tmp_path / "README.md", url, REVISION)
+
+    # Assert
+    assert result == expected
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["/../outside.md", "/%2e%2e/outside.md", "/docs/../../outside.md"],
+    ids=["parent", "encoded-parent", "nested-escape"],
+)
+def test_repository_root_link_rejects_escape(tmp_path: Path, url: str) -> None:
+    # Arrange
+    source = tmp_path / "README.md"
+
+    # Act / Assert
+    with pytest.raises(ValueError, match="escapes repository"):
+        rewrite_url(tmp_path, source, url, REVISION)
+
+
+@given(parts=st.lists(st.from_regex(r"[a-z]{1,8}", fullmatch=True), max_size=5))
+def test_repository_root_target_is_independent_of_source_directory(
+    parts: list[str],
+) -> None:
+    # Arrange
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        (root / "LICENSE").write_text("License", encoding="utf-8")
+        source = root.joinpath(*parts, "guide.md")
+
+        # Act
+        result = rewrite_url(root, source, "/LICENSE#terms", REVISION)
+
+        # Assert
+        assert result == f"{docs_site.REPOSITORY}/blob/{REVISION}/LICENSE#terms"
 
 
 def test_site_renders_code_inside_numbered_steps() -> None:

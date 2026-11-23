@@ -16,7 +16,7 @@ use hoimin_core::{
 #[command(
     name = "hoimin",
     version,
-    after_help = include_str!("../docs/root-help.txt").trim_end()
+    after_help = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/root-help.txt")).trim_end()
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -313,7 +313,7 @@ struct RawPlanArgs {
             .multiple(false)
             .args(["candidate_ids", "top", "sample"])
     ),
-    after_help = include_str!("../docs/verify-help.txt").trim_end()
+    after_help = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/verify-help.txt")).trim_end()
 )]
 struct RawVerifyArgs {
     /// Path to a manifest saved by hoimin plan.
@@ -626,7 +626,10 @@ fn operator_help() -> String {
         }
     }
     let mut help = format!(
-        include_str!("../docs/operator-help.txt"),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/operator-help.txt"
+        )),
         version = env!("CARGO_PKG_VERSION")
     );
     help.push('\n');

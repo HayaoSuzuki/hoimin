@@ -2,11 +2,11 @@
 
 # CLI reference
 
-Source: [Rust CLI definitions](../../../crates/hoimin-cli/src/cli.rs).
+Source: [Rust CLI definitions](/crates/hoimin-cli/src/cli.rs).
 
 Regenerate with `cargo run --locked -p hoimin-cli --example generate_cli_reference`; append ` -- --check` to verify without writing.
 
-See the [usage guide](../guides/usage.md) for examples, OS-specific resource limits,
+See the [usage guide](/docs/user/guides/usage.md) for examples, OS-specific resource limits,
 plan/verify inheritance and validation beyond Clap. Conditional requirements
 and numeric parser bounds have no general stable Clap reflection API; their
 help text and the manual guide remain authoritative. The metadata below lists
@@ -1358,8 +1358,8 @@ Usage: hoimin help help
 
 Use this index to check each operator's default state and selector families.
 The option explanations below are the same text as in run/plan --help.
-See the [operator reference](operators.md) for examples and applicability,
-and [choose operators](../guides/usage.md#mutation-operators) for workflow and version guidance.
+See the [operator reference](/docs/user/reference/operators.md) for examples and applicability,
+and [choose operators](/docs/user/guides/usage.md#mutation-operators) for workflow and version guidance.
 
 Rows marked **yes** are enabled by default. A dash in the family column means
 that the ID has no family alias.

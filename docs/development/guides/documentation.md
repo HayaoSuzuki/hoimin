@@ -53,6 +53,20 @@ moving a published source. New pages without a legacy path use their source path
 The rendering plugin resolves each staged page back to its repository source so
 relative links still resolve from the source's actual directory.
 
+Markdown links can also start at the repository root: use
+`/docs/user/guides/usage.md` for a document or `/crates/hoimin-cli/src/cli.rs`
+for source code. This follows GitHub's repository-root link convention and avoids
+counting parent directories when sharing or moving text. The site resolver maps
+published documents to their established site URLs and pins other repository
+links to the build's source commit. Queries and fragments are preserved.
+
+These source links are distinct from `/hoimin/` URLs, which address the published
+site. Raw HTML links still address rendered output paths. Relative Markdown links
+remain supported. After decoding a source link, the resolver checks its resolved
+target stays inside the repository; emitted local links must stay inside the site.
+Removing parent components is an authoring convention, not a substitute for those
+boundary checks or a sandbox for untrusted build inputs.
+
 ## Regular updates
 
 Edit the existing Markdown in this repository and open a PR. The documentation

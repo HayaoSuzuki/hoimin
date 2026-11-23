@@ -2245,7 +2245,11 @@ renaming a command does not require a separate string-based lookup. Keep the roo
 footer as navigation to command help; Clap owns each command's option inventory.
 
 The fragments use LF checkouts and remain inside the CLI crate for source
-distribution builds. Only the navigation fragment's `{version}` and the reference
+distribution builds. Compile-time includes use `CARGO_MANIFEST_DIR` as their root,
+so relocating a Rust source file does not change which document is embedded.
+Markdown source links use `/docs/...` or `/crates/...` from the repository root;
+the site resolver maps them to publication URLs and checks containment.
+Only the navigation fragment's `{version}` and the reference
 introduction's `{regenerate}` are Rust format arguments; no template engine or
 runtime document read is involved. After changing a doc comment or fragment,
 regenerate the reference with the commands above.

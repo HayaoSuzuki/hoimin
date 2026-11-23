@@ -1,5 +1,5 @@
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use clap::{Arg, ArgAction, Command, Parser};
 
@@ -45,7 +45,10 @@ fn render(mut command: Command) -> String {
     let mut output = String::from("<!-- Generated; do not edit by hand. -->\n\n");
     write!(
         output,
-        include_str!("../docs/cli-reference.md"),
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/cli-reference.md"
+        )),
         regenerate = REGENERATE
     )
     .unwrap();
@@ -187,8 +190,17 @@ fn update(path: &Path, text: &str, check: bool) -> Result<(), String> {
 
 fn main() -> Result<(), String> {
     let args = GenerateArgs::parse();
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user/reference/cli.md");
-    update(&path, &render_reference(), args.check)
+    update(&reference_path(), &render_reference(), args.check)
+}
+
+/// The development generator writes into the workspace's documentation root.
+/// The CLI crate lives directly under `crates/`; this is not a runtime lookup.
+fn reference_path() -> PathBuf {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("the CLI crate belongs to the repository's crates directory");
+    repository.join("docs/user/reference/cli.md")
 }
 
 fn render_reference() -> String {
@@ -212,7 +224,10 @@ fn render_operator_index(output: &mut String) {
     writeln!(
         output,
         "\n{}",
-        include_str!("../docs/operator-selection.md")
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/operator-selection.md"
+        ))
     )
     .unwrap();
     for arg in hoimin_cli::cli::operator_selection_arguments() {
@@ -249,7 +264,11 @@ fn render_operator_index(output: &mut String) {
     writeln!(
         output,
         "\n{}",
-        include_str!("../docs/selector-families.md").trim_end()
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/selector-families.md"
+        ))
+        .trim_end()
     )
     .unwrap();
     for (family, members) in families {
@@ -306,9 +325,7 @@ mod tests {
         ] {
             assert!(text.contains(expected), "missing {expected}");
         }
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../docs/user/reference/cli.md");
-        super::update(&path, &text, true).unwrap();
+        super::update(&super::reference_path(), &text, true).unwrap();
         assert!(!text.contains(env!("CARGO_MANIFEST_DIR")));
     }
 

@@ -390,6 +390,84 @@ observable design investment, not a claim about a quantified time budget.
 The score concerns these interfaces, not the entire repository or a proof that
 handwritten operator explanations can never drift from implementation.
 
+## Document roots revision
+
+Scope: the help documents and their generator, plus the existing site resolver
+needed to publish root-relative Markdown links. Other historical documents keep
+their valid relative links. This is a maintainability change, not a confirmed
+path-traversal vulnerability fix: embedded files use compile-time literals, and
+the site already resolves paths and rejects repository/output escapes.
+
+Design reviews:
+
+1. Trust: distinguish fixed Rust includes, Markdown source references and emitted
+   site URLs. A parent component alone does not cross a security boundary.
+2. Root: use Cargo's crate root for compile-time fragments and the repository root
+   for Markdown source links, including `/docs/...` and `/crates/...`.
+3. Compatibility: GitHub supports repository-root links; retain the site's
+   publication map and `/hoimin/` emitted-URL convention. No custom URL scheme.
+4. Ownership: keep resolution and containment in the existing site resolver;
+   centralize the generator's output location rather than adding a path framework.
+5. Limits: canonical containment remains required after URL decoding. Trusted
+   checkout/build behavior is not a sandbox for concurrently hostile source trees.
+
+Implementation-plan reviews:
+
+1. Add parameterized root-link success/escape cases and a property checking that
+   changing the source directory cannot change an unpublished root-link target.
+2. Observe missing root-link support, then add it before the existing resolved-path
+   containment check. Preserve external URLs, queries, anchors and legacy links.
+3. Use manifest-root includes for six fragments and a single output-path helper
+   in the generator. Keep runtime help independent of the working directory.
+4. Convert the shared Markdown fragments to root references, regenerate the CLI
+   reference and document source-root versus published-URL semantics.
+5. Run focused parameterized/property checks, CLI/site/archive validation and
+   independent review, then update this PR and verify its final CI commit.
+
+Implementation reviews:
+
+1. Each embedded document uses Cargo's manifest root with a fixed suffix. No
+   runtime document lookup, environment override or user-supplied filename exists.
+2. `reference_path()` owns the development generator's workspace-layout knowledge;
+   generation and freshness checks use the same output. It is not a confinement
+   mechanism and does not change runtime CLI behavior.
+3. Root-relative Markdown paths enter the existing decode/resolve/containment
+   pipeline. Published pages still use the allowlist and publication-path map;
+   other repository targets remain revision-pinned GitHub links.
+4. Project-site URLs, external URLs, query strings, fragments and legacy relative
+   links retain their existing meanings. Raw HTML continues to address output
+   paths rather than Markdown source paths.
+5. Independent review found no actionable defects and no unnecessary framework.
+   The contributor guide explains the two source roots and the separate emitted
+   URL namespace. No claim is made that changing spelling creates a sandbox.
+
+Test reviews:
+
+1. The three root-link publication cases failed before the resolver change and
+   pass afterward. They cover ordinary, encoded, and query/fragment references.
+2. Three parameterized escape cases confirm containment after decoding, including
+   encoded parent components and traversal through a nested directory.
+3. A Hypothesis property varies source-directory depth and names while requiring
+   the same root target. The documentation dependency group explicitly includes
+   the already-locked Hypothesis dependency; no package version changed.
+4. All 116 Python documentation/skill/archive tests and 236 CLI configuration,
+   26 reference and 10 generator tests pass. Strict site build validates the actual
+   converted links; existing binary tests exercise help without document files.
+5. Clippy, formatting, Ruff, focused ty checks, reference freshness and diff checks
+   pass. Independent source review agrees on the boundaries; final hosted checks
+   cover the new PR commit. This is not a full security audit or a claim about
+   hostile concurrent modifications to the build checkout.
+
+Design score: **10/10 for this revision; eight qualitative diagnostics pass and
+none fail**. Responsibilities, simple interfaces, hidden layout knowledge,
+documented contracts, design review, ownership, discoverable boundaries and
+observable design investment are retained. Exact time allocation is not measured.
+
+Reference behavior was checked against Rust's
+[`include_str!` documentation](https://doc.rust-lang.org/std/macro.include_str.html)
+and GitHub's
+[repository-root link convention](https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#relative-links).
+
 ## Documentation Audit: operator help and reference
 
 **Score:** 9/10 — ready for review. **Shippable:** yes.

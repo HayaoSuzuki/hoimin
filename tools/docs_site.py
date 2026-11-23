@@ -76,6 +76,11 @@ def project_path(url: str) -> str | None:
 
 
 def rewrite_url(root: Path, source: Path, url: str, revision: str) -> str:
+    """Resolve source links within the repository before mapping publication URLs.
+
+    A leading slash names the repository root, as on GitHub. Project-site URLs
+    retain their emitted-path meaning and are checked after HTML generation.
+    """
     parsed = urlsplit(url)
     # Site URLs use emitted paths, checked against generated HTML after the build.
     if project_path(url) is not None:
@@ -95,6 +100,8 @@ def rewrite_url(root: Path, source: Path, url: str, revision: str) -> str:
         target = root / unquote(parsed.path)
     elif parsed.scheme or parsed.netloc or not parsed.path:
         return url
+    elif parsed.path.startswith("/"):
+        target = root / unquote(parsed.path[1:])
     else:
         target = source.parent / unquote(parsed.path)
     target = target.resolve()
