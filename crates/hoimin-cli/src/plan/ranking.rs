@@ -338,6 +338,14 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::DataclassFactoryShare
         | MutationOperator::SortKeySwap
         | MutationOperator::EncodingErrorsIgnore
+        | MutationOperator::UnicodeDigitPredicateSwap
+        | MutationOperator::UnicodeDigitAscii
+        | MutationOperator::UnicodeNormalizationForm
+        | MutationOperator::UnicodeNormalizationRemove
+        | MutationOperator::StringCasefoldLower
+        | MutationOperator::StringAffixStrip
+        | MutationOperator::EncodingErrorsReplace
+        | MutationOperator::EncodingErrorsStrict
         | MutationOperator::ItertoolsTakeDropSwap
         | MutationOperator::FStringConversionSwap
         | MutationOperator::BisectBoundarySwap

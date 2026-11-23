@@ -749,18 +749,70 @@ async/unpacking targets, nested scope crossings, the matched loop's `else`, and
 positional-only/keyword-only/variadic parameters are excluded. An added getter
 closure and sentinel object change defaults/closure metadata and traceback shape.
 
+### `unicode_digit_predicate_swap`
+
+Exchanges a no-argument `isdecimal()`, `isdigit()` or `isnumeric()` call
+with either of the other predicates. Superscript two (`²`) is a digit but
+has no decimal value. One-half (`½`) has a numeric value and fails both
+`isdigit()` and `isdecimal()`. Method names are matched syntactically,
+so custom receivers may expose different behavior.
+
+### `unicode_digit_ascii`
+
+Narrows each of those three predicates to ASCII. For example, fullwidth
+two (`２`) passes `isdigit()` and fails the narrowed check. A generated
+lambda evaluates the receiver once, calls the original predicate and calls
+`isascii()` only when the predicate succeeds. This also applies to custom
+receivers and can expose an additional method lookup, frame or reference lifetime.
+
+### `unicode_normalization_form`
+
+Changes a recognized normalization form in `unicodedata.normalize` or
+`unicodedata.is_normalized` along one axis. For example, NFC can become
+NFD (decomposition) or NFKC (compatibility). The analyzer uses the decoded
+form of a string literal and accepts trusted module and direct import aliases.
+
+### `unicode_normalization_remove`
+
+Returns the supplied text from `unicodedata.normalize(form, text)`. The
+mutation evaluates the original callee, form and text in order. The synthetic
+call omits the normalization function's type and form validation, and can
+change frame and temporary-reference lifetimes.
+
+### `string_casefold_lower`
+
+Exchanges `s.casefold()` and `s.lower()`. For example, case folding maps
+German sharp s (`ß`) to `ss`, while lowercasing keeps `ß`. A custom receiver
+with either method name also qualifies.
+
+### `string_affix_strip`
+
+Exchanges `removeprefix(prefix)` and `lstrip(prefix)`, or
+`removesuffix(suffix)` and `rstrip(suffix)`. Removing the prefix `ab`
+from `ababaX` yields `abaX`. Stripping the character set `ab` yields
+`X`. A single positional argument is required. Custom methods can match.
+
 ### `encoding_errors_ignore`
 
-`data.decode("utf-8", errors="surrogateescape")` → an `errors="ignore"` policy
-is one example. Probe preservation versus loss of undecodable bytes and round-trip
-behavior. Requires a supported encoding/decoding method shape with the explicit
-literal `"surrogateescape"` policy; `"strict"` and dynamic policies are excluded.
-Simple method receivers are recognized syntactically, without proving their type.
+Changes the error policy of an encoding or decoding call to `ignore`.
+For example, `data.decode('utf-8')` silently discards invalid byte
+sequences under the mutation. An explicit policy expression still evaluates
+at its original position. The rule accepts simple method receivers, matched
+by name, and trusted `codecs.encode` or `codecs.decode` aliases.
 
-Trusted `codecs.encode`/`decode` import aliases also qualify. Computed receivers,
-positional `errors`, unpacking, implicitly concatenated strings and formatted
-string policies are excluded. Uncertain imported codecs bindings are not treated
-as nominal methods.
+### `encoding_errors_replace`
+
+Changes the encoding or decoding error policy to `replace`. Invalid UTF-8
+then decodes to replacement characters. This operator and
+`encoding_errors_ignore` handle omitted, positional and keyword policies.
+Both skip a literal policy already equal to the destination.
+
+### `encoding_errors_strict`
+
+Changes an explicit encoding or decoding policy to `strict`. Invalid input
+can now raise an exception. All three encoding operators preserve evaluation
+of dynamic policies and reject unpacked arguments, duplicate slots and
+uncertain imported codec identities.
 
 ### `base_order_shuffle`
 

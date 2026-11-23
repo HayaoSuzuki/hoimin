@@ -185,20 +185,7 @@ fn encoding_errors_ignore_accepts_methods_and_trusted_codecs_aliases(#[case] sou
 #[case::result_a_b_decode_errors_surrogateescape(
     "result = (a + b).decode(errors='surrogateescape')\n"
 )]
-#[case::result_data_decode_utf_8_surrogateescape(
-    "result = data.decode('utf-8', 'surrogateescape')\n"
-)]
 #[case::result_data_decode_errors_ignore("result = data.decode(errors='ignore')\n")]
-#[case::result_data_decode_errors_surrogate_escape(
-    "result = data.decode(errors='surrogate' 'escape')\n"
-)]
-#[case::result_data_decode_errors_f_surrogateescape(
-    "result = data.decode(errors=f'surrogateescape')\n"
-)]
-#[case::result_data_decode_errors_b_surrogateescape(
-    "result = data.decode(errors=b'surrogateescape')\n"
-)]
-#[case::result_data_decode_errors_policy("result = data.decode(errors=policy)\n")]
 #[case::result_data_decode_errors_surrogateescape_options(
     "result = data.decode(errors='surrogateescape', **options)\n"
 )]
@@ -329,27 +316,6 @@ fn followup_calls_honor_selection_profiles_and_candidate_limit() {
     false,
     1
 )]
-#[case(
-    "encoding_errors_ignore",
-    "data.decode(errors='surrogateescape')\n",
-    0,
-    true,
-    0
-)]
-#[case(
-    "encoding_errors_ignore",
-    "data.decode(errors='surrogateescape')\n",
-    2,
-    true,
-    0
-)]
-#[case(
-    "encoding_errors_ignore",
-    "data.decode(errors='surrogateescape')\n",
-    usize::MAX,
-    false,
-    1
-)]
 fn followup_call_builders_honor_cancellation_and_emit_stop(
     #[case] operator: &str,
     #[case] source: &str,
@@ -357,13 +323,11 @@ fn followup_call_builders_honor_cancellation_and_emit_stop(
     #[case] accept: bool,
     #[case] expected_emissions: usize,
 ) {
-    use super::super::followup_calls::Imports;
     use hoimin_core::MutationOperatorSelection;
     use std::cell::Cell;
     let operators: MutationOperatorSelection =
         serde_json::from_value(serde_json::json!([operator])).unwrap();
     let parsed = super::parse_module(source).unwrap();
-    let imports = Imports::build(parsed.syntax(), &operators, &|| false).unwrap();
     let call = parsed.syntax().body[0]
         .as_expr_stmt()
         .unwrap()
@@ -372,7 +336,7 @@ fn followup_call_builders_honor_cancellation_and_emit_stop(
         .unwrap();
     let emitted = Cell::new(0);
     let polls = Cell::new(0);
-    assert!(!imports.emit(
+    assert!(!super::super::followup_calls::emit(
         call,
         source,
         parsed.tokens(),
@@ -395,7 +359,7 @@ fn followup_call_builders_honor_cancellation_and_emit_stop(
 #[case("sort_key_swap", "sorted(rows, key=lambda row: (row.a, row.b))\n")]
 #[case("encoding_errors_ignore", "data.decode(errors='surrogateescape')\n")]
 fn followup_call_index_build_rejects_cancellation(#[case] operator: &str, #[case] source: &str) {
-    use super::super::followup_calls::Imports;
+    use super::super::stdlib_contracts::Imports;
     use hoimin_core::MutationOperatorSelection;
     let operators: MutationOperatorSelection =
         serde_json::from_value(serde_json::json!([operator])).unwrap();

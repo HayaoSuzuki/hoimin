@@ -228,7 +228,7 @@ fn observe_attempt(
     let (candidates, failure) = prefix_for_state(&budget, state);
     let enum_index = enum_members::EnumIndex::default();
     let dataclass_factories = dataclass_factory::DataclassFactories::default();
-    let followup_calls = followup_calls::Imports::default();
+    let stdlib_contracts = stdlib_contracts::Imports::default();
     let optional_functions = optional_keywords::FunctionIndex::default();
     let call_contracts = call_contracts::Contracts::default();
     let collections = collection_processing::Collections::default();
@@ -257,7 +257,7 @@ fn observe_attempt(
         string_exclusions: string_literals::Exclusions::build(module, &cancelled).unwrap(),
         enum_index: &enum_index,
         dataclass_factories: &dataclass_factories,
-        followup_calls: &followup_calls,
+        stdlib_contracts: &stdlib_contracts,
         optional_functions: &optional_functions,
         operator_imports: OperatorImports::default(),
         behavior_imports: BehaviorImports::default(),
