@@ -1,5 +1,5 @@
 use std::ffi::OsString;
-use std::fmt;
+use std::fmt::{self, Write as _};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
@@ -7,15 +7,16 @@ use camino::Utf8PathBuf;
 use clap::{ArgGroup, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use hoimin_core::{
     CommandArg, ConfigError, LineRange, LineSelection, MutationOperatorSelection, MutationProfile,
-    OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
+    MutationSelector, OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
+    SymbolSelection,
 };
 
+/// Bounded mutation testing for focused Python changes.
 #[derive(Debug, Parser)]
 #[command(
     name = "hoimin",
     version,
-    about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --metrics <PATH> --session --resume"
+    after_help = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/root-help.txt")).trim_end()
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -29,8 +30,10 @@ struct RootCli {
 )]
 enum Command {
     /// Run mutation tests for an explicitly selected target.
+    #[command(after_help = operator_help())]
     Run(RunArgs),
     /// Discover mutation candidates without executing tests.
+    #[command(after_help = operator_help())]
     Plan(RawPlanArgs),
     /// Execute one or more candidates using settings from a previously generated plan.
     Verify(RawVerifyArgs),
@@ -117,6 +120,34 @@ impl From<ProfileArg> for MutationProfile {
 }
 
 #[derive(Debug, Args)]
+struct OperatorSelectionArgs {
+    /// Select mutation operator IDs or selector families; repeatable or comma-delimited.
+    ///
+    /// Omit --operators to use the default runtime set. An explicit selection
+    /// replaces that set. Selecting a family includes all its listed members,
+    /// including opt-in IDs. --exclude-operators is applied afterward.
+    #[arg(long, value_delimiter = ',')]
+    operators: Vec<String>,
+
+    /// Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+    ///
+    /// Remove the named IDs or every member of the named families after the default
+    /// or explicit --operators selection. At least one operator must remain selected.
+    #[arg(long, value_delimiter = ',')]
+    exclude_operators: Vec<String>,
+}
+
+/// Reflects the selection argument group used by both mutation commands.
+/// Documentation consumes these definitions without finding fields by string IDs.
+#[must_use]
+pub fn operator_selection_arguments() -> Vec<clap::Arg> {
+    OperatorSelectionArgs::augment_args(clap::Command::new("selection"))
+        .get_arguments()
+        .cloned()
+        .collect()
+}
+
+#[derive(Debug, Args)]
 struct RawMutationArgs {
     /// Project root used to resolve relative paths.
     #[arg(long, default_value = ".", value_name = "DIR")]
@@ -174,17 +205,12 @@ struct RawMutationArgs {
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
 
-    /// Include only named mutation operators; omit for the default runtime set. Repeatable or comma-delimited.
-    #[arg(long, value_delimiter = ',')]
-    operators: Vec<String>,
+    #[command(flatten)]
+    operator_selection: OperatorSelectionArgs,
 
     /// Candidate-selection profile.
     #[arg(long, value_enum, default_value_t = ProfileArg::Full)]
     profile: ProfileArg,
-
-    /// Exclude named mutation operators; may be repeated or comma-delimited.
-    #[arg(long, value_delimiter = ',')]
-    exclude_operators: Vec<String>,
 
     /// Maximum concurrently active workers.
     #[arg(long, default_value_t = 1)]
@@ -287,7 +313,7 @@ struct RawPlanArgs {
             .multiple(false)
             .args(["candidate_ids", "top", "sample"])
     ),
-    after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
+    after_help = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/docs/verify-help.txt")).trim_end()
 )]
 struct RawVerifyArgs {
     /// Path to a manifest saved by hoimin plan.
@@ -582,21 +608,44 @@ impl TryFrom<Command> for ParsedCommand {
 /// Usage/help use the trusted product name even when the executable is renamed.
 #[must_use]
 pub fn root_command() -> clap::Command {
-    let operator_roster = operator_help();
-    RootCli::command()
-        .bin_name("hoimin")
-        .mut_subcommand("run", |command| command.after_help(operator_roster.clone()))
-        .mut_subcommand("plan", |command| command.after_help(operator_roster))
+    RootCli::command().bin_name("hoimin")
 }
 
 fn operator_help() -> String {
-    let names = MutationOperatorSelection::valid_names();
-    let rows = names
-        .chunks(4)
-        .map(|row| row.join(", "))
-        .collect::<Vec<_>>()
-        .join("\n  ");
-    format!("Mutation operator IDs and selector families:\n  {rows}")
+    let defaults = MutationOperatorSelection::default();
+    let mut default_ids = Vec::new();
+    let mut opt_in_ids = Vec::new();
+    let mut families = Vec::new();
+    for selector in MutationOperatorSelection::selectors() {
+        match selector {
+            MutationSelector::Operator(operator) if defaults.contains(operator) => {
+                default_ids.push(operator.as_str());
+            }
+            MutationSelector::Operator(operator) => opt_in_ids.push(operator.as_str()),
+            MutationSelector::Family { name, .. } => families.push(name),
+        }
+    }
+    let mut help = format!(
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/operator-help.txt"
+        )),
+        version = env!("CARGO_PKG_VERSION")
+    );
+    help.push('\n');
+    for (heading, names) in [
+        ("Default runtime IDs", default_ids),
+        ("Opt-in IDs", opt_in_ids),
+        ("Selector families", families),
+    ] {
+        let rows = names
+            .chunks(4)
+            .map(|row| row.join(", "))
+            .collect::<Vec<_>>()
+            .join("\n  ");
+        writeln!(help, "{heading}:\n  {rows}\n").expect("writing to a string cannot fail");
+    }
+    help.trim_end().to_owned()
 }
 
 fn validate_mutation_inputs(raw: &RawMutationArgs, test_argv: &[OsString]) -> Result<(), CliError> {
@@ -724,8 +773,8 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         fingerprint_includes: args.fingerprint_include,
         fingerprint_files: args.fingerprint_file,
         fingerprint_env: args.fingerprint_env,
-        operators: args.operators,
-        exclude_operators: args.exclude_operators,
+        operators: args.operator_selection.operators,
+        exclude_operators: args.operator_selection.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,
         profile: args.profile.into(),
         limits,

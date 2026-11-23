@@ -1,0 +1,3 @@
+Operator examples, applicability and limits for released hoimin {version}:
+  https://github.com/HayaoSuzuki/hoimin/blob/v{version}/docs/user/guides/usage.md#mutation-operators
+  Source builds: read docs/user/reference/operators.md in the same checkout.

@@ -1,0 +1,5 @@
+To select mutation targets, operators and resource limits, run:
+  hoimin run --help
+
+To discover candidates before executing tests, run:
+  hoimin plan --help

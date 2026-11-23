@@ -1,9 +1,17 @@
 use std::fmt::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, Command, Parser};
 
 const REGENERATE: &str = "cargo run --locked -p hoimin-cli --example generate_cli_reference";
+
+#[derive(Parser)]
+#[command(name = "generate_cli_reference")]
+struct GenerateArgs {
+    /// Verify the checked-in reference without writing it.
+    #[arg(long)]
+    check: bool,
+}
 
 fn visible(arg: &Arg) -> bool {
     !arg.is_hide_set() && !arg.is_hide_long_help_set()
@@ -34,10 +42,17 @@ fn code_block(output: &mut String, text: &str) {
 
 fn render(mut command: Command) -> String {
     command.build();
-    let mut output =
-        String::from("# CLI reference\n\n<!-- Generated; do not edit by hand. -->\n\n");
-    writeln!(output, "Source: [Rust CLI definitions](../../../crates/hoimin-cli/src/cli.rs).\n\nRegenerate with `{REGENERATE}`; append ` -- --check` to verify without writing.\n").unwrap();
-    output.push_str("See the [usage guide](../guides/usage.md) for examples, OS-specific resource limits,\nplan/verify inheritance and validation beyond Clap. Conditional requirements\nand numeric parser bounds have no general stable Clap reflection API; their\nhelp text and the manual guide remain authoritative. The metadata below lists\nreflected arity, repetition, required arguments/groups, conflicts and delimiters.\n\n");
+    let mut output = String::from("<!-- Generated; do not edit by hand. -->\n\n");
+    write!(
+        output,
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/cli-reference.md"
+        )),
+        regenerate = REGENERATE
+    )
+    .unwrap();
+    output.push('\n');
     let name = command.get_name().to_owned();
     render_command(&mut command, &name, &mut output);
     let normalized = output
@@ -174,14 +189,95 @@ fn update(path: &Path, text: &str, check: bool) -> Result<(), String> {
 }
 
 fn main() -> Result<(), String> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
-    let check = match args.as_slice() {
-        [] => false,
-        [flag] if flag == "--check" => true,
-        _ => return Err(format!("Usage: {REGENERATE} [-- --check]")),
-    };
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user/reference/cli.md");
-    update(&path, &render(hoimin_cli::cli::root_command()), check)
+    let args = GenerateArgs::parse();
+    update(&reference_path(), &render_reference(), args.check)
+}
+
+/// The development generator writes into the workspace's documentation root.
+/// The CLI crate lives directly under `crates/`; this is not a runtime lookup.
+fn reference_path() -> PathBuf {
+    let repository = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .ancestors()
+        .nth(2)
+        .expect("the CLI crate belongs to the repository's crates directory");
+    repository.join("docs/user/reference/cli.md")
+}
+
+fn render_reference() -> String {
+    let mut reference = render(hoimin_cli::cli::root_command());
+    render_operator_index(&mut reference);
+    reference
+}
+
+fn render_operator_index(output: &mut String) {
+    use hoimin_core::{MutationOperatorSelection, MutationSelector};
+
+    let defaults = MutationOperatorSelection::default();
+    let mut operators = Vec::new();
+    let mut families = Vec::new();
+    for selector in MutationOperatorSelection::selectors() {
+        match selector {
+            MutationSelector::Operator(operator) => operators.push(operator),
+            MutationSelector::Family { name, members } => families.push((name, members)),
+        }
+    }
+    writeln!(
+        output,
+        "\n{}",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/operator-selection.md"
+        ))
+    )
+    .unwrap();
+    for arg in hoimin_cli::cli::operator_selection_arguments() {
+        let description = arg
+            .get_long_help()
+            .or_else(|| arg.get_help())
+            .expect("selection help");
+        writeln!(output, "### `{}`\n\n{description}\n", spelling(&arg)).unwrap();
+    }
+    output.push_str("### Operator IDs\n\n| Operator ID | Default runtime selection | Selector families |\n| --- | --- | --- |\n");
+    for operator in operators {
+        let name = operator.as_str();
+        let selected = if defaults.contains(operator) {
+            "yes"
+        } else {
+            "opt-in"
+        };
+        let members: Vec<_> = families
+            .iter()
+            .filter(|(_, members)| members.contains(&operator))
+            .map(|(family, _)| format!("[`{family}`](#{family})"))
+            .collect();
+        let family = if members.is_empty() {
+            "—".to_owned()
+        } else {
+            members.join(", ")
+        };
+        writeln!(
+            output,
+            "| [`{name}`](operators.md#{name}) | {selected} | {family} |"
+        )
+        .unwrap();
+    }
+    writeln!(
+        output,
+        "\n{}",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/docs/selector-families.md"
+        ))
+        .trim_end()
+    )
+    .unwrap();
+    for (family, members) in families {
+        writeln!(output, "\n### `{family}`\n").unwrap();
+        for member in members {
+            let name = member.as_str();
+            writeln!(output, "- [`{name}`](operators.md#{name})").unwrap();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -189,9 +285,31 @@ mod tests {
     use super::render;
     use clap::{Arg, ArgAction, ArgGroup, Command, builder::PossibleValue};
 
+    proptest::proptest! {
+        #[test]
+        fn long_help_words_reach_the_website_without_rewriting(
+            words in proptest::collection::vec("[a-zA-Zα-ωぁ-ん]{1,12}", 1..30),
+            windows_newlines in proptest::bool::ANY,
+        ) {
+            // Arrange
+            let separator = if windows_newlines { "\r\n" } else { "\n" };
+            let explanation = words.join(separator);
+            let command = Command::new("fixture").arg(
+                Arg::new("selected").long("selected").long_help(explanation.clone())
+            );
+
+            // Act
+            let reference = render(command);
+
+            // Assert
+            proptest::prop_assert!(reference.split_whitespace().collect::<Vec<_>>().join(" ")
+                .contains(&explanation.split_whitespace().collect::<Vec<_>>().join(" ")));
+        }
+    }
+
     #[test]
     fn actual_reference_is_current_and_covers_public_commands() {
-        let text = render(hoimin_cli::cli::root_command());
+        let text = super::render_reference();
         for command in ["run", "plan", "verify", "progress", "review"] {
             assert!(text.contains(&format!("## hoimin {command}\n")));
         }
@@ -207,10 +325,75 @@ mod tests {
         ] {
             assert!(text.contains(expected), "missing {expected}");
         }
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../docs/user/reference/cli.md");
-        super::update(&path, &text, true).unwrap();
+        super::update(&super::reference_path(), &text, true).unwrap();
         assert!(!text.contains(env!("CARGO_MANIFEST_DIR")));
+    }
+
+    #[test]
+    fn operator_index_links_each_id_with_its_actual_default_status() {
+        // Arrange
+        let defaults = hoimin_core::MutationOperatorSelection::default();
+        let selectors = hoimin_core::MutationOperatorSelection::selectors();
+
+        // Act
+        let reference = super::render_reference();
+
+        // Assert: registry changes must reach the generated, linked selection index.
+        for selector in selectors {
+            if let hoimin_core::MutationSelector::Operator(operator) = selector {
+                let name = operator.as_str();
+                let selected = if defaults.contains(operator) {
+                    "yes"
+                } else {
+                    "opt-in"
+                };
+                let row = format!("| [`{name}`](operators.md#{name}) | {selected} |");
+                assert!(
+                    reference.contains(&row),
+                    "missing selection metadata for {name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn operator_index_expands_every_advertised_family() {
+        // Arrange
+        let families: Vec<_> = hoimin_core::MutationOperatorSelection::selectors()
+            .into_iter()
+            .filter_map(|selector| match selector {
+                hoimin_core::MutationSelector::Family { name, members } => Some((name, members)),
+                hoimin_core::MutationSelector::Operator(_) => None,
+            })
+            .collect();
+
+        // Act
+        let reference = super::render_reference();
+
+        // Assert
+        for (family, members) in families {
+            let heading = format!("### `{family}`\n");
+            let section = reference
+                .split_once(&heading)
+                .unwrap()
+                .1
+                .split("\n### ")
+                .next()
+                .unwrap();
+            let actual: Vec<_> = section
+                .lines()
+                .filter_map(|line| {
+                    line.strip_prefix("- [`")
+                        .and_then(|link| link.split_once("`](").map(|(id, _)| id))
+                })
+                .collect();
+            let expected: Vec<_> = members
+                .iter()
+                .copied()
+                .map(hoimin_core::MutationOperator::as_str)
+                .collect();
+            assert_eq!(actual, expected, "incorrect family expansion for {family}");
+        }
     }
 
     #[test]

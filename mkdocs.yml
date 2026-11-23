@@ -62,6 +62,7 @@ nav:
       - Usage: docs/usage.md
       - Agent skills: docs/agent-skills.md
       - CLI reference: docs/cli-reference.md
+      - Mutation operators: docs/user/reference/operators.md
       - Compatibility: docs/compatibility.md
   - Maintainer development:
       - Development overview: docs/development/overview.md

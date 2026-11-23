@@ -1515,13 +1515,16 @@ only with one positional argument and no keywords. Calls with unsupported
 keywords, star arguments, defaults, trailing commas where a rewrite would be
 ambiguous, complex mapping receivers, or target contexts are skipped.
 
-Boundary mutations likewise use only load-context subscripts. An index must be
-a plain decimal integer literal: emit `+1`, and also `-1` when positive.
-For a slice, plain decimal start, stop, and step literals may move to adjacent
-valid values, except a step mutation to zero. Negative, empty, non-decimal, and
-expression bounds are excluded. Comprehensions, assignment/delete targets,
-the `append`/`pop` pair, and set literals wrapped as `frozenset(...)` are not
-supported transformations.
+Boundary mutations use only load-context subscripts. Plain decimal integers,
+including grouped and unary-minus spellings, move to adjacent valid values within
+the supported `u64` magnitude. Unsigned zero has only its positive neighbor;
+slice steps never become zero. Hexadecimal, underscored, float, unary-plus,
+repeated-sign and computed bounds are excluded. See the
+[index](../../user/reference/operators.md#structure_index_neighbor) and
+[slice](../../user/reference/operators.md#structure_slice_neighbor) entries.
+The `collection_ops` and `structure_ops` families do not transform comprehensions,
+assignment/delete targets, `append`/`pop`, or set literals wrapped in `frozenset`.
+Comprehension mutations belong to separate operators.
 
 Regression tests should use `apply_candidate_and_reparse` to replace the
 candidate's one span in its source and verify
@@ -2229,10 +2232,46 @@ cargo test --locked -p hoimin-cli --example generate_cli_reference
 ```
 
 The development example uses the same command factory as parsing and completions.
+Argument and command descriptions are Rust doc comments consumed by Clap.
+Long help footers and reference introductions are editable document fragments in
+[`crates/hoimin-cli/docs/`](../../../crates/hoimin-cli/docs/), included at compile
+time. The CLI reference on the website renders those same inputs; the operator
+index also reuses the selection arguments' reflected long help. Do not write a
+second explanation of an option in the generator or usage guide. Put workflow
+examples in the guide and link to the shared option explanation.
+
+Attach command-specific help to its Clap enum variant or Args definition, so
+renaming a command does not require a separate string-based lookup. Keep the root
+footer as navigation to command help; Clap owns each command's option inventory.
+
+The fragments use LF checkouts and remain inside the CLI crate for source
+distribution builds. Compile-time includes use `CARGO_MANIFEST_DIR` as their root,
+so relocating a Rust source file does not change which document is embedded.
+Markdown source links use `/docs/...` or `/crates/...` from the repository root;
+the site resolver maps them to publication URLs and checks containment.
+Only the navigation fragment's `{version}` and the reference
+introduction's `{regenerate}` are Rust format arguments; no template engine or
+runtime document read is involved. After changing a doc comment or fragment,
+regenerate the reference with the commands above.
+
 Check mode never writes; missing or stale output fails with a regeneration command.
 It accepts CRLF checkouts but generation writes UTF-8/LF, with fixed help width,
 no terminal color, timestamps or absolute paths. Rust CI checks freshness, including
 changes limited to `docs/user/reference/cli.md`.
+
+The same generator projects canonical operator IDs, default selection and family
+expansion from `hoimin-core` into the CLI reference's linked operator index.
+Consumers match the typed `MutationSelector` catalog rather than converting
+advertised names back into operator identities. The shared `OperatorSelectionArgs`
+definition supplies selection argument metadata directly to documentation; avoid
+searching commands or fields by string IDs to rediscover that group.
+After adding an operator or changing selection policy, regenerate that index and
+update the handwritten [operator reference](../../user/reference/operators.md).
+Each canonical ID must have exactly one `###` heading containing its backticked
+name, an example, a test interpretation and applicability limits. Keep default
+and family membership in the generated index rather than a second handwritten
+registry. The `operator_reference` integration test checks entry completeness;
+generator tests check selection metadata, and the site build checks link targets.
 
 Keep examples, conditional requirements, numeric parser bounds, runtime validation,
 OS-specific limits and plan/verify inheritance in [the usage guide](../../user/guides/usage.md).
