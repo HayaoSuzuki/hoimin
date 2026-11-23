@@ -3373,6 +3373,7 @@ const CALL_CONTRACT_BUILTINS: &[&str] = &[
     "type",
     "range",
     "zip",
+    "map",
     "ascii",
     "bin",
     "callable",
@@ -3668,6 +3669,8 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             source_delimiters::DelimiterDepth::default()
         };
         let builtins = if [
+            MutationOperator::MapStrictToggle,
+            MutationOperator::UrlQuoteSwap,
             MutationOperator::ContextExitOmit,
             MutationOperator::ZipStrictToggle,
             MutationOperator::RangeBoundNeighbor,
@@ -5838,8 +5841,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     dynamic_boundaries::call(
                         call,
                         self.processing_site,
-                        |range, operator, render| {
-                            self.add_deferred_candidate(range, operator, range, render);
+                        |range, anchor, operator, render| {
+                            self.add_deferred_candidate_at(range, operator, range, anchor, render);
                             !self.check_cancelled()
                         },
                     );
@@ -5851,8 +5854,8 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     self.stdlib_contracts.emit(
                         call,
                         self.processing_site,
-                        |range, operator, render| {
-                            self.add_deferred_candidate(range, operator, range, render);
+                        |range, anchor, operator, render| {
+                            self.add_deferred_candidate_at(range, operator, range, anchor, render);
                             !self.check_cancelled()
                         },
                     );

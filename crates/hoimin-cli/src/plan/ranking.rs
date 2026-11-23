@@ -345,6 +345,12 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::StringCasefoldLower
         | MutationOperator::StringAffixStrip
         | MutationOperator::EncodingErrorsReplace
+        | MutationOperator::MapStrictToggle
+        | MutationOperator::BatchedStrictToggle
+        | MutationOperator::UrlQuoteSwap
+        | MutationOperator::UrlQueryPolicy
+        | MutationOperator::Base64ValidateToggle
+        | MutationOperator::JsonAllowNanToggle
         | MutationOperator::EncodingErrorsStrict
         | MutationOperator::ItertoolsTakeDropSwap
         | MutationOperator::FStringConversionSwap

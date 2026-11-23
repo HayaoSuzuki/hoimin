@@ -814,6 +814,48 @@ can now raise an exception. All three encoding operators preserve evaluation
 of dynamic policies and reject unpacked arguments, duplicate slots and
 uncertain imported codec identities.
 
+### `map_strict_toggle`
+
+Adds `strict=True` to builtin `map` calls with at least two explicit
+iterables. Unequal lengths then raise `ValueError` during iteration.
+A dynamic strict option is inverted when `map` tests its truth value.
+
+### `batched_strict_toggle`
+
+Adds `strict=True` to `itertools.batched`, or inverts a dynamic strict
+option at iterator construction. Consuming a final incomplete batch can
+then raise `ValueError`.
+
+### `url_quote_swap`
+
+Exchanges `urllib.parse.quote` with `quote_plus`, or `unquote` with
+`unquote_plus`, in either direction. With default arguments, quoting
+`a b/c` produces `a%20b/c` or `a+b%2Fc`. When decoding, the plus
+variant interprets a literal plus sign as a space.
+
+### `url_query_policy`
+
+Toggles `doseq` in `urllib.parse.urlencode`, which controls expansion
+of sequence values into repeated fields. In `parse_qs` and `parse_qsl`,
+toggles `keep_blank_values`. A dynamic policy is tested each time the
+parser needs a decision, including zero times for a query without blank
+fields.
+
+### `base64_validate_toggle`
+
+Toggles `validate` on `base64.b64decode`. Strict validation rejects
+characters outside the accepted alphabet that permissive decoding may
+discard. Python 3.15 uses strict validation by default when `ignorechars`
+is supplied, so the mutation inserts `validate=False` in that case.
+
+### `json_allow_nan_toggle`
+
+Toggles `allow_nan` on `json.dump` and `json.dumps`. With the default
+encoder, adding `allow_nan=False` causes serialization of NaN or
+infinity to raise `ValueError`. Calls must omit `cls` or pass literal
+`None`. For all Boolean option operators in this group, explicit
+`True` and `False` remain covered by `boolean_literal`.
+
 ### `base_order_shuffle`
 
 `class Combined(Left, Right): ...` → `class Combined(Right, Left): ...`. Probe

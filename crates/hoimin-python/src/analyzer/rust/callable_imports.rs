@@ -747,6 +747,11 @@ impl<F: Fn() -> bool> ImportScan<'_, F> {
             return false;
         };
         if imported != module && imported != package {
+            // An unaliased sibling binds the package root. Its uses may
+            // invalidate this family's proof, but it does not load our member.
+            if !aliased && local == package {
+                self.module_names.insert(local.to_owned());
+            }
             return false;
         }
         self.import(local, module, None, range, eager);

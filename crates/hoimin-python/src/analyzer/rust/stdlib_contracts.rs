@@ -7,10 +7,15 @@ use super::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::{ExprCall, ModModule};
-use ruff_text_size::TextRange;
+use ruff_text_size::{TextRange, TextSize};
 
 #[path = "stdlib_contracts/encoding.rs"]
 mod encoding;
+#[path = "stdlib_contracts/options.rs"]
+mod options;
+#[path = "stdlib_contracts/urls.rs"]
+mod urls;
+pub(super) use options::boolean_policy;
 #[path = "stdlib_contracts/text.rs"]
 mod text;
 
@@ -45,6 +50,12 @@ fn decoded_choice<T, const N: usize>(
 
 pub(super) fn needs_delimiter_index(operators: &MutationOperatorSelection) -> bool {
     [
+        MutationOperator::MapStrictToggle,
+        MutationOperator::BatchedStrictToggle,
+        MutationOperator::UrlQuoteSwap,
+        MutationOperator::UrlQueryPolicy,
+        MutationOperator::Base64ValidateToggle,
+        MutationOperator::JsonAllowNanToggle,
         MutationOperator::UnicodeDigitAscii,
         MutationOperator::UnicodeNormalizationForm,
         MutationOperator::UnicodeNormalizationRemove,
@@ -58,6 +69,7 @@ pub(super) fn needs_delimiter_index(operators: &MutationOperatorSelection) -> bo
 
 #[derive(Default)]
 pub(super) struct Imports {
+    options: options::Imports,
     unicode: CallableImports,
     encoding: encoding::Imports,
 }
@@ -80,21 +92,31 @@ impl Imports {
             CallableImports::default()
         };
         Ok(Self {
+            options: options::Imports::build(module, operators, cancelled)?,
             unicode,
             encoding: encoding::Imports::build(module, operators, cancelled)?,
         })
     }
+    /// Pass each edit's physical range, line-selection offset, operator and
+    /// deferred renderer to the sink. Returning false stops this call's edits.
     pub(super) fn emit(
         &self,
         call: &ExprCall,
         site: &Site<'_>,
-        mut emit: impl FnMut(TextRange, MutationOperator, &dyn Fn() -> String) -> bool,
+        mut emit: impl FnMut(TextRange, TextSize, MutationOperator, &dyn Fn() -> String) -> bool,
     ) {
         if !(site.cancelled)()
-            && text::emit(&self.unicode, call, site, &mut emit)
+            && text::emit(&self.unicode, call, site, &mut |r, op, render| {
+                emit(r, r.start(), op, render)
+            })
             && !(site.cancelled)()
         {
-            self.encoding.emit(call, site, &mut emit);
+            if !self.options.emit(call, site, &mut emit) || (site.cancelled)() {
+                return;
+            }
+            self.encoding.emit(call, site, &mut |r, op, render| {
+                emit(r, r.start(), op, render)
+            });
         }
     }
 }
@@ -140,7 +162,7 @@ mod tests {
         let emitted = Cell::new(0);
 
         // Act
-        imports.emit(call, &site, |_, _, _| {
+        imports.emit(call, &site, |_, _, _, _| {
             emitted.set(emitted.get() + 1);
             accept
         });
@@ -210,7 +232,7 @@ mod tests {
         let emitted = Cell::new(0);
 
         // Act
-        imports.emit(call, &site, |_, _, _| {
+        imports.emit(call, &site, |_, _, _, _| {
             emitted.set(emitted.get() + 1);
             false
         });
