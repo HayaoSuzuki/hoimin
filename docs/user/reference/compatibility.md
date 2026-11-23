@@ -19,10 +19,24 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Standard-library contract mutations
+
+Fresh runs and plans enable additional Unicode, string, iterator, encoding, URL,
+numeric, heap and serialization mutations. Each new ID supports individual
+opt-out with `--exclude-operators ID`. The existing `encoding_errors_ignore`
+operator also accepts more policy argument forms. See the
+[operator reference](operators.md) for the specific contracts and applicability.
+
+These additions can change candidate counts and the prefix retained under a
+candidate cap. Generate a fresh plan to investigate them; existing plans retain
+their recorded operator sets. Candidate and saved-plan schemas are unchanged.
+Explicit Boolean literal options continue to use `boolean_literal`; new policy
+operators add coverage for omitted defaults and dynamic option values.
+
 ## Behavioral mutation coverage
 
-Fresh runs and plans select 136 runtime operators from 155 catalog IDs. Fifteen
-new IDs cover augmented assignment, unpacking targets, return values, comparison
+At that change, fresh runs and plans selected 136 runtime operators from 155
+catalog IDs. Fifteen new IDs cover augmented assignment, unpacking targets, return values, comparison
 directions, `else` suites, `zip` strictness, `range` bounds, regex quantifiers and
 alternatives, format options, context exits and individual yields. Each is enabled
 by default and can be disabled with `--exclude-operators ID`.

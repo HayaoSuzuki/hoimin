@@ -28,6 +28,13 @@ the existing family-local proof. String and encoding method edits remain
 syntax-directed, like the existing collection method operators: their names do
 not prove a builtin receiver. State that limitation in the operator reference.
 Do not pretend that annotations prove runtime receiver types.
+An unaliased sibling submodule import also exposes the package root for writes
+and escapes. Track that hazard without treating the sibling import as evidence
+that the target submodule has been loaded.
+An AST's normalized import name is not always a valid source spelling: Unicode
+identifiers can normalize to keywords. Preferred destination names exclude hard
+keywords using the existing parser classification. A proven alternative alias or
+import fallback is required when the normalized name cannot be emitted.
 
 ## Adopted operators
 
@@ -85,12 +92,19 @@ fixed-signature operations. Variadic map may preserve explicit starred iterables
 only if the minimum arity and keyword identity are established. Supporting aliases
 must not turn failed import evidence into a nominal method match.
 
-Perform cancellation and selection checks before source materialization. Pass
-edits through deferred admission and existing delimiter, byte-budget and candidate
-caps. Line selection anchors on an explicit edited option, or the call when an
+Perform cancellation, selection, profile and candidate-ranking checks before
+source materialization. Pass edits through the existing deferred sink. Its
+retained-payload reservation occurs after rendering, so one temporary replacement
+is outside the retained-byte budget. Keep rendering proportional to the edited
+call/expression, with no candidate matrix or retained temporary collection; do not
+claim the retained budget caps total transient memory. Preserve delimiter guards
+and candidate caps. Line selection anchors on an explicit edited option, or the call when an
 option is inserted. Preserve comments, multiline expressions and CRLF; avoid
 reconstructing unrelated arguments. New operators use typed enum dispatch after
 source identifier recognition. No public rewrite DSL is introduced.
+The producer supplies the selection offset separately from the physical edit
+range, so inserting an option does not accidentally select a later delimiter
+line. The collector retains ownership of candidate admission.
 
 ## Deferred candidates
 
@@ -141,6 +155,15 @@ concrete design answer; interface documentation and ownership are specified, but
 module simplicity remains provisional until the shared option adapter and domain
 implementations are reviewed. Resolve that remaining diagnostic through the
 implementation review rather than assigning an unearned final score.
+
+Independent domain reviews subsequently passed all eight diagnostics after the
+following corrections: domain-owned delimiter requirements, independent edit and
+selection positions, and source-safe imported destination names. Signature and
+truth-conversion decisions remain inside domain modules. The shared destination
+resolver returns a borrowed proof that is rendered only after candidate
+admission, while its existing string-returning callers retain their interfaces.
+Whole-branch validation and its final review are recorded in the implementation
+plan.
 
 ## Sources
 
