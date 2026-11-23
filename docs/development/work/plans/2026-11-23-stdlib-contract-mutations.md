@@ -310,3 +310,14 @@ tests, a documentation site build, and 65-page knowledge structure with both
 updated design hashes matching. Reference inventory has no missing Markdown,
 missing source or unreachable page. Remote CI and final cleanup are recorded
 with the published PR rather than inferred from these local results.
+
+The first published-head CI passed the Python 3.15 workspace and the other
+test, build and audit jobs except the Python 3.14 workspace. Its unchanged target-selection
+property generated `env/a.py`, then incorrectly expected discovery of a path
+excluded by policy. The recorded seed reproduced that failure on Windows too.
+The round-trip property now generates `pkg_` directories and `module_` filenames,
+avoiding excluded-directory and Windows-device names while retaining its
+serialization/root-resolution oracle. Existing exclusion tests remain in the
+same target. The seed is retained as a regression. All 60 Windows target-handler
+tests, focused Clippy and formatting checks passed after the test-only correction; the new published head requires
+its own remote checks.

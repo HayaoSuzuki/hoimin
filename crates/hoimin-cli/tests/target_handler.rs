@@ -101,9 +101,10 @@ fn discovers_python_files_and_reports_regular_files() {
 proptest::proptest! {
     #[test]
     fn run_plan_round_trip_discovers_files_relative_to_selection_root(
-        directory in "[a-z]{1,8}",
-        filename in "[a-z]{1,8}",
+        directory in "pkg_[a-z]{1,8}",
+        filename in "module_[a-z]{1,8}",
     ) {
+        // Arrange: eligible paths avoid excluded directories and Windows device names.
         let project = tempfile::tempdir().unwrap();
         let path = format!("{directory}/{filename}.py");
         fs::create_dir(project.path().join(&directory)).unwrap();
@@ -119,8 +120,10 @@ proptest::proptest! {
         let plan: hoimin_core::PlanConfig = serde_json::from_value(saved).unwrap();
         let selection = plan.into_run_config(hoimin_core::OutputConfig::default()).unwrap().into_data().selection;
 
+        // Act
         let files = hoimin_cli::target::fs::discover_explicit(&selection).unwrap();
 
+        // Assert
         proptest::prop_assert_eq!(files.into_iter().map(|file| file.path).collect::<Vec<_>>(), vec![Utf8PathBuf::from(path)]);
     }
 }
