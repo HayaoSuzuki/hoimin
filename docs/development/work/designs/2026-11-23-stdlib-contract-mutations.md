@@ -35,6 +35,20 @@ An AST's normalized import name is not always a valid source spelling: Unicode
 identifiers can normalize to keywords. Preferred destination names exclude hard
 keywords using the existing parser classification. A proven alternative alias or
 import fallback is required when the normalized name cannot be emitted.
+Inside class-contained scopes, raw private names and possible already-mangled
+spellings cannot establish imported identity from raw AST bindings. Apply the
+same conservative exclusion to original call roots and generated destinations;
+an independently safe builtin-import fallback can still supply a destination.
+Reading the public math float constants (`pi`, `e`, `tau`, `inf`, `nan`) must not
+invalidate the family proof. Writes, unknown member escapes and whole-module
+escapes still invalidate it. URL destinations prefer proven eager aliases or
+modules; the builtin-import fallback must traverse the dotted package correctly.
+
+Skip heavy family proof construction when a cheap top-level import preflight
+finds no possible eager binding for that family. Keep full conservative hazard
+analysis when an import is present. This avoids retaining class-lookup indexes
+for absent families without weakening the identity proof. Bare builtin map and
+the separate codec-alias rejection remain independent of this preflight.
 
 ## Adopted operators
 
@@ -105,6 +119,10 @@ source identifier recognition. No public rewrite DSL is introduced.
 The producer supplies the selection offset separately from the physical edit
 range, so inserting an option does not accidentally select a later delimiter
 line. The collector retains ownership of candidate admission.
+One shared layout owner handles omitted-keyword commas, comments and implicit
+generator parentheses. Encoding retains its whole-call edit; other option
+producers retain their argument edits and independent call selection anchors.
+Sharing layout must preserve those ranges and candidate identities.
 
 ## Deferred candidates
 

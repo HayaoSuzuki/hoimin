@@ -66,6 +66,176 @@ fn analyze(
 }
 
 #[rstest::rstest]
+#[case::member("from urllib.parse import quote_plus as qp", Some("qp"))]
+#[case::mangled_spelling_outside_class(
+    "from urllib.parse import quote_plus as _C__dst",
+    Some("_C__dst")
+)]
+#[case::module("import urllib.parse as p", Some("p.quote_plus"))]
+#[case::package("import urllib.parse", Some("urllib.parse.quote_plus"))]
+#[case::package_alias("import urllib as u", Some("u.parse.quote_plus"))]
+#[case::from_package("from urllib import parse as p", Some("p.quote_plus"))]
+#[case::shadowed("from urllib.parse import quote_plus as qp\nqp = fake", None)]
+#[case::normalized_keyword("from urllib.parse import quote_plus as 𝚒𝚏", None)]
+#[case::later("pass", None)]
+fn final_review_url_destination(#[case] setup: &str, #[case] expected: Option<&str>) {
+    // Arrange
+    let source = format!(
+        "{setup}\nfrom urllib.parse import quote as q\n__import__ = None\nout = q('a b/c')\nfrom urllib.parse import quote_plus as late"
+    );
+    // Act
+    let output = analyze(&source, "url_quote_swap", &[], 10);
+    // Assert
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .map(|candidate| candidate.replacement.as_str())
+            .collect::<Vec<_>>(),
+        expected.into_iter().collect::<Vec<_>>()
+    );
+}
+
+#[rstest::rstest]
+#[case::member(
+    "from urllib.parse import quote as q, quote_plus as _C__dst",
+    "q",
+    "__dst",
+    "__import__ = None",
+    None
+)]
+#[case::module(
+    "from urllib.parse import quote as q\nimport urllib.parse as _C__dst",
+    "q",
+    "__dst",
+    "__import__ = None",
+    None
+)]
+#[case::source_member(
+    "from urllib.parse import quote as _C__source",
+    "_C__source",
+    "__source",
+    "",
+    None
+)]
+#[case::source_module(
+    "import urllib.parse as _C__source",
+    "_C__source.quote",
+    "__source",
+    "",
+    None
+)]
+#[case::fallback(
+    "from urllib.parse import quote as q, quote_plus as _C__dst",
+    "q",
+    "__dst",
+    "",
+    Some("__import__('urllib.parse').parse.quote_plus")
+)]
+#[case::ordinary_alias(
+    "from urllib.parse import quote as q, quote_plus as target",
+    "q",
+    "__dst",
+    "__import__ = None",
+    Some("target")
+)]
+fn class_private_import_capture(
+    #[case] imports: &str,
+    #[case] callee: &str,
+    #[case] parameter: &str,
+    #[case] builtin: &str,
+    #[case] expected: Option<&str>,
+) {
+    // Arrange
+    let source = format!(
+        "{imports}\n{builtin}\nclass C:\n    def quote_text(self, {parameter}):\n        return {callee}('a b/c')"
+    );
+
+    // Act
+    let output = analyze(&source, "url_quote_swap", &[], 10);
+
+    // Assert
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .map(|candidate| candidate.replacement.as_str())
+            .collect::<Vec<_>>(),
+        expected.into_iter().collect::<Vec<_>>()
+    );
+}
+
+proptest::proptest! {
+    #[test]
+    fn class_private_generated_names_cannot_capture_destination(class in "C[a-z]{0,8}") {
+        // Arrange
+        let source = format!("from urllib.parse import quote as q, quote_plus as _{class}__dst\n__import__ = None\nclass {class}:\n    def quote_text(self, __dst):\n        return q('a b/c')");
+
+        // Act
+        let output = analyze(&source, "url_quote_swap", &[], 10);
+
+        // Assert
+        proptest::prop_assert_eq!(output.candidates.len(), 0, "{}", source);
+    }
+}
+
+#[rstest::rstest]
+#[case::codec_comma(
+    "encoding_errors_ignore",
+    "b.decode",
+    "('utf8', # tail\r\n)",
+    "b.decode",
+    "b.decode \\\r\n    ('utf8', # tail\r\nerrors='ignore')"
+)]
+#[case::codec_generator(
+    "encoding_errors_ignore",
+    "b.decode",
+    "(x for x in xs # tail\r\n)",
+    "b.decode",
+    "b.decode \\\r\n    ((x for x in xs # tail\r\n), errors='ignore')"
+)]
+#[case::option_comma(
+    "json_allow_nan_toggle",
+    "json.dumps",
+    "(x, # tail\r\n)",
+    "(",
+    "(x, # tail\r\nallow_nan=False)"
+)]
+#[case::option_generator(
+    "json_allow_nan_toggle",
+    "json.dumps",
+    "(x for x in xs # tail\r\n)",
+    "x for",
+    "(x for x in xs # tail\r\n), allow_nan=False"
+)]
+fn final_review_omitted_keyword_layout(
+    #[case] id: &str,
+    #[case] callee: &str,
+    #[case] args: &str,
+    #[case] start_text: &str,
+    #[case] replacement: &str,
+) {
+    // Arrange
+    let source = format!("import json\r\n{callee} \\\r\n    {args}");
+    let line = [hoimin_core::LineRange { start: 2, end: 2 }];
+    let start = source.find(start_text).unwrap();
+    let end = if start_text == "x for" {
+        source.len() - 1
+    } else {
+        source.len()
+    };
+    // Act
+    let output = analyze(&source, id, &line, 10);
+    // Assert
+    let [candidate] = output.candidates.as_slice() else {
+        panic!("expected one mutation for {source}")
+    };
+    assert_eq!(usize::try_from(candidate.span.start).unwrap(), start);
+    assert_eq!(usize::try_from(candidate.span.length).unwrap(), end - start);
+    assert_eq!(candidate.replacement, replacement);
+}
+
+#[rstest::rstest]
 #[case::map_single("map_strict_toggle", "map(str,x)")]
 #[case::map_star("map_strict_toggle", "map(f,*x,y)")]
 #[case::map_shadow("map_strict_toggle", "def f(map): return map(str,x,y)")]

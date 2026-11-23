@@ -3,6 +3,20 @@ mod witness;
 use witness::{assert_python, mutant};
 
 #[rstest::rstest]
+#[case::module("import math", "math.isclose(math.pi + 1e-10, math.pi)")]
+#[case::direct("from math import tau as t, isclose as near", "near(t - 1e-10, t)")]
+#[tokio::test]
+async fn final_review_constant_comparison(#[case] imports: &str, #[case] comparison: &str) {
+    // Arrange
+    let source = format!("{imports}\nout = {comparison}");
+    assert_python(&source, "assert out is True").await;
+    // Act
+    let mutated = mutant(&source, "math_isclose_tolerance", "rel_tol=0.0");
+    // Assert
+    assert_python(&mutated, "assert out is False").await;
+}
+
+#[rstest::rstest]
 #[case::absolute(
     "math_isclose_tolerance",
     "from math import isclose",

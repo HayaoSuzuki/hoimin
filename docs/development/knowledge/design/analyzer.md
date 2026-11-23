@@ -9,7 +9,7 @@ sources:
   resource: ../../work/designs/2026-11-23-stdlib-contract-mutations.md
   revision: 35df3468f4ad56dd6e4e5c1390d6802242c45d62
   working_tree: modified
-  sha256: c428fb75a0985416cc1facf9e55cadd8044ad9138cc3ef2ee8aa40b3e09f2a50
+  sha256: e4f6940cc6e6cc03a48bc8f676ae1b193c870a4d7e106853f9f42f9e187fc10d
 - id: python-behavior-mutations
   resource: ../../work/designs/2026-11-23-python-behavior-mutations.md
   working_tree: untracked
@@ -1917,6 +1917,14 @@ and intended effects. [^stdlib-contract-mutations]
 Package roots bound by unaliased sibling imports participate in write and escape
 checks without proving that the target submodule is loaded. Omitted policy
 insertions select the call line independently of the edited argument span.
+[^stdlib-contract-mutations]
+
+Family proofs first check for a possible eager top-level import before building
+heavy hazard and class-lookup indexes. Present imports still require the full
+proof. Public math float constants are safe reads; writes and module escapes
+remain hazards. URL replacements reuse a proven source-safe destination before
+falling back to a dotted import. Omitted-keyword layout has one owner, while each
+producer retains its original edit range and selection anchor.
 [^stdlib-contract-mutations]
 
 Policy changes distinguish omitted defaults, explicit Boolean literals and

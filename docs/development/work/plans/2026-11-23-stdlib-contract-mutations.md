@@ -78,8 +78,8 @@
 - [x] Update compatibility and OKF with actual behavior, decisions and evidence. Use technical-documentation skill and refresh new source hashes after final edits.
 - [x] Run the Windows whole workspace, all-target/all-feature Clippy and rustfmt checks. Fix default-dependent fixtures according to their actual contract, retaining default coverage where intended.
 - [x] Run all new emitted-source witnesses on CPython 3.14 and 3.15; docs/knowledge pytest, generated reference checks and site build. Check disk and perform periodic targeted clean between completed phases.
-- [ ] Complete the final independent whole-branch review and software-design-philosophy score. Record each of five implementation/test self-review passes and actual verification outcomes, with remaining limitations.
-- [ ] Commit/push the reviewed branch, create a non-draft PR via gh, and resolve failing final-head CI. Confirm head and all workflows before reporting completion. Do not merge. Clean Cargo target and this plan's scratch after retaining public evidence; create no ZIP.
+- [x] Complete the final independent whole-branch review and software-design-philosophy score. Record each of five implementation/test self-review passes and actual verification outcomes, with remaining limitations.
+- Delivery record: Publish a non-draft PR via gh and resolve failing final-head CI. The PR and its exact-head workflow results record publication and remote verification after this local evidence snapshot. Do not merge. Clean Cargo target and this plan's scratch after retaining public evidence; create no ZIP.
 
 ## Plan self-reviews
 
@@ -215,3 +215,98 @@ lint refactors with no critical or important findings. Its design score is
 8.75/10: seven diagnostics pass, while the exact 10–20% allocation of effort to
 design was not measured. This is an evidence limitation, not a remaining code
 change requested by that review.
+
+## Whole-branch review corrections
+
+The whole-branch review at `56bd1c69` identified two important gaps: ordinary
+math constant reads suppressed the math family, and files without relevant
+imports still built eight heavy family proofs. It also requested reuse of proven
+URL destinations, one owner for omitted-keyword layout, and explicit AAA markers
+in the moved codec unit case. All five findings belong to one final correction
+wave. The existing Windows Git warning observation is closed by the evidence
+above.
+
+The review substantiated six of eight software-design diagnostics (7.5/10).
+Duplicated layout required a code correction; the historical percentage of time
+spent on design remains unmeasured. The performance correction is supported by
+deterministic traversal and retained-index evidence, not a measured timing or
+peak-memory multiplier.
+
+The correction recognizes the five public math floats through the existing
+constant guard, shares eager-import preflight with call-contract analysis,
+reuses source-safe URL destinations and shares omitted-keyword rendering. Four
+CRLF layout controls passed before and after the refactor, preserving byte
+ranges, replacements and callee-line selection. The preferred-alias resolver
+remains conservative: an unavailable preferred name can suppress a candidate
+even when another alias exists. The operator reference states that limitation.
+
+Before the correction, the index/cancellation suite had 23 passes and 11 expected
+failures; every structural case built eight indexes. Public cases had 11 passes
+and ten expected failures. Five emitted-source witnesses failed at candidate
+lookup after their original Python programs passed. Afterward, 5,206 library
+tests passed with five existing ignores, together with 62 numeric, 44 option and
+48 text analyzer cases. The import-free 512-field class builds zero family
+class-lookup indexes; eligible imports build only the required family indexes.
+
+The four runtime targets passed 100 cases on each of CPython 3.14.9 and 3.15.1
+(30 numeric, 21 option, 23 text and 26 dynamic-boundary cases). Clippy then
+requested a Copy enum and a method-reference spelling; after those two
+nonbehavioral changes, the all-target/all-feature check passed. The documentation
+site build passed. The consolidated correction records seven implementation and
+seven test review passes, including identity, cancellation, source layout,
+deferred allocation, independent runtime checks and one scenario per invocation.
+
+The scoped final re-review closed those five findings, then reproduced a
+distinct private-name capture: a method parameter `__dst` can shadow an imported
+`_C__dst` destination after CPython mangling. Both supported interpreters executed
+the emitted mutant against the wrong callable. The reviewer also identified the
+same raw-spelling assumption in original import-root resolution. This is a
+correctness defect, separate from the documented conservative alias omission.
+The controller owns its regression tests and shared-guard correction; the
+preceding whole-workspace build is interim evidence, not evidence for that fix.
+
+That Windows `cargo test --locked -j 2 --workspace --no-fail-fast --
+--test-threads=4` invocation subsequently completed with exit zero. Before
+changing the guard, the new targeted regressions recorded one passing ordinary
+alias control and eight failures: six analyzer cases (including the generated
+class-name property) and two emitted-source witnesses. The property minimized
+to class `C`, also represented explicitly by a named regression.
+
+The root correction shares one conservative class-binding guard between original
+root resolution and destination selection. It rejects raw private/implicit
+names and possible already-mangled spellings inside class-contained scopes.
+Ordinary aliases and those spellings outside classes retain their previous
+behavior. Safe builtin-import fallback remains available for a trusted original
+call. No new index, pass over the AST, operator or schema is needed.
+
+The corrected analyzer passed all 5,206 library tests (five existing ignored)
+and 162 public domain cases: 62 numeric, 52 option and 48 text. All 102 runtime
+cases passed on each supported interpreter: 30 numeric, 23 option, 23 text and
+26 dynamic-boundary cases. The earlier successful Windows whole-workspace run
+predates this guard; these covering runs validate the correction locally, and
+the PR's exact-head CI validates the complete published change.
+
+The controller's correction review covered five points at each stage: shared
+identity ownership, raw-versus-mangled binding evidence, a single guard,
+reuse of existing class ranges, and preservation of safe fallback in design;
+reproduction, named controls, generated class names, RED evidence and covering
+runs in the plan; both guard call sites, earlier class-namespace rejection,
+spelling boundaries, class-only applicability and original-call eligibility in
+implementation; the eight reproduced failures, minimized property case,
+source-root controls, actual emitted execution and named AAA cases in tests.
+
+The scoped independent review scored the pre-correction design 7.5/10 because
+the destination identity promise was violated. After correcting that shared
+guard, the controller substantiates seven of eight diagnostics (8.75/10):
+responsibilities, simpler interfaces, hidden decisions, accurate contracts,
+reviewed design, meaningful modules and understandable boundaries. The exact
+historical percentage of time spent on design remains unmeasured. This is the
+controller's disposition, not a claim of another independent review.
+
+Final local checks after the private-binding correction passed: all-target and
+all-feature Clippy with warnings denied, rustfmt and whitespace checks, ten CLI
+reference generator tests and its current-reference check, 51 documentation
+tests, a documentation site build, and 65-page knowledge structure with both
+updated design hashes matching. Reference inventory has no missing Markdown,
+missing source or unreachable page. Remote CI and final cleanup are recorded
+with the published PR rather than inferred from these local results.

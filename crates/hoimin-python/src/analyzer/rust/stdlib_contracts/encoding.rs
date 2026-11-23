@@ -1,7 +1,7 @@
-use super::{AnalysisCancelled, CallableImports, Site, bind};
+use super::{AnalysisCancelled, CallableImports, KeywordSpan, Site, bind, insert_keyword};
 use crate::visitor::{self, Visitor};
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
-use ruff_python_ast::{Expr, ExprCall, ModModule, Stmt, token::TokenKind};
+use ruff_python_ast::{Expr, ExprCall, ModModule, Stmt};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::collections::HashSet;
 
@@ -197,7 +197,7 @@ impl Imports {
         &self,
         call: &ExprCall,
         site: &Site<'_>,
-        emit: &mut impl FnMut(TextRange, MutationOperator, &dyn Fn() -> String) -> bool,
+        emit: &mut impl FnMut(TextRange, TextSize, MutationOperator, &dyn Fn() -> String) -> bool,
     ) {
         if !POLICIES.iter().any(|p| site.supports(p.operator())) {
             return;
@@ -225,57 +225,28 @@ impl Imports {
             }
             if let ErrorsArgument::Explicit(expr) = errors {
                 if literal.is_some_and(|lit| !lit.value.is_implicit_concatenated()) {
-                    if !emit(expr.range(), op, &|| format!("'{name}'")) {
+                    if !emit(expr.range(), expr.start(), op, &|| format!("'{name}'")) {
                         return;
                     }
                 } else if site.delimiters.can_enclose(expr.range(), 2)
                     && let Some(text) = site.text(expr.range())
-                    && !emit(expr.range(), op, &|| format!("(({text}), '{name}')[1]"))
+                    && !emit(expr.range(), expr.start(), op, &|| {
+                        format!("(({text}), '{name}')[1]")
+                    })
                 {
                     return;
                 }
-            } else if !matches!(destination, Policy::Strict) {
-                let closing = call.end() - TextSize::new(1);
-                let before_close = TextRange::new(call.arguments.start(), closing);
-                let Some(last) = site
-                    .tokens()
-                    .in_range(before_close)
-                    .iter()
-                    .rev()
-                    .find(|token| (site.cancelled)() || !token.kind().is_trivia())
-                else {
-                    return;
-                };
-                if (site.cancelled)() {
-                    return;
-                }
-                let Some(prefix) = site.text(TextRange::new(call.start(), closing)) else {
-                    return;
-                };
-                let comma = if matches!(last.kind(), TokenKind::Comma | TokenKind::Lpar) {
-                    ""
-                } else {
-                    ", "
-                };
-                if let Some(range) =
-                    super::super::processing_calls::implicit_generator_interior(call)
-                {
-                    if site.delimiters.can_enclose(range, 1) {
-                        let callee = site
-                            .text(TextRange::new(call.start(), range.start()))
-                            .expect("parsed call start");
-                        let generator = site.text(range).expect("parsed generator");
-                        if !emit(call.range(), op, &|| {
-                            format!("{callee}({generator}), errors='{name}')")
-                        }) {
-                            return;
-                        }
-                    }
-                } else if !emit(call.range(), op, &|| {
-                    format!("{prefix}{comma}errors='{name}')")
-                }) {
-                    return;
-                }
+            } else if !matches!(destination, Policy::Strict)
+                && !insert_keyword(
+                    call,
+                    site,
+                    op,
+                    KeywordSpan::Call,
+                    format_args!("errors='{name}'"),
+                    emit,
+                )
+            {
+                return;
             }
         }
     }
@@ -293,7 +264,10 @@ mod tests {
     #[case::from_codecs_import_decode_as_dec("from codecs import decode as dec\n", true)]
     #[case::def_f_import_codecs_as_c("def f():\n    import codecs as c\n", true)]
     fn codec_identity_scan_requires_a_codec_import(#[case] source: &str, #[case] expected: bool) {
+        // Arrange
         let parsed = ruff_python_parser::parse_module(source).unwrap();
+
+        // Act
         let imports = Imports::build(
             parsed.syntax(),
             &MutationOperatorSelection::default(),
@@ -301,6 +275,7 @@ mod tests {
         )
         .unwrap();
 
+        // Assert
         assert_eq!(imports.codecs.is_some(), expected, "{source}");
     }
 }

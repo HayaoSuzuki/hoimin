@@ -33,6 +33,11 @@ their recorded operator sets. Candidate and saved-plan schemas are unchanged.
 Explicit Boolean literal options continue to use `boolean_literal`; new policy
 operators add coverage for omitted defaults and dynamic option values.
 
+URL replacements prefer an existing proven alias or module over an import
+fallback. A different replacement spelling can change its candidate ID; use a
+fresh plan when comparing discovery after this update. Sharing omitted-keyword
+layout preserves the existing edit ranges and selection anchors.
+
 ## Behavioral mutation coverage
 
 At that change, fresh runs and plans selected 136 runtime operators from 155

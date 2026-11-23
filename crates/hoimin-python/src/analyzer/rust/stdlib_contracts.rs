@@ -3,11 +3,11 @@
 use super::{
     AnalysisCancelled,
     callable_imports::CallableImports,
-    processing_calls::{Site, bind},
+    processing_calls::{Site, bind, implicit_generator_interior},
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
-use ruff_python_ast::{ExprCall, ModModule};
-use ruff_text_size::{TextRange, TextSize};
+use ruff_python_ast::{ExprCall, ModModule, token::TokenKind};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 
 #[path = "stdlib_contracts/encoding.rs"]
 mod encoding;
@@ -81,27 +81,52 @@ pub(super) struct Imports {
     encoding: encoding::Imports,
 }
 
+/// Build the full identity proof only for a selected family with an eager import.
+struct SelectedFamilies<'a, F> {
+    module: &'a ModModule,
+    operators: &'a MutationOperatorSelection,
+    cancelled: &'a F,
+}
+
+impl<F: Fn() -> bool> SelectedFamilies<'_, F> {
+    fn proof(
+        &self,
+        family: &'static [&'static str; 1],
+        operators: &[MutationOperator],
+    ) -> Result<CallableImports, AnalysisCancelled> {
+        if operators.iter().any(|&op| self.operators.contains(op)) {
+            return Ok(CallableImports::build_imported_family(
+                self.module,
+                self.cancelled,
+                family,
+            )?
+            .unwrap_or_default());
+        }
+        Ok(CallableImports::default())
+    }
+}
+
 impl Imports {
     pub(super) fn build(
         module: &ModModule,
         operators: &MutationOperatorSelection,
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisCancelled> {
-        let unicode = if [
-            MutationOperator::UnicodeNormalizationForm,
-            MutationOperator::UnicodeNormalizationRemove,
-        ]
-        .into_iter()
-        .any(|op| operators.contains(op))
-        {
-            CallableImports::build_family(module, cancelled, &["unicodedata"])?
-        } else {
-            CallableImports::default()
+        let families = SelectedFamilies {
+            module,
+            operators,
+            cancelled,
         };
         Ok(Self {
-            numeric: numeric::Imports::build(module, operators, cancelled)?,
-            options: options::Imports::build(module, operators, cancelled)?,
-            unicode,
+            numeric: numeric::Imports::build(&families)?,
+            options: options::Imports::build(&families)?,
+            unicode: families.proof(
+                &["unicodedata"],
+                &[
+                    MutationOperator::UnicodeNormalizationForm,
+                    MutationOperator::UnicodeNormalizationRemove,
+                ],
+            )?,
             encoding: encoding::Imports::build(module, operators, cancelled)?,
         })
     }
@@ -125,11 +150,75 @@ impl Imports {
             if !self.numeric.emit(call, site, &mut emit) || (site.cancelled)() {
                 return;
             }
-            self.encoding.emit(call, site, &mut |r, op, render| {
-                emit(r, r.start(), op, render)
+            self.encoding.emit(call, site, &mut emit);
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum KeywordSpan {
+    Call,
+    Arguments,
+}
+
+/// Derive punctuation and grouping from the original source. An option edit
+/// covers its argument list (only the interior for an implicit generator).
+/// Codec edits historically cover the whole call. Both select the callee line.
+fn insert_keyword(
+    call: &ExprCall,
+    site: &Site<'_>,
+    op: MutationOperator,
+    span: KeywordSpan,
+    keyword: std::fmt::Arguments<'_>,
+    emit: &mut impl FnMut(TextRange, TextSize, MutationOperator, &dyn Fn() -> String) -> bool,
+) -> bool {
+    if (site.cancelled)() {
+        return false;
+    }
+    let args = call.arguments.range();
+    let generator = implicit_generator_interior(call);
+    let range = match span {
+        KeywordSpan::Call => call.range(),
+        KeywordSpan::Arguments => generator.unwrap_or(args),
+    };
+    if let Some(interior) = generator {
+        if site.delimiters.can_enclose(interior, 1) {
+            let before = site
+                .text(TextRange::new(range.start(), interior.start()))
+                .unwrap();
+            let value = site.text(interior).unwrap();
+            let after = site
+                .text(TextRange::new(interior.end(), range.end()))
+                .unwrap();
+            return emit(range, call.start(), op, &|| {
+                format!("{before}({value}), {keyword}{after}")
+            });
+        }
+        return true;
+    }
+    let closing = args.end() - TextSize::new(1);
+    for token in site
+        .tokens()
+        .in_range(TextRange::new(args.start(), closing))
+        .iter()
+        .rev()
+    {
+        if (site.cancelled)() {
+            return false;
+        }
+        if !token.kind().is_trivia() {
+            let comma = if matches!(token.kind(), TokenKind::Comma | TokenKind::Lpar) {
+                ""
+            } else {
+                ", "
+            };
+            let prefix = site.text(TextRange::new(range.start(), closing)).unwrap();
+            return emit(range, call.start(), op, &|| {
+                format!("{prefix}{comma}{keyword})")
             });
         }
     }
+    true
 }
 
 #[cfg(test)]
@@ -137,6 +226,68 @@ mod tests {
     use super::super::{AstFacts, processing_calls::Builtins, source_delimiters::DelimiterDepth};
     use super::*;
     use std::cell::Cell;
+
+    #[rstest::rstest]
+    #[case::import_free("", 0)]
+    #[case::unrelated("import unrelated", 0)]
+    #[case::nested("def local():\n    import math", 0)]
+    #[case::relative("from .math import isclose", 0)]
+    #[case::lazy("lazy import math", 0)]
+    #[case::module("import math as m", 1)]
+    #[case::direct("from statistics import variance", 1)]
+    #[case::dotted("import urllib.parse", 1)]
+    #[case::package_member("from urllib import parse as p", 1)]
+    #[case::two_families("import json, itertools as it", 2)]
+    fn final_review_class_lookup_indexes_require_relevant_imports(
+        #[case] imports: &str,
+        #[case] expected: usize,
+    ) {
+        // Arrange
+        use super::super::callable_imports::CLASS_LOOKUP_INDEX_BUILDS;
+        use std::fmt::Write;
+        let mut source = format!("{imports}\nclass Record:\n");
+        for i in 0..512 {
+            writeln!(source, "    field_{i} = value_{i}").unwrap();
+        }
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let before = CLASS_LOOKUP_INDEX_BUILDS.with(Cell::get);
+
+        // Act
+        let _imports = Imports::build(
+            parsed.syntax(),
+            &MutationOperatorSelection::default(),
+            &|| false,
+        )
+        .unwrap();
+
+        // Assert
+        assert_eq!(CLASS_LOOKUP_INDEX_BUILDS.with(Cell::get) - before, expected);
+    }
+
+    #[test]
+    fn final_review_preflight_observes_cancellation_within_top_level_aliases() {
+        // Arrange
+        let source = format!(
+            "import {}\n",
+            (0..128)
+                .map(|i| format!("unrelated_{i}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let parsed = ruff_python_parser::parse_module(&source).unwrap();
+        let operators = serde_json::from_value(serde_json::json!(["url_quote_swap"])).unwrap();
+        let polls = Cell::new(0);
+        let cancelled = || {
+            polls.set(polls.get() + 1);
+            polls.get() >= 64
+        };
+
+        // Act
+        let result = Imports::build(parsed.syntax(), &operators, &cancelled);
+
+        // Assert
+        assert!(result.is_err());
+    }
 
     #[rstest::rstest]
     #[case::cancel_immediately(true, true, 0)]

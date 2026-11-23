@@ -65,6 +65,60 @@ fn analyze(
 }
 
 #[rstest::rstest]
+#[case::pi("import math", "math.isclose(x, math.pi)", "math_isclose_tolerance", 1)]
+#[case::e("import math as m", "m.isclose(x, m.e)", "math_isclose_tolerance", 1)]
+#[case::tau_alias(
+    "from math import tau as t, isclose",
+    "isclose(x, t)",
+    "math_isclose_tolerance",
+    1
+)]
+#[case::inf(
+    "import math",
+    "use(math.inf)\nmath.expm1(x)",
+    "math_precision_loss",
+    1
+)]
+#[case::nan_alias(
+    "from math import nan as n, expm1",
+    "use(n)\nexpm1(x)",
+    "math_precision_loss",
+    1
+)]
+#[case::write("import math", "math.pi = x\nmath.expm1(x)", "math_precision_loss", 0)]
+#[case::unknown_member(
+    "import math",
+    "use(math.other)\nmath.expm1(x)",
+    "math_precision_loss",
+    0
+)]
+#[case::module_escape(
+    "import math",
+    "use(math)\nmath.isclose(x, math.pi)",
+    "math_isclose_tolerance",
+    0
+)]
+#[case::class_read(
+    "import math",
+    "class C:\n    p = math.pi\nmath.expm1(x)",
+    "math_precision_loss",
+    0
+)]
+fn final_review_math_constant_read(
+    #[case] imports: &str,
+    #[case] body: &str,
+    #[case] id: &str,
+    #[case] expected: usize,
+) {
+    // Arrange
+    let source = format!("{imports}\n{body}");
+    // Act
+    let output = analyze(&source, id, &[], 10);
+    // Assert
+    assert_eq!(output.candidates.len(), expected);
+}
+
+#[rstest::rstest]
 #[case::named_operands(
     "math_isclose_tolerance",
     "from math import isclose as c\nc(b=b, a=a)",

@@ -1,7 +1,9 @@
-use super::super::processing_calls::implicit_generator_interior;
-use super::{AnalysisCancelled, CallableImports, Site, bind, urls};
-use hoimin_core::{MutationOperator as Op, MutationOperatorSelection};
-use ruff_python_ast::{Expr, ExprCall, ModModule, token::TokenKind};
+use super::{
+    AnalysisCancelled, CallableImports, KeywordSpan, SelectedFamilies, Site, bind, insert_keyword,
+    urls,
+};
+use hoimin_core::MutationOperator as Op;
+use ruff_python_ast::{Expr, ExprCall};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
 #[derive(Default)]
@@ -14,25 +16,13 @@ pub(super) struct Imports {
 
 impl Imports {
     pub(super) fn build(
-        module: &ModModule,
-        operators: &MutationOperatorSelection,
-        cancelled: &impl Fn() -> bool,
+        families: &SelectedFamilies<'_, impl Fn() -> bool>,
     ) -> Result<Self, AnalysisCancelled> {
-        let family = |enabled, name: &'static [&'static str; 1]| {
-            if enabled {
-                CallableImports::build_family(module, cancelled, name)
-            } else {
-                Ok(CallableImports::default())
-            }
-        };
         Ok(Self {
-            itertools: family(operators.contains(Op::BatchedStrictToggle), &["itertools"])?,
-            url: family(
-                operators.contains(Op::UrlQuoteSwap) || operators.contains(Op::UrlQueryPolicy),
-                &["urllib.parse"],
-            )?,
-            base64: family(operators.contains(Op::Base64ValidateToggle), &["base64"])?,
-            json: family(operators.contains(Op::JsonAllowNanToggle), &["json"])?,
+            itertools: families.proof(&["itertools"], &[Op::BatchedStrictToggle])?,
+            url: families.proof(&["urllib.parse"], &[Op::UrlQuoteSwap, Op::UrlQueryPolicy])?,
+            base64: families.proof(&["base64"], &[Op::Base64ValidateToggle])?,
+            json: families.proof(&["json"], &[Op::JsonAllowNanToggle])?,
         })
     }
 
@@ -234,47 +224,12 @@ pub(in super::super) fn boolean_policy(
         return true;
     }
     let toggled = if default { "False" } else { "True" };
-    insert_keyword(call, site, op, name, toggled, emit)
-}
-
-/// Retain the original argument layout, selecting the call's first line.
-pub(super) fn insert_keyword(
-    call: &ExprCall,
-    site: &Site<'_>,
-    op: Op,
-    name: &str,
-    value: &str,
-    emit: &mut impl FnMut(TextRange, TextSize, Op, &dyn Fn() -> String) -> bool,
-) -> bool {
-    if let Some(interior) = implicit_generator_interior(call) {
-        if site.delimiters.can_enclose(interior, 1)
-            && let Some(generator) = site.text(interior)
-        {
-            return emit(interior, call.start(), op, &|| {
-                format!("({generator}), {name}={value}")
-            });
-        }
-        return true;
-    }
-    let range = call.arguments.range();
-    let prefix = TextRange::new(range.start(), range.end() - TextSize::new(1));
-    let last = site
-        .tokens()
-        .in_range(prefix)
-        .iter()
-        .rev()
-        .find(|token| (site.cancelled)() || !token.kind().is_trivia());
-    if !(site.cancelled)()
-        && let (Some(last), Some(text)) = (last, site.text(prefix))
-    {
-        let comma = if matches!(last.kind(), TokenKind::Comma | TokenKind::Lpar) {
-            ""
-        } else {
-            ", "
-        };
-        return emit(range, call.start(), op, &|| {
-            format!("{text}{comma}{name}={value})")
-        });
-    }
-    true
+    insert_keyword(
+        call,
+        site,
+        op,
+        KeywordSpan::Arguments,
+        format_args!("{name}={toggled}"),
+        emit,
+    )
 }

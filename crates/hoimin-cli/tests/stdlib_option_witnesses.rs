@@ -3,6 +3,45 @@ mod witness;
 use witness::{assert_python, mutant};
 
 #[rstest::rstest]
+#[case::direct_alias("from urllib.parse import quote_plus as qp", "qp")]
+#[case::submodule_alias("from urllib import parse as p", "p.quote_plus")]
+#[case::package_root("import urllib.parse", "urllib.parse.quote_plus")]
+#[tokio::test]
+async fn final_review_quote_without_import_builtin(#[case] setup: &str, #[case] spelling: &str) {
+    // Arrange
+    let source = format!(
+        "{setup}\nfrom urllib.parse import quote as q\n__import__ = None\nout = q('a b/c')"
+    );
+    assert_python(&source, "assert out == 'a%20b/c'").await;
+    // Act
+    let mutated = mutant(&source, "url_quote_swap", spelling);
+    // Assert
+    assert_python(&mutated, "assert out == 'a+b%2Fc'").await;
+}
+
+#[rstest::rstest]
+#[case::member("from urllib.parse import quote_plus as _C__dst")]
+#[case::module("import urllib.parse as _C__dst")]
+#[tokio::test]
+async fn class_private_destination_uses_safe_fallback(#[case] setup: &str) {
+    // Arrange
+    let source = format!(
+        "from urllib.parse import quote as q\n{setup}\nclass C:\n    def quote_text(self, __dst):\n        return q('a b/c')\nout = C().quote_text(lambda text: 'wrong callable')"
+    );
+    assert_python(&source, "assert out == 'a%20b/c'").await;
+
+    // Act
+    let mutated = mutant(
+        &source,
+        "url_quote_swap",
+        "__import__('urllib.parse').parse.quote_plus",
+    );
+
+    // Assert
+    assert_python(&mutated, "assert out == 'a+b%2Fc'").await;
+}
+
+#[rstest::rstest]
 #[case::map(
     "map_strict_toggle",
     "",

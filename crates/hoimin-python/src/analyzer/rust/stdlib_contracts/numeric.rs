@@ -1,9 +1,11 @@
 //! Bind each numerical API before choosing a tolerance, arithmetic expression
 //! or sibling callable. Source splices retain argument order and lexical scope.
 use super::super::{callable_imports::Destination, processing_calls::implicit_generator_interior};
-use super::{AnalysisCancelled, CallableImports, Site, bind, options::insert_keyword};
-use hoimin_core::{MutationOperator as Op, MutationOperatorSelection};
-use ruff_python_ast::{Expr, ExprCall, ModModule, Number, UnaryOp};
+use super::{
+    AnalysisCancelled, CallableImports, KeywordSpan, SelectedFamilies, Site, bind, insert_keyword,
+};
+use hoimin_core::MutationOperator as Op;
+use ruff_python_ast::{Expr, ExprCall, Number, UnaryOp};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
 #[derive(Default)]
@@ -15,28 +17,15 @@ pub(super) struct Imports {
 
 impl Imports {
     pub(super) fn build(
-        module: &ModModule,
-        operators: &MutationOperatorSelection,
-        cancelled: &impl Fn() -> bool,
+        families: &SelectedFamilies<'_, impl Fn() -> bool>,
     ) -> Result<Self, AnalysisCancelled> {
-        let family = |enabled, name: &'static [&'static str; 1]| {
-            if enabled {
-                CallableImports::build_family(module, cancelled, name)
-            } else {
-                Ok(CallableImports::default())
-            }
-        };
         Ok(Self {
-            math: family(
-                operators.contains(Op::MathIscloseTolerance)
-                    || operators.contains(Op::MathPrecisionLoss),
+            math: families.proof(
                 &["math"],
+                &[Op::MathIscloseTolerance, Op::MathPrecisionLoss],
             )?,
-            statistics: family(
-                operators.contains(Op::StatisticsSamplePopulation),
-                &["statistics"],
-            )?,
-            heapq: family(operators.contains(Op::HeapPushpopReplace), &["heapq"])?,
+            statistics: families.proof(&["statistics"], &[Op::StatisticsSamplePopulation])?,
+            heapq: families.proof(&["heapq"], &[Op::HeapPushpopReplace])?,
         })
     }
 
@@ -238,7 +227,16 @@ fn isclose(
     else {
         return true;
     };
-    if relative.is_none() && !insert_keyword(call, site, op, "rel_tol", "0.0", emit) {
+    if relative.is_none()
+        && !insert_keyword(
+            call,
+            site,
+            op,
+            KeywordSpan::Arguments,
+            format_args!("rel_tol=0.0"),
+            emit,
+        )
+    {
         return false;
     }
     for value in [relative, absolute].into_iter().flatten() {

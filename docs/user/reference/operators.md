@@ -833,6 +833,13 @@ Exchanges `urllib.parse.quote` with `quote_plus`, or `unquote` with
 `a b/c` produces `a%20b/c` or `a+b%2Fc`. When decoding, the plus
 variant interprets a literal plus sign as a space.
 
+Direct imports reuse a proven destination alias or module when available,
+otherwise a guarded builtin import. The conservative resolver can omit a
+candidate when its preferred alias is unavailable in the current scope, even
+if another alias could work; it does not search every alternate binding.
+Class-contained private names and possible compiler-mangled spellings are
+excluded when their imported identity cannot be established.
+
 ### `url_query_policy`
 
 Toggles `doseq` in `urllib.parse.urlencode`, which controls expansion

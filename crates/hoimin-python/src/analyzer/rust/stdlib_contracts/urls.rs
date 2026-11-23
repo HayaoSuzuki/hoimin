@@ -106,17 +106,15 @@ pub(super) fn emit(
             destination.to_owned()
         });
     }
-    // Importing a dotted name returns its top-level package. The witnessed
-    // direct import already loaded urllib.parse, so traverse parse explicitly.
-    if site.builtins.ordinary_namespace()
-        && imports.import_builtin_available()
-        && site.delimiters.room_before(call.func.start(), 1)
+    if let Some(dest) =
+        site.builtins
+            .import_destination(imports, id.module, destination, &call.func, site)
     {
         return emit(
             call.func.range(),
             call.func.start(),
             Op::UrlQuoteSwap,
-            &|| format!("__import__('urllib.parse').parse.{destination}"),
+            &|| dest.to_string(),
         );
     }
     true

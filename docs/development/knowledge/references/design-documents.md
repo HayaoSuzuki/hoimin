@@ -9,7 +9,7 @@ sources:
   resource: ../../work/designs/2026-11-23-stdlib-contract-mutations.md
   revision: 35df3468f4ad56dd6e4e5c1390d6802242c45d62
   working_tree: modified
-  sha256: c428fb75a0985416cc1facf9e55cadd8044ad9138cc3ef2ee8aa40b3e09f2a50
+  sha256: e4f6940cc6e6cc03a48bc8f676ae1b193c870a4d7e106853f9f42f9e187fc10d
 - id: python-behavior-mutations
   resource: ../../work/designs/2026-11-23-python-behavior-mutations.md
   working_tree: untracked
