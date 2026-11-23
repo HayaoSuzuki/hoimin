@@ -1,6 +1,185 @@
 use super::{assert_python_output, fs, plan, run_python};
 use rstest::rstest;
 
+#[rstest]
+#[case::ordinary_handler(
+    "exception_handler_swap",
+    "try: raise KeyError()\nexcept LookupError: print('broad') # broad\nexcept KeyError: print('narrow'); # narrow\n",
+    "except LookupError: print('broad') # broad\nexcept KeyError: print('narrow'); # narrow",
+    None,
+    "import subject",
+    "broad\n",
+    "narrow\n"
+)]
+#[case::star_handler(
+    "exception_handler_swap",
+    "try: raise ExceptionGroup('group', [KeyError(), IndexError()])\nexcept* LookupError as group: print('broad', len(group.exceptions))\nexcept* KeyError as group: print('narrow', len(group.exceptions))\n",
+    "except* LookupError as group: print('broad', len(group.exceptions))\nexcept* KeyError as group: print('narrow', len(group.exceptions))",
+    None,
+    "import subject",
+    "broad 2\n",
+    "narrow 1\nbroad 1\n"
+)]
+#[case::star_boundary(
+    "exception_base_boundary",
+    "try: raise BaseExceptionGroup('group', [KeyboardInterrupt()])\nexcept* Exception: print('ordinary')\nexcept* KeyboardInterrupt: print('interrupt')\n",
+    "Exception",
+    Some("BaseException"),
+    "import subject",
+    "interrupt\n",
+    "ordinary\n"
+)]
+#[case::star_tuple_add(
+    "exception_tuple_add_pair",
+    "try: raise ExceptionGroup('group', [TypeError()])\nexcept* (ValueError,): print('pair')\nexcept* TypeError: print('type')\n",
+    "(ValueError,)",
+    None,
+    "import subject",
+    "type\n",
+    "pair\n"
+)]
+#[case::star_hierarchy(
+    "exception_hierarchy",
+    "class Parent(Exception): pass\nclass Child(Parent): pass\ntry: raise ExceptionGroup('group', [Parent()])\nexcept* Child: print('first')\nexcept* Parent: print('second')\n",
+    "Child",
+    Some("Parent"),
+    "import subject",
+    "second\n",
+    "first\n"
+)]
+#[case::cause_none(
+    "exception_cause_omit",
+    "def run():\n try: raise TypeError()\n except TypeError: raise KeyError() from None\n",
+    " from None",
+    None,
+    "from subject import run\ntry: run()\nexcept KeyError as e: print(e.__suppress_context__)",
+    "True\n",
+    "False\n"
+)]
+#[case::cause_walrus(
+    "exception_cause_omit",
+    "def make():\n print('cause')\n return RuntimeError()\ndef run():\n def read():\n  nonlocal cause\n  return cause\n raise KeyError() from (cause := make())\n",
+    " from",
+    None,
+    "from subject import run\ntry: run()\nexcept KeyError as e: print(type(e.__cause__).__name__)",
+    "cause\nRuntimeError\n",
+    "NoneType\n"
+)]
+#[case::cause_yield(
+    "exception_cause_omit",
+    "def run():\n raise KeyError() from (yield 'suspended')\n",
+    " from",
+    None,
+    "from subject import run\nimport inspect\nprint(inspect.isgeneratorfunction(run))\ntry: print(next(run()))\nexcept KeyError: print('raised')",
+    "True\nsuspended\n",
+    "True\nraised\n"
+)]
+#[case::case_order(
+    "match_case_swap",
+    "match [7]:\n case value if value: print('guard', value)\n case [value]: print('sequence', value)\n case _: print('fallback')\n",
+    "case value if value: print('guard', value)\n case [value]: print('sequence', value)",
+    None,
+    "import subject",
+    "guard [7]\n",
+    "sequence 7\n"
+)]
+#[case::pattern_sequence(
+    "match_pattern_wildcard",
+    "match [3, 4]:\n case [1 as first, second]: print(first, second)\n case _: print('fallback')\n",
+    "1",
+    None,
+    "import subject",
+    "fallback\n",
+    "3 4\n"
+)]
+#[case::pattern_mapping(
+    "match_pattern_wildcard",
+    "match {'key': 3, 'rest': 4}:\n case {'key': 1 | 2, **rest}: print(rest)\n case _: print('fallback')\n",
+    "1 | 2",
+    Some("_"),
+    "import subject",
+    "fallback\n",
+    "{'rest': 4}\n"
+)]
+#[case::pattern_class(
+    "match_pattern_wildcard",
+    "class C:\n code = (3, 4)\nmatch C():\n case C(code=(1, 2)): print('class')\n case _: print('fallback')\n",
+    "(1, 2)",
+    Some("_"),
+    "import subject",
+    "fallback\n",
+    "class\n"
+)]
+#[case::pattern_closure_guard(
+    "match_pattern_wildcard",
+    "class K:\n value = 1\nclass Guard:\n def __bool__(self):\n  print('tested')\n  return True\ndef make(K):\n def inner(subject):\n  match subject:\n   case [K.value] if Guard(): print('matched')\n return inner\n",
+    "K.value] if Guard()",
+    Some("_] if (Guard()) if True else K"),
+    "from subject import make, K\ninner = make(K)\nprint(inner.__code__.co_freevars)\ninner([1])\ninner([2])",
+    "('K',)\ntested\nmatched\n",
+    "('K',)\ntested\nmatched\ntested\nmatched\n"
+)]
+#[case::pattern_class_closure(
+    "match_pattern_wildcard",
+    "def make(C):\n def inner(subject):\n  match subject:\n   case [C()]: print('matched')\n   case _: print('fallback')\n return inner\n",
+    "C()]",
+    Some("_] if True or C"),
+    "from subject import make\ninner = make(str)\nprint(inner.__code__.co_freevars)\ninner([42])",
+    "('C',)\nfallback\n",
+    "('C',)\nmatched\n"
+)]
+#[case::position_swap(
+    "match_class_position_swap",
+    "class C:\n __match_args__ = ('left', 'middle', 'right')\n left, middle, right = 1, 2, 3\nmatch C():\n case C(first, 2, last): print(first,last)\n",
+    "first, 2, last",
+    Some("last, 2, first"),
+    "import subject",
+    "1 3\n",
+    "3 1\n"
+)]
+#[tokio::test]
+async fn reference_dispatch_changes_selected_behavior(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] original: &str,
+    #[case] replacement: Option<&str>,
+    #[case] harness: &str,
+    #[case] baseline: &str,
+    #[case] mutant: &str,
+) {
+    outcomes(
+        source,
+        operator,
+        original,
+        replacement,
+        harness,
+        baseline,
+        mutant,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn reference_dispatch_moves_position_grouping_at_compiler_limit() {
+    let grouped = format!("{}0{}", "(".repeat(198), ")".repeat(198));
+    let original = format!("{grouped}, [[1]]");
+    let replacement = format!("[[1]], {grouped}");
+    let source = format!(
+        "class C:\n __match_args__ = ('first', 'second')\n first, second = 0, [[1]]\nmatch C():\n case C({original}): print('matched')\n case _: print('fallback')\n",
+    );
+
+    outcomes(
+        &source,
+        "match_class_position_swap",
+        &original,
+        Some(&replacement),
+        "import subject",
+        "matched\n",
+        "fallback\n",
+    )
+    .await;
+}
+
 // Select one precise edit from the real CLI plan. This also supports survivor
 // observations, where the original and mutant intentionally print the same result.
 async fn outcomes(

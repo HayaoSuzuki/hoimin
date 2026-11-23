@@ -213,6 +213,20 @@ mutation_operators! {
     RegexMatchBoundary => "regex_match_boundary",
     RegexCharacterSet => "regex_character_set",
     RegexAsciiMode => "regex_ascii_mode",
+    FloatLiteralNeighbor => "float_literal_neighbor",
+    BytesLiteralEmpty => "bytes_literal_empty",
+    FStringFormatSpecRemove => "fstring_format_spec_remove",
+    FStringFormatValueNeighbor => "fstring_format_value_neighbor",
+    ConditionalBranchSwap => "conditional_branch_swap",
+    AwaitRemove => "await_remove",
+    DictUnpackOrderSwap => "dict_unpack_order_swap",
+    DictUnpackDelete => "dict_unpack_delete",
+    DelRemove => "del_remove",
+    ExceptionHandlerSwap => "exception_handler_swap",
+    ExceptionCauseOmit => "exception_cause_omit",
+    MatchCaseSwap => "match_case_swap",
+    MatchPatternWildcard => "match_pattern_wildcard",
+    MatchClassPositionSwap => "match_class_position_swap",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -532,6 +546,20 @@ const DEFAULT_RUNTIME_OPERATORS: &[MutationOperator] = &[
     MutationOperator::RegexMatchBoundary,
     MutationOperator::RegexCharacterSet,
     MutationOperator::RegexAsciiMode,
+    MutationOperator::FloatLiteralNeighbor,
+    MutationOperator::BytesLiteralEmpty,
+    MutationOperator::FStringFormatSpecRemove,
+    MutationOperator::FStringFormatValueNeighbor,
+    MutationOperator::ConditionalBranchSwap,
+    MutationOperator::AwaitRemove,
+    MutationOperator::DictUnpackOrderSwap,
+    MutationOperator::DictUnpackDelete,
+    MutationOperator::DelRemove,
+    MutationOperator::ExceptionHandlerSwap,
+    MutationOperator::ExceptionCauseOmit,
+    MutationOperator::MatchCaseSwap,
+    MutationOperator::MatchPatternWildcard,
+    MutationOperator::MatchClassPositionSwap,
 ];
 
 impl Default for MutationOperatorSelection {

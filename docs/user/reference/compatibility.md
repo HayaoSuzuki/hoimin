@@ -19,12 +19,14 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
-## Cleanup, matching, call, and numeric defaults
+## Language-reference mutation coverage
 
-Fresh runs and plans select 107 runtime operators from 126 catalog IDs.
-The expanded set covers cleanup, match dispatch, regular expressions, escaping,
-call contracts, collection processing, rounding, statement order, and
-inheritance. Pass an individual ID to `--exclude-operators` to disable it.
+Fresh runs and plans select 121 runtime operators from 140 catalog IDs.
+Fourteen additions cover floating-point and bytes literals, formatted strings,
+conditional expressions, awaiting, dictionary unpacking, deletion, exception
+dispatch and patterns. Existing integer, string-segment, conversion and exception
+operators also cover more sites. Pass an individual ID to `--exclude-operators`
+to disable it.
 
 Saved plans keep their recorded operator sets and candidate identities.
 Create a fresh plan to see the expanded defaults. A candidate cap can retain a

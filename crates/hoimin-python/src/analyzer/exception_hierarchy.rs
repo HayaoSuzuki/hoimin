@@ -213,73 +213,74 @@ fn reference(expression: &Expr) -> Option<String> {
     }
 }
 
-fn ordinary_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "Exception"
-            | "ArithmeticError"
-            | "AssertionError"
-            | "AttributeError"
-            | "BufferError"
-            | "EOFError"
-            | "ImportError"
-            | "LookupError"
-            | "MemoryError"
-            | "NameError"
-            | "OSError"
-            | "ReferenceError"
-            | "RuntimeError"
-            | "StopAsyncIteration"
-            | "StopIteration"
-            | "SyntaxError"
-            | "SystemError"
-            | "TypeError"
-            | "ValueError"
-            | "Warning"
-            | "FloatingPointError"
-            | "OverflowError"
-            | "ZeroDivisionError"
-            | "ModuleNotFoundError"
-            | "IndexError"
-            | "KeyError"
-            | "UnboundLocalError"
-            | "BlockingIOError"
-            | "ChildProcessError"
-            | "ConnectionError"
-            | "FileExistsError"
-            | "FileNotFoundError"
-            | "InterruptedError"
-            | "IsADirectoryError"
-            | "NotADirectoryError"
-            | "PermissionError"
-            | "ProcessLookupError"
-            | "TimeoutError"
-            | "BrokenPipeError"
-            | "ConnectionAbortedError"
-            | "ConnectionRefusedError"
-            | "ConnectionResetError"
-            | "NotImplementedError"
-            | "RecursionError"
-            | "IndentationError"
-            | "TabError"
-            | "UnicodeError"
-            | "UnicodeDecodeError"
-            | "UnicodeEncodeError"
-            | "UnicodeTranslateError"
-            | "BytesWarning"
-            | "DeprecationWarning"
-            | "EncodingWarning"
-            | "FutureWarning"
-            | "ImportWarning"
-            | "PendingDeprecationWarning"
-            | "ResourceWarning"
-            | "RuntimeWarning"
-            | "SyntaxWarning"
-            | "UnicodeWarning"
-            | "UserWarning"
-            | "EnvironmentError"
-            | "IOError"
-    )
+pub(super) const ORDINARY_BUILTINS: &[&str] = &[
+    "Exception",
+    "ArithmeticError",
+    "AssertionError",
+    "AttributeError",
+    "BufferError",
+    "EOFError",
+    "ImportError",
+    "LookupError",
+    "MemoryError",
+    "NameError",
+    "OSError",
+    "ReferenceError",
+    "RuntimeError",
+    "StopAsyncIteration",
+    "StopIteration",
+    "SyntaxError",
+    "SystemError",
+    "TypeError",
+    "ValueError",
+    "Warning",
+    "FloatingPointError",
+    "OverflowError",
+    "ZeroDivisionError",
+    "ModuleNotFoundError",
+    "IndexError",
+    "KeyError",
+    "UnboundLocalError",
+    "BlockingIOError",
+    "ChildProcessError",
+    "ConnectionError",
+    "FileExistsError",
+    "FileNotFoundError",
+    "InterruptedError",
+    "IsADirectoryError",
+    "NotADirectoryError",
+    "PermissionError",
+    "ProcessLookupError",
+    "TimeoutError",
+    "BrokenPipeError",
+    "ConnectionAbortedError",
+    "ConnectionRefusedError",
+    "ConnectionResetError",
+    "NotImplementedError",
+    "RecursionError",
+    "IndentationError",
+    "TabError",
+    "UnicodeError",
+    "UnicodeDecodeError",
+    "UnicodeEncodeError",
+    "UnicodeTranslateError",
+    "BytesWarning",
+    "DeprecationWarning",
+    "EncodingWarning",
+    "FutureWarning",
+    "ImportWarning",
+    "PendingDeprecationWarning",
+    "ResourceWarning",
+    "RuntimeWarning",
+    "SyntaxWarning",
+    "UnicodeWarning",
+    "UserWarning",
+    "EnvironmentError",
+    "IOError",
+];
+
+pub(super) fn ordinary_builtin(name: &str) -> bool {
+    ORDINARY_BUILTINS.contains(&name)
 }
 
 /// A scope-wide may-bind scan deliberately sacrifices candidates after any ambiguity.

@@ -9,6 +9,17 @@ pub(super) async fn assert_change(
     baseline: &str,
     expected: &str,
 ) {
+    observe_change(source, operator, None, harness, baseline, expected).await;
+}
+
+pub(super) async fn observe_change(
+    source: &str,
+    operator: &str,
+    replacement: Option<&str>,
+    harness: &str,
+    baseline: &str,
+    expected: &str,
+) {
     for newline in ["\n", "\r\n", "\r"] {
         let source = source.replace('\n', newline);
         let operators = serde_json::from_value(serde_json::json!([operator])).unwrap();
@@ -25,8 +36,13 @@ pub(super) async fn assert_change(
             &source,
         );
         assert_eq!(output.diagnostics.len(), 0, "{source}");
-        assert_eq!(output.candidates.len(), 1, "{operator}: {source}");
-        let candidate = &output.candidates[0];
+        let candidates: Vec<_> = output
+            .candidates
+            .iter()
+            .filter(|candidate| replacement.is_none_or(|value| candidate.replacement == value))
+            .collect();
+        assert_eq!(candidates.len(), 1, "{operator}: {source}");
+        let candidate = candidates[0];
         validate_candidate(source.as_bytes(), &descriptor(&source, candidate)).unwrap();
         let mut mutant = source.as_bytes().to_vec();
         let start = usize::try_from(candidate.span.start).unwrap();

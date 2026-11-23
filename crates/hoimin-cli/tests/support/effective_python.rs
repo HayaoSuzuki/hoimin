@@ -1,4 +1,4 @@
-use super::mutation_observations::assert_change;
+use super::mutation_observations::{assert_change, observe_change};
 
 #[rstest::rstest]
 #[case::def_missing_value_return_value_is_none_1(
@@ -258,6 +258,7 @@ async fn effective_python_iterator_prefix_checks_values_and_consumption(
 #[case::events_class_label_def_repr_self_events_append_repr_ret_1(
     "events=[]\nclass Label:\n    def __repr__(self):\n        events.append('repr')\n        return 'debug'\n    def __str__(self):\n        events.append('str')\n        return 'display'\ndef make():\n    events.append('make')\n    return Label()\nresult=f'{make()!r:>8}'\n",
     "fstring_conversion_swap",
+    "s",
     "print(result); print(events)",
     "   debug\n['make', 'repr']\n",
     " display\n['make', 'str']\n"
@@ -265,6 +266,7 @@ async fn effective_python_iterator_prefix_checks_values_and_consumption(
 #[case::class_width_def_str_self_return_4_def_repr_self_return_2(
     "class Width:\n    def __str__(self): return '4'\n    def __repr__(self): return '6'\nwidth=Width()\nresult=f'{12:{width!s}}'\n",
     "fstring_conversion_swap",
+    "r",
     "print(repr(result))",
     "'  12'\n",
     "'    12'\n"
@@ -272,6 +274,7 @@ async fn effective_python_iterator_prefix_checks_values_and_consumption(
 #[case::class_label_def_str_self_return_display_def_repr_self_r_3(
     "class Label:\n    def __str__(self): return 'display'\n    def __repr__(self): return 'debug'\nvalue=Label()\nresult=f'{value=!s}'\n",
     "fstring_conversion_swap",
+    "r",
     "print(result)",
     "value=display\n",
     "value=debug\n"
@@ -280,9 +283,18 @@ async fn effective_python_iterator_prefix_checks_values_and_consumption(
 async fn effective_python_fstring_checks_representation_and_effects_once(
     #[case] source: &str,
     #[case] operator: &str,
+    #[case] replacement: &str,
     #[case] harness: &str,
     #[case] baseline: &str,
     #[case] mutated: &str,
 ) {
-    assert_change(source, operator, harness, baseline, mutated).await;
+    observe_change(
+        source,
+        operator,
+        Some(replacement),
+        harness,
+        baseline,
+        mutated,
+    )
+    .await;
 }

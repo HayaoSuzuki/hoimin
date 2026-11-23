@@ -141,7 +141,7 @@ async fn condition_constants_replace_each_if_elif_test_and_compile(
 #[rstest::rstest]
 #[case::if_true_pass_elif_false_pass_1("if (True): pass\nelif False: pass\n")]
 #[case::while_x_pass_assert_x_y_a_if_x_else_b_z_a_for_a_in_xs_i_2(
-    "while x: pass\nassert x\ny = a if x else b\nz = [a for a in xs if a]\n"
+    "while x: pass\nassert x\nz = [a for a in xs if a]\n"
 )]
 #[case::if_f_x_1_pass_3("if f(x := 1): pass\n")]
 #[case::if_lambda_x_1_pass_4("if (lambda: (x := 1))(): pass\n")]

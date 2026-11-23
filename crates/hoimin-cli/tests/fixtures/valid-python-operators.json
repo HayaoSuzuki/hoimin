@@ -628,5 +628,75 @@
     "operator": "regex_ascii_mode",
     "status": "deferred",
     "reason": "CPython matching contracts exercise this operator outside the initial Lean corpus"
+  },
+  {
+    "operator": "float_literal_neighbor",
+    "status": "deferred",
+    "reason": "Finite IEEE-754 neighbors are checked by numeric properties and CPython witnesses; the Lean corpus does not model floating-point representations"
+  },
+  {
+    "operator": "bytes_literal_empty",
+    "status": "deferred",
+    "reason": "Bytes token and concatenation behavior is checked by CPython literal witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "fstring_format_spec_remove",
+    "status": "deferred",
+    "reason": "Dynamic format evaluation and closure retention are checked by CPython witnesses; the Lean corpus does not model format fields"
+  },
+  {
+    "operator": "fstring_format_value_neighbor",
+    "status": "deferred",
+    "reason": "Static and mixed numeric format fields are checked by parser and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "conditional_branch_swap",
+    "status": "deferred",
+    "reason": "Lazy branch selection and evaluation counts are checked by CPython expression witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "await_remove",
+    "status": "deferred",
+    "reason": "Coroutine suspension and operand evaluation are checked by CPython expression witnesses; the Lean corpus does not model async execution"
+  },
+  {
+    "operator": "dict_unpack_order_swap",
+    "status": "deferred",
+    "reason": "Mapping protocol order and collision boundaries are checked by CPython expression witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "dict_unpack_delete",
+    "status": "deferred",
+    "reason": "Mapping deletion and lexical retention are checked by CPython expression witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "del_remove",
+    "status": "deferred",
+    "reason": "Deletion effects and compiler-visible bindings are checked by CPython expression witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "exception_handler_swap",
+    "status": "deferred",
+    "reason": "Handler dispatch and directive ordering are checked by dispatch tests and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "exception_cause_omit",
+    "status": "deferred",
+    "reason": "Exception chaining and lexical retention are checked by CPython dispatch witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_case_swap",
+    "status": "deferred",
+    "reason": "Pattern dispatch and reachability are checked by parser tests and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_pattern_wildcard",
+    "status": "deferred",
+    "reason": "Capture preservation, free reads and guard evaluation are checked by CPython dispatch witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "match_class_position_swap",
+    "status": "deferred",
+    "reason": "Positional matching and delimiter boundaries are checked by parser tests and CPython witnesses outside the initial Lean corpus"
   }
 ]

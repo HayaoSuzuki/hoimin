@@ -7,6 +7,15 @@ use super::{
 use ruff_python_ast::{MatchCase, PatternMatchOr, StmtMatch, StmtTry};
 use ruff_text_size::TextSize;
 
+#[path = "dispatch.rs"]
+mod dispatch;
+#[path = "dispatch_patterns.rs"]
+mod dispatch_patterns;
+
+#[cfg(test)]
+#[path = "dispatch_tests.rs"]
+mod dispatch_tests;
+
 /// Lexical suite depth and whether the enclosing match admits dispatch edits.
 /// Both are restored by the existing suite and statement walks on return.
 #[derive(Default)]
@@ -61,6 +70,9 @@ impl<F: Fn() -> bool> AstCandidateCollector<'_, F> {
             MutationOperator::MatchCaseDelete,
             MutationOperator::MatchGuardConstant,
             MutationOperator::MatchOrAlternativeDelete,
+            MutationOperator::MatchCaseSwap,
+            MutationOperator::MatchPatternWildcard,
+            MutationOperator::MatchClassPositionSwap,
         ]
         .into_iter()
         .any(|op| self.request.operators.contains(op))
@@ -97,7 +109,7 @@ impl<F: Fn() -> bool> AstCandidateCollector<'_, F> {
             && let Some(guard) = &case.guard
             && !guard.is_boolean_literal_expr()
             && selected_source_start(guard.range(), self.line_index, self.facts, self.selection)
-            && self.guard_wrapper_fits(case.pattern.end(), guard.end())
+            && self.guard_wrapper_fits(case.pattern.end(), guard.end(), 2)
         {
             let range = guard.range();
             let original = &self.source[byte_range(range)];
@@ -112,11 +124,17 @@ impl<F: Fn() -> bool> AstCandidateCollector<'_, F> {
                 );
             }
         }
+        self.collect_case_wildcards(case);
     }
 
     // The AST omits redundant grouping. CPython's tokenizer allows 200
-    // nested delimiters, and the two wrappers enclose the entire expression.
-    fn guard_wrapper_fits(&mut self, pattern_end: TextSize, guard_end: TextSize) -> bool {
+    // nested delimiters, including any added around the expression.
+    fn guard_wrapper_fits(
+        &mut self,
+        pattern_end: TextSize,
+        guard_end: TextSize,
+        extra: usize,
+    ) -> bool {
         let tokens = self.facts.tokens.expect("checked parse");
         let mut inside_guard = false;
         let mut depth = 0;
@@ -131,7 +149,7 @@ impl<F: Fn() -> bool> AstCandidateCollector<'_, F> {
             match token.kind() {
                 TokenKind::Lpar | TokenKind::Lbrace | TokenKind::Lsqb => {
                     depth += 1;
-                    if depth > 198 {
+                    if depth > 200 - extra {
                         return false;
                     }
                 }

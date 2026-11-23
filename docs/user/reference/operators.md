@@ -47,9 +47,12 @@ named `sort` need not belong to a list. The `set_union_intersection_swap` operat
 instead requires evidence of a builtin set. Read the preview before interpreting
 a method mutation as a change to a particular runtime type.
 
-Edits that remove an expression can remove its effects deliberately. Their
-deletion guards exclude binding or suspension constructs such as assignment
-expressions, `await` and `yield`; this is not a claim that ordinary calls are pure.
+Edits that remove an expression can remove its effects deliberately. Some use
+deletion guards to exclude binding or suspension constructs such as assignment
+expressions, `await` and `yield`; others retain unreachable syntax to preserve
+compiler-visible facts. Neither approach treats ordinary calls as pure. Entries
+below describe each policy. Sites without room for required grouping are excluded
+to respect Python's delimiter-depth limit.
 The [development guide](../../development/guides/contributing.md#extending-collection-and-structural-mutations)
 provides implementation details and links to the analyzer tests.
 
@@ -289,9 +292,10 @@ keywords. An iterable accepted by `sorted` need not support `reversed`.
 ### `structure_index_neighbor`
 
 `items[-1]` → `items[0]` or `items[-2]`. Probe neighboring positions. Requires a
-load-context plain decimal index, optionally grouped or negative. Magnitudes must
-fit `u64`; hex, underscores, floats, unary plus, repeated signs and computed
-indices are excluded. Unsigned zero produces only the positive neighbor.
+load-context integer index, optionally grouped or signed. Decimal, hexadecimal,
+octal and binary spellings, separators and large integers qualify. Floats,
+repeated signs and computed indices are excluded. Zero without a unary minus
+produces only the positive neighbor.
 
 ### `structure_slice_neighbor`
 
@@ -367,24 +371,30 @@ statements do not. Binding/suspension deletion guards apply.
 ### `integer_literal_neighbor`
 
 `count = 3` → `count = 2` or `count = 4`. Probe nearby constants in eligible runtime
-integer expressions. Requires decimal ASCII digits with optional minus and a
-magnitude fitting `u64`; hex, underscores and floats are excluded. Zero produces
+integer expressions. Supports decimal, hexadecimal, octal and binary spellings,
+digit separators, unary plus/minus and arbitrary-size integers. Zero produces
 `-1` and `1`. Index/slice interiors, patterns, annotations and assignment targets
 do not qualify. Index/slice neighbors use their own operators and guards.
+Large decimal increments can use an exact power of ten to stay within Python's
+decimal literal digit limit.
 
 ### `condition_constant`
 
 `if ready:` → `if (True):` or `if (False):`. Probe whether both paths matter.
-Supports eligible `if`/`elif` tests, not conditional expressions or a general
-rewrite of every Boolean expression. Existing Boolean literals and expressions
-rejected by deletion guards are excluded.
+Supports eligible `if`/`elif` tests and conditional expressions such as
+`a if ready else b`. Existing Boolean literals are excluded. Statement conditions
+use the expression deletion guards. Conditional-expression edits retain the
+original test in unreachable syntax to preserve compiler bindings and free reads.
 
 ### `condition_clause_delete`
 
 `if ready and permitted:` → `if permitted:` is one candidate. Probe each clause's
-contribution to a top-level `and`/`or` condition of `if`/`elif`. Removes one operand,
+contribution to a top-level `and`/`or` condition of `if`/`elif` or a conditional
+expression. Removes one operand,
 preserving the others and their order. Removing a clause can expose previously
-short-circuited effects; deletion guards exclude binding/suspension constructs.
+short-circuited effects. Statement conditions use deletion guards for binding and
+suspension constructs. Conditional expressions keep the original condition in a
+dead branch, preserving lexical facts without evaluating the removed clause.
 
 ### `while_condition_false`
 
@@ -448,9 +458,9 @@ protected string roles are excluded. String segments have a separate operator.
 ### `string_segment_empty`
 
 `f"prefix:{value}"` → `f"{value}"` is one example. Probe literal segments while
-keeping interpolated expressions. Removes the first nonempty top-level literal
-segment of a supported concatenated or formatted string, rather than enumerating
-every segment. Protected string roles, interpolation/debug text and nested format
+keeping interpolated expressions. Produces a separate candidate for each nonempty
+top-level literal segment of a supported concatenated or formatted string.
+Protected string roles, interpolation/debug text and nested format
 specification literals are excluded.
 
 ### `conversion_call_remove`
@@ -663,8 +673,9 @@ and supported two-argument call; both remain lazy.
 ### `fstring_conversion_swap`
 
 `f"{value!s}"` → `f"{value!r}"` is one conversion change. Probe displayed
-representations in formatted-string fields. Exchanges explicit `!s` and `!r`
-conversions; `!a`, fields without a conversion and literal text are excluded.
+representations in formatted-string fields. Replaces each explicit `!s`, `!r`
+or `!a` with either of the other two conversions. Fields without a conversion
+and literal text are excluded.
 
 Nested format fields qualify when they have explicit supported conversions.
 Implicit debug `repr` and template-string conversions are excluded.
@@ -891,22 +902,26 @@ termination. Requires the final ordinary handler without an `as` binding, not
 ### `exception_base_boundary`
 
 `except Exception:` → `except BaseException:`, and the reverse. Probe the
-termination boundary. Requires resolved supported names in ordinary handlers;
-`except*` is excluded.
+termination boundary. Requires resolved supported names in ordinary or `except*`
+handlers. Supported exception-group handler tuples also qualify.
 
 ### `exception_tuple_add_pair`
 
 `except (ValueError,):` → a tuple also including its supported paired type.
-Probe broadening handler coverage. Ordinary handlers only; requires a parenthesized
-tuple of recognized builtin exception names and passes resolution/duplicate-member
-guards. Project exception tuples and arbitrary expressions are excluded.
+Probe broadening handler coverage. Requires a tuple of recognized builtin
+exception names and passes resolution/duplicate-member guards. Ordinary handlers
+require parentheses; `except*` also supports unparenthesized exception lists.
+Project exception tuples and arbitrary expressions are excluded.
 
 ### `exception_tuple_remove_member`
 
 `except (ValueError, TypeError):` → a handler retaining only one member.
 Probe whether each accepted type matters. Requires an ordinary handler's
 parenthesized tuple of recognized builtin names with multiple members. Does not
-create an empty handler, leave a lone termination exception or edit `except*`.
+create an empty handler or leave a lone termination exception. For `except*`,
+parenthesized and unparenthesized supported tuples qualify, including singleton
+removal to an empty tuple that catches no group members. Exception-group classes
+are excluded as `except*` match types.
 
 ## Rounding and precision
 
@@ -1048,3 +1063,118 @@ does not call `iter` or change runtime object construction.
 This operator is one-way. Probe indexed/reiterable sequence requirements versus general iteration.
 Only resolved annotation forms qualify; the type checker's nonzero exit kills
 the mutant just as any configured command failure would.
+
+## Literal and dispatch extensions
+
+These operators are enabled by default. Use `--exclude-operators ID` to disable
+an individual operator; existing explicit operator selections remain explicit.
+
+### `float_literal_neighbor`
+
+`threshold = 1.0` → the adjacent smaller or larger finite binary floating-point
+value. Probe exact thresholds and rounding boundaries. Supports signed finite
+float literals, including exponent notation and subnormal values. Replacements
+remain floats. Infinite literals and imaginary literals are excluded.
+
+### `bytes_literal_empty`
+
+`payload = b"data"` → `payload = b""`. Probe required binary content. Empty the
+whole nonempty bytes expression, including implicit concatenation. The replacement
+retains bytes type and keeps comments between concatenated tokens. Annotation,
+pattern and assignment-target exclusions apply.
+
+### `fstring_format_spec_remove`
+
+`f"{value:08.2f}"` → `f"{value}"`. Probe required formatting independently of
+value evaluation. Removes a format specification, including nested format fields;
+the removed fields' effects are intentionally skipped. When the specification
+contains nested fields, the replacement renders an empty specification and
+retains their name references in an unreachable expression. Specifications
+containing a named assignment expression or `yield` are excluded. Debug fields
+retain their debug text.
+
+### `fstring_format_value_neighbor`
+
+`f"{value:08.2f}"` → `f"{value:08.3f}"` is one example. Probe literal width and
+precision boundaries in recognized standard format specifications. Each candidate
+changes one ASCII decimal component by one. A literal component can qualify
+when another component is supplied by one nested field, as in
+`f"{value:0{width}.2f}"`. Format text whose escapes change its decoded spelling
+and unrecognized format syntax are excluded.
+
+### `conditional_branch_swap`
+
+`first if ready else second` → `second if ready else first`. Probe whether the
+condition selects the intended result. The condition evaluates once; only the
+selected branch evaluates. Identical branch source text is excluded.
+
+### `await_remove`
+
+`await work()` → `work()`. Probe whether completion and suspension are required.
+The operand still evaluates once, but an awaitable is no longer awaited at this
+site. This can expose an unawaited coroutine, missing effects or an incorrect
+return type. The enclosing async function remains async.
+
+### `dict_unpack_order_swap`
+
+**Behavior example:** `{**base, **overrides}` gives `base` precedence on duplicate
+keys. Only adjacent unpack operands qualify. Both operands evaluate and expand
+into isolated plain dictionaries in their original order. A failure in the first
+operand's mapping protocol prevents the second operand from evaluating.
+The snapshots then combine in reverse order.
+
+This also changes first-occurrence key insertion order. Custom key equality
+calls and collision timing can differ during recombination. In particular, a
+collision with an earlier display entry can occur after a later operand has
+already run, although the original display would have stopped before that
+operand. Read the candidate before interpreting a failure involving custom keys.
+
+### `dict_unpack_delete`
+
+`{**base, **overrides}` → a dictionary without one unpacked operand's entries.
+Probe required inherited entries. Skips that operand's evaluation deliberately,
+while retaining unreachable syntax needed for lexical bindings and generator
+classification. Other entries retain their order.
+
+### `del_remove`
+
+**Behavior example:** `del cache[key]` leaves the item in place. Probe required
+deletion of names, attributes or items. Supports multiple targets and inline
+suites. The replacement retains compiler binding facts in an unreachable
+assertion message; target expressions and deletion hooks do not execute.
+
+### `exception_handler_swap`
+
+**Behavior example:** adjacent typed handlers exchange order, changing which
+overlapping handler runs first. Supports ordinary and exception-group handlers.
+A bare handler stays last. A clause whose scope directives cannot safely move
+past another clause is excluded.
+
+### `exception_cause_omit`
+
+`raise Error() from None` → `raise Error()`. Probe required suppression or explicit
+chaining of exceptions. Nontrivial cause expressions become unreachable syntax
+after the raise so compiler bindings remain; their evaluation is skipped.
+The primary exception expression remains unchanged.
+
+### `match_case_swap`
+
+**Behavior example:** adjacent cases exchange order. Probe priority among
+overlapping patterns or guards. Captures and suites move with their cases.
+An unguarded irrefutable case cannot move ahead of another case. Scope-directive
+ordering guards also apply.
+
+### `match_pattern_wildcard`
+
+`case [1, name]:` → `case [_, name]:`. Probe structural constraints within
+sequence, mapping and class patterns. Replaces a binding-free subpattern with a
+wildcard. Existing captures, including an enclosing `as` capture, remain. A dead
+guard expression retains free-variable reads from the removed constraint.
+Already-irrefutable and starred subpatterns are excluded.
+
+### `match_class_position_swap`
+
+`case Point(x, y):` → `case Point(y, x):`. Probe positional contracts governed by
+`__match_args__`. Exchanges two positional subpatterns, retaining captures and
+keyword patterns. Identical subpattern source text is excluded. Redundant grouping
+moves with its subpattern to preserve the Python delimiter-depth limit.

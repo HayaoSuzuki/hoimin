@@ -1,7 +1,7 @@
 //! Local mutations of missing values, state ownership, scope and delegation.
 use super::{
     AnalysisCancelled, callable_imports::CallableImports, formatted_conversions, function_entry,
-    is_simple_receiver,
+    is_simple_receiver, source_delimiters::DelimiterDepth,
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{TokenKind, Tokens};
@@ -34,6 +34,7 @@ pub(super) fn expression<F: Fn() -> bool>(
     expression: &Expr,
     source: &str,
     tokens: &Tokens,
+    delimiters: &DelimiterDepth,
     operators: &MutationOperatorSelection,
     cancelled: &F,
     mut emit: impl FnMut(TextRange, String, MutationOperator) -> bool,
@@ -66,10 +67,10 @@ pub(super) fn expression<F: Fn() -> bool>(
                 }
             }
         }
-        Expr::FString(value) if operators.contains(MutationOperator::FStringConversionSwap) => {
-            formatted_conversions::emit(value, tokens, cancelled, |range, replacement| {
-                emit(range, replacement, MutationOperator::FStringConversionSwap)
-            });
+        Expr::FString(value) => {
+            formatted_conversions::emit_edits(
+                value, tokens, source, delimiters, operators, cancelled, emit,
+            );
         }
         Expr::Call(call) => {
             let Expr::Attribute(attribute) = call.func.as_ref() else {
@@ -628,6 +629,7 @@ mod coverage_tests {
             expression_node,
             source,
             tokens,
+            &DelimiterDepth::default(),
             &MutationOperatorSelection::default(),
             &cancelled,
             |_, replacement, _| {
@@ -666,7 +668,7 @@ mod coverage_tests {
     #[rstest::rstest]
     #[case("None is value", vec!["(not (  value))"])]
     #[case("first is second", vec![])]
-    #[case("f'{value!s}'", vec!["r"])]
+    #[case("f'{value!s}'", vec!["r", "a"])]
     #[case("receiver.popleft()", vec!["pop"])]
     #[case("receiver.setdefault(key)", vec!["get"])]
     #[case("receiver.setdefault(*keys)", vec![])]

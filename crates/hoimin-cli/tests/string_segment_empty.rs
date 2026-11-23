@@ -119,7 +119,7 @@ async fn segments_are_enabled_by_default() {
         .iter()
         .filter(|c| c["operator"] == "string_segment_empty")
         .collect();
-    assert_eq!(segments.len(), 1);
+    assert_eq!(segments.len(), 2);
     assert_eq!(segments[0]["original"], "prefix:");
     assert_eq!(segments[0]["replacement"], "");
 }
@@ -192,10 +192,12 @@ async fn segments_keep_interpolation_evaluation_and_formatting(
     .await;
     let candidates = doc["candidates"].as_array().unwrap();
 
-    assert_eq!(candidates.len(), 1, "{expression}: {doc}");
-    assert_eq!(candidates[0]["original"], original, "{expression}");
+    let selected = candidates
+        .iter()
+        .find(|candidate| candidate["original"] == original)
+        .unwrap_or_else(|| panic!("{expression}: {doc}"));
     execute(
-        &mutated(&source, &candidates[0]),
+        &mutated(&source, selected),
         &format!(
             "assert result == {}, repr(result); assert events == {events}, events",
             serde_json::to_string(expected).unwrap()
@@ -236,7 +238,7 @@ async fn segments_empty_one_nonempty_concat_piece_and_keep_comments(
     .await;
     let candidates = doc["candidates"].as_array().unwrap();
 
-    assert_eq!(candidates.len(), 1, "{doc}");
+    assert_eq!(candidates.len(), 2, "{doc}");
     let result = mutated(&source, &candidates[0]);
     assert!(result.contains(preserved_fragment));
     execute(
@@ -278,7 +280,7 @@ async fn segment_emptying_keeps_adjacent_quote_token_boundaries(
     .await;
     let cs = doc["candidates"].as_array().unwrap();
 
-    assert_eq!(cs.len(), 1, "{doc}");
+    assert!(!cs.is_empty(), "{doc}");
     execute(
         &mutated(&source, &cs[0]),
         &format!(
@@ -383,7 +385,7 @@ result = f'prefix:{value()!r:>{width()}}/{value()!s}/{value()!a}/{value():>{widt
     )
     .await;
     let cs = doc["candidates"].as_array().unwrap();
-    assert_eq!(cs.len(), 1);
+    assert_eq!(cs.len(), 4);
     execute(&mutated(source, &cs[0]), r"assert result == '   é/é/\\xe9/formatted', repr(result)
 assert events == ['value', 'repr', 'width', 'value', 'str', 'value', 'repr', 'value', 'width', ('format', '>4')], events").await;
 }
@@ -471,7 +473,7 @@ async fn segment_spans_use_original_encoding_and_newlines(
     .await;
     let cs = doc["candidates"].as_array().unwrap();
 
-    assert_eq!(cs.len(), 1, "{encoding_name} {newline:?}: {doc}");
+    assert_eq!(cs.len(), 2, "{encoding_name} {newline:?}: {doc}");
     let start = usize::try_from(cs[0]["span"]["start"].as_u64().unwrap()).unwrap();
     let len = usize::try_from(cs[0]["span"]["length"].as_u64().unwrap()).unwrap();
     assert_eq!(&bytes[start..start + len], (encoding.encode)("é"));
@@ -518,4 +520,118 @@ async fn segment_plan_rejects_changed_source_and_invalid_offsets(
     .await;
     assert_eq!(code, 2, "{}", String::from_utf8_lossy(&stderr.snapshot()));
     assert!(String::from_utf8_lossy(&stderr.snapshot()).contains(expected_error));
+}
+
+#[rstest::rstest]
+#[case::empty_bytes(
+    "bytes_literal_empty",
+    "value = (b'left' # keep\n rb'right')",
+    "b\"\" # keep\n b\"\"",
+    "assert type(value) is bytes and value == b'leftright'",
+    "assert type(value) is bytes and value == b''"
+)]
+#[case::float_next(
+    "float_literal_neighbor",
+    "value = -1.0",
+    "(-9.999999999999999e-1)",
+    "assert type(value) is float and value == -1.0",
+    "import math; assert type(value) is float and value == math.nextafter(-1.0, math.inf)"
+)]
+#[case::large_integer(
+    "integer_literal_neighbor",
+    "value = -0x1_00000000_00000000",
+    "(-0x10000000000000001)",
+    "assert type(value) is int and value == -(2**64)",
+    "assert type(value) is int and value == -(2**64)-1"
+)]
+#[case::ascii_conversion(
+    "fstring_conversion_swap",
+    "value = f'{chr(233)!r}'",
+    "a",
+    "assert value == repr(chr(233))",
+    "assert value == ascii(chr(233)) and value != repr(chr(233))"
+)]
+#[case::format_removal(
+    "fstring_format_spec_remove",
+    "events = []\ndef width():\n events.append('width')\n return 5\nvalue = f'{2:>{width()}}'",
+    ":{\"\" if True else ((width()),)}",
+    "assert value == '    2' and events == ['width']",
+    "assert value == '2' and events == []"
+)]
+#[case::format_removal_keeps_closure(
+    "fstring_format_spec_remove",
+    "def outer():\n x = 4\n def inner():\n  result = f'{1:{x}}'\n  return result, 'x' in locals()\n return inner()\nvalue = outer()",
+    ":{\"\" if True else ((x),)}",
+    "assert value == ('   1', True)",
+    "assert value == ('1', True)"
+)]
+#[case::format_removal_keeps_super_class_cell(
+    "fstring_format_spec_remove",
+    "class Parent:\n def width(self): return 4\nclass Child(Parent):\n def render(self):\n  result = f'{1:>{super().width()}}'\n  return result, '__class__' in locals()\nvalue = Child().render()",
+    ":{\"\" if True else ((super().width()),)}",
+    "assert value == ('   1', True)",
+    "assert value == ('1', True)"
+)]
+#[case::format_removal_activates_debug_repr(
+    "fstring_format_spec_remove",
+    "class Item:\n def __repr__(self): return 'repr'\n def __format__(self, spec): return spec\nitem = Item()\nwidth = '>3'\nvalue = f'{item=:{width}}'",
+    "!r:{\"\" if True else ((width),)}",
+    "assert value == 'item=>3'",
+    "assert value == 'item=repr'"
+)]
+#[case::format_width(
+    "fstring_format_value_neighbor",
+    "value = f'{2:>4d}'",
+    "5",
+    "assert value == '   2'",
+    "assert value == '    2'"
+)]
+#[case::format_precision(
+    "fstring_format_value_neighbor",
+    "width = 8\nvalue = f'{1.25:0{width}.2f}'",
+    "1",
+    "assert value == '00001.25'",
+    "assert value == '000001.2'"
+)]
+#[tokio::test]
+async fn literal_edits_change_the_observed_value(
+    #[case] operator: &str,
+    #[case] source: &str,
+    #[case] replacement: &str,
+    #[case] baseline: &str,
+    #[case] expected: &str,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let doc = plan(root.path(), &["--operators", operator], "pass").await;
+    let candidates: Vec<_> = doc["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|candidate| candidate["replacement"] == replacement)
+        .collect();
+    assert_eq!(candidates.len(), 1, "{source}: {doc}");
+    execute(source, baseline).await;
+    execute(&mutated(source, candidates[0]), expected).await;
+}
+
+#[tokio::test]
+async fn added_decimal_digit_stays_within_cpython_compilation_limits() {
+    let root = tempfile::tempdir().unwrap();
+    let source = format!("value = {}\n", "9".repeat(4300));
+    std::fs::write(root.path().join("subject.py"), &source).unwrap();
+
+    let doc = plan(
+        root.path(),
+        &["--operators", "integer_literal_neighbor"],
+        "pass",
+    )
+    .await;
+    let candidates = doc["candidates"].as_array().unwrap();
+    assert_eq!(candidates.len(), 2);
+    let original = "assert value == 10**4300 - 1";
+    let incremented = "assert value == 10**4300";
+    execute(&source, original).await;
+    execute(&mutated(&source, &candidates[1]), incremented).await;
 }

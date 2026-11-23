@@ -304,6 +304,44 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
     (MutationOperator::RegexMatchBoundary, "regex_match_boundary"),
     (MutationOperator::RegexCharacterSet, "regex_character_set"),
     (MutationOperator::RegexAsciiMode, "regex_ascii_mode"),
+    (
+        MutationOperator::FloatLiteralNeighbor,
+        "float_literal_neighbor",
+    ),
+    (MutationOperator::BytesLiteralEmpty, "bytes_literal_empty"),
+    (
+        MutationOperator::FStringFormatSpecRemove,
+        "fstring_format_spec_remove",
+    ),
+    (
+        MutationOperator::FStringFormatValueNeighbor,
+        "fstring_format_value_neighbor",
+    ),
+    (
+        MutationOperator::ConditionalBranchSwap,
+        "conditional_branch_swap",
+    ),
+    (MutationOperator::AwaitRemove, "await_remove"),
+    (
+        MutationOperator::DictUnpackOrderSwap,
+        "dict_unpack_order_swap",
+    ),
+    (MutationOperator::DictUnpackDelete, "dict_unpack_delete"),
+    (MutationOperator::DelRemove, "del_remove"),
+    (
+        MutationOperator::ExceptionHandlerSwap,
+        "exception_handler_swap",
+    ),
+    (MutationOperator::ExceptionCauseOmit, "exception_cause_omit"),
+    (MutationOperator::MatchCaseSwap, "match_case_swap"),
+    (
+        MutationOperator::MatchPatternWildcard,
+        "match_pattern_wildcard",
+    ),
+    (
+        MutationOperator::MatchClassPositionSwap,
+        "match_class_position_swap",
+    ),
 ];
 
 const FAMILIES: [&str; 12] = [
@@ -448,6 +486,20 @@ const FAMILIES: [&str; 12] = [
 #[case::regex_match_boundary(123)]
 #[case::regex_character_set(124)]
 #[case::regex_ascii_mode(125)]
+#[case::float_literal_neighbor(126)]
+#[case::bytes_literal_empty(127)]
+#[case::fstring_format_spec_remove(128)]
+#[case::fstring_format_value_neighbor(129)]
+#[case::conditional_branch_swap(130)]
+#[case::await_remove(131)]
+#[case::dict_unpack_order_swap(132)]
+#[case::dict_unpack_delete(133)]
+#[case::del_remove(134)]
+#[case::exception_handler_swap(135)]
+#[case::exception_cause_omit(136)]
+#[case::match_case_swap(137)]
+#[case::match_pattern_wildcard(138)]
+#[case::match_class_position_swap(139)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

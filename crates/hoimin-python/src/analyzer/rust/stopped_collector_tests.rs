@@ -79,7 +79,7 @@ fn invoke<'ast>(
             collector.collect_string_segment(expression(module));
         }
         Attempt::Integer => {
-            let _signed = collector.collect_integer_literal(expression(module));
+            let _signed = collector.collect_numeric_literal(expression(module));
         }
         Attempt::ConditionDelete => {
             collector.collect_condition_clause_delete(expression(module));
@@ -387,10 +387,10 @@ fn run_ast(
 }
 
 #[rstest::rstest]
-#[case("value = 'first' 'second'", MutationOperator::StringSegmentEmpty, vec!["\"\""])]
+#[case("value = 'first' 'second'", MutationOperator::StringSegmentEmpty, vec!["\"\"", "\"\""])]
 #[case("1", MutationOperator::IntegerLiteralNeighbor, vec!["(0)", "(2)"])]
-#[case("18446744073709551616", MutationOperator::IntegerLiteralNeighbor, vec![])]
-#[case("-18446744073709551616", MutationOperator::IntegerLiteralNeighbor, vec![])]
+#[case("18446744073709551616", MutationOperator::IntegerLiteralNeighbor, vec!["(18446744073709551615)", "(18446744073709551617)"])]
+#[case("-18446744073709551616", MutationOperator::IntegerLiteralNeighbor, vec!["(-18446744073709551617)", "(-18446744073709551615)"])]
 #[case("def f():\n items.insert(0, (yield value))", MutationOperator::CollectionAppendInsert, vec![])]
 #[case("if first and second:\n pass", MutationOperator::ConditionClauseDelete, vec!["((second))", "((first))"])]
 #[case("if condition:\n pass", MutationOperator::ConditionConstant, vec!["(True)", "(False)"])]
