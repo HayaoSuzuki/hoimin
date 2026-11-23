@@ -351,6 +351,10 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::UrlQueryPolicy
         | MutationOperator::Base64ValidateToggle
         | MutationOperator::JsonAllowNanToggle
+        | MutationOperator::MathIscloseTolerance
+        | MutationOperator::MathPrecisionLoss
+        | MutationOperator::StatisticsSamplePopulation
+        | MutationOperator::HeapPushpopReplace
         | MutationOperator::EncodingErrorsStrict
         | MutationOperator::ItertoolsTakeDropSwap
         | MutationOperator::FStringConversionSwap

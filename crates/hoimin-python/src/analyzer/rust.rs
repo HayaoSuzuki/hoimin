@@ -3669,6 +3669,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             source_delimiters::DelimiterDepth::default()
         };
         let builtins = if [
+            MutationOperator::MathPrecisionLoss,
+            MutationOperator::StatisticsSamplePopulation,
+            MutationOperator::HeapPushpopReplace,
             MutationOperator::MapStrictToggle,
             MutationOperator::UrlQuoteSwap,
             MutationOperator::ContextExitOmit,

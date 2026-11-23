@@ -102,6 +102,24 @@ struct ImportSpelling {
     available_after: ruff_text_size::TextSize,
 }
 
+/// Eager aliases in a destination have normalized names that are valid Python
+/// loads. Keep their spelling borrowed until the candidate is admitted.
+pub(super) enum Destination<'a> {
+    Name(&'a str),
+    Attribute(&'a str, &'a str),
+    Import(&'a str, &'a str),
+}
+
+impl std::fmt::Display for Destination<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Name(name) => f.write_str(name),
+            Self::Attribute(module, member) => write!(f, "{module}.{member}"),
+            Self::Import(module, member) => write!(f, "__import__('{module}').{member}"),
+        }
+    }
+}
+
 impl ImportSpelling {
     fn order(&self) -> (ruff_text_size::TextSize, &str) {
         (self.available_after, &self.name)
@@ -409,37 +427,56 @@ impl CallableImports {
             })
     }
 
-    /// Prefer an existing eager alias in this module family to a new import.
+    /// Render an existing eager alias that can be written as a Python load.
     /// The anchor is an actual load so class namespace restrictions still apply.
     pub(super) fn destination_spelling(&self, member: &str, anchor: &Expr) -> Option<String> {
+        self.destination(member, anchor)
+            .map(|dest| dest.to_string())
+    }
+
+    pub(super) fn destination<'a>(
+        &'a self,
+        member: &'a str,
+        anchor: &Expr,
+    ) -> Option<Destination<'a>> {
         let start = usize::from(anchor.start());
         let end = usize::from(anchor.end());
         if self.class_lookups.contains(&(start, end)) {
             return None;
         }
-        self.destination_spelling_at(member, anchor.start(), |local| {
+        self.destination_at(member, anchor.start(), |local| {
             !(local.starts_with("__") && self.class_ranges.contains(start, end))
         })
     }
 
-    /// Resolve an eager alias for a generated load after its caller proves
-    /// that the local spelling is visible at the insertion point.
+    /// Render a source-safe eager alias for a generated load after its caller
+    /// proves that the normalized name is visible at the insertion point.
     pub(super) fn destination_spelling_at(
         &self,
         member: &str,
         offset: ruff_text_size::TextSize,
         visible: impl Fn(&str) -> bool,
     ) -> Option<String> {
+        self.destination_at(member, offset, visible)
+            .map(|dest| dest.to_string())
+    }
+
+    fn destination_at<'a>(
+        &'a self,
+        member: &'a str,
+        offset: ruff_text_size::TextSize,
+        visible: impl Fn(&str) -> bool,
+    ) -> Option<Destination<'a>> {
         let available = |spelling: &&ImportSpelling| {
             spelling.available_after <= offset && visible(&spelling.name)
         };
         if let Some(alias) = self.preferred_members.get(member).filter(available) {
-            Some(alias.name.clone())
+            Some(Destination::Name(&alias.name))
         } else {
             self.preferred_module
                 .as_ref()
                 .filter(available)
-                .map(|alias| format!("{}.{member}", alias.name))
+                .map(|alias| Destination::Attribute(&alias.name, member))
         }
     }
 
@@ -465,6 +502,15 @@ fn preferred_spellings(
     for (name, binding) in trusted {
         if cancelled() {
             return Err(AnalysisCancelled);
+        }
+        // A normalized lookup key can lex as a hard keyword even though its
+        // original Unicode spelling was an identifier. Exclude it before
+        // ranking aliases, so another eager spelling can still be chosen.
+        if ruff_python_parser::lexer::lex(name, ruff_python_parser::Mode::Expression)
+            .next_token()
+            .is_non_soft_keyword()
+        {
+            continue;
         }
         let spelling = ImportSpelling {
             name: name.clone(),

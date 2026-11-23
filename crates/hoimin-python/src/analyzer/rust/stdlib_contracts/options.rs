@@ -237,12 +237,24 @@ pub(in super::super) fn boolean_policy(
         return true;
     }
     let toggled = if default { "False" } else { "True" };
+    insert_keyword(call, site, op, name, toggled, emit)
+}
+
+/// Retain the original argument layout, selecting the call's first line.
+pub(super) fn insert_keyword(
+    call: &ExprCall,
+    site: &Site<'_>,
+    op: Op,
+    name: &str,
+    value: &str,
+    emit: &mut impl FnMut(TextRange, TextSize, Op, &dyn Fn() -> String) -> bool,
+) -> bool {
     if let Some(interior) = implicit_generator_interior(call) {
         if site.delimiters.can_enclose(interior, 1)
             && let Some(generator) = site.text(interior)
         {
             return emit(interior, call.start(), op, &|| {
-                format!("({generator}), {name}={toggled}")
+                format!("({generator}), {name}={value}")
             });
         }
         return true;
@@ -264,7 +276,7 @@ pub(in super::super) fn boolean_policy(
             ", "
         };
         return emit(range, call.start(), op, &|| {
-            format!("{text}{comma}{name}={toggled})")
+            format!("{text}{comma}{name}={value})")
         });
     }
     true

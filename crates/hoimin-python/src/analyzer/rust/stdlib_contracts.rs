@@ -11,6 +11,8 @@ use ruff_text_size::{TextRange, TextSize};
 
 #[path = "stdlib_contracts/encoding.rs"]
 mod encoding;
+#[path = "stdlib_contracts/numeric.rs"]
+mod numeric;
 #[path = "stdlib_contracts/options.rs"]
 mod options;
 #[path = "stdlib_contracts/urls.rs"]
@@ -50,6 +52,10 @@ fn decoded_choice<T, const N: usize>(
 
 pub(super) fn needs_delimiter_index(operators: &MutationOperatorSelection) -> bool {
     [
+        MutationOperator::MathIscloseTolerance,
+        MutationOperator::MathPrecisionLoss,
+        MutationOperator::StatisticsSamplePopulation,
+        MutationOperator::HeapPushpopReplace,
         MutationOperator::MapStrictToggle,
         MutationOperator::BatchedStrictToggle,
         MutationOperator::UrlQuoteSwap,
@@ -69,6 +75,7 @@ pub(super) fn needs_delimiter_index(operators: &MutationOperatorSelection) -> bo
 
 #[derive(Default)]
 pub(super) struct Imports {
+    numeric: numeric::Imports,
     options: options::Imports,
     unicode: CallableImports,
     encoding: encoding::Imports,
@@ -92,6 +99,7 @@ impl Imports {
             CallableImports::default()
         };
         Ok(Self {
+            numeric: numeric::Imports::build(module, operators, cancelled)?,
             options: options::Imports::build(module, operators, cancelled)?,
             unicode,
             encoding: encoding::Imports::build(module, operators, cancelled)?,
@@ -112,6 +120,9 @@ impl Imports {
             && !(site.cancelled)()
         {
             if !self.options.emit(call, site, &mut emit) || (site.cancelled)() {
+                return;
+            }
+            if !self.numeric.emit(call, site, &mut emit) || (site.cancelled)() {
                 return;
             }
             self.encoding.emit(call, site, &mut |r, op, render| {

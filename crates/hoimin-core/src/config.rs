@@ -256,6 +256,10 @@ mutation_operators! {
     ContextExitOmit => "context_exit_omit",
     ContextExitResultNegate => "context_exit_result_negate",
     YieldStatementRemove => "yield_statement_remove",
+    MathIscloseTolerance => "math_isclose_tolerance",
+    MathPrecisionLoss => "math_precision_loss",
+    StatisticsSamplePopulation => "statistics_sample_population",
+    HeapPushpopReplace => "heap_pushpop_replace",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -618,6 +622,10 @@ const DEFAULT_RUNTIME_OPERATORS: &[MutationOperator] = &[
     MutationOperator::ContextExitOmit,
     MutationOperator::ContextExitResultNegate,
     MutationOperator::YieldStatementRemove,
+    MutationOperator::MathIscloseTolerance,
+    MutationOperator::MathPrecisionLoss,
+    MutationOperator::StatisticsSamplePopulation,
+    MutationOperator::HeapPushpopReplace,
 ];
 
 impl Default for MutationOperatorSelection {

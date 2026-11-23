@@ -856,6 +856,44 @@ infinity to raise `ValueError`. Calls must omit `cls` or pass literal
 `None`. For all Boolean option operators in this group, explicit
 `True` and `False` remain covered by `boolean_literal`.
 
+### `math_isclose_tolerance`
+
+Sets one tolerance in `math.isclose` to `0.0`. Each explicit tolerance
+gets its own candidate unless the analyzer recognizes a zero. A dynamic tolerance
+expression still evaluates once in its original position. The operator
+adds `rel_tol=0.0` when the call omits the relative
+tolerance. The default absolute tolerance is already zero.
+For example, `math.isclose(0, 1e-10, abs_tol=1e-9)` changes from `True`
+to `False` when the absolute tolerance becomes zero.
+
+### `math_precision_loss`
+
+Changes `math.expm1(x)` to `math.exp(x) - 1` or `math.log1p(x)` to
+`math.log(1 + x)`. Both mutations evaluate `x` once. At `x = 1e-16`,
+floating-point rounding gives zero for both expanded expressions.
+
+For a direct import such as `from math import expm1 as tiny`, Hoimin
+needs a way to call `exp`. It can use another trusted import alias or
+the unshadowed builtin import function. A Unicode alias that normalizes
+to a reserved keyword cannot supply the generated name. Hoimin skips
+the candidate if it cannot resolve a usable destination.
+
+### `statistics_sample_population`
+
+Exchanges `statistics.variance` with `pvariance`, or `statistics.stdev`
+with `pstdev`, in either direction. When you supply the center by keyword,
+the mutation translates `xbar` to `mu` or vice versa and keeps the
+original argument order. For `[1, 2, 3]`, sample variance is `1` and
+population variance is `2/3`.
+
+### `heap_pushpop_replace`
+
+Exchanges `heapq.heappushpop` with `heapq.heapreplace` in either
+direction. Given the heap `[5, 9]` and the item `3`, `heappushpop`
+returns `3` and leaves `[5, 9]`. The `heapreplace` mutation returns
+`5` and leaves `[3, 9]`. On an empty heap, `heappushpop` returns the
+supplied item and `heapreplace` raises `IndexError`.
+
 ### `base_order_shuffle`
 
 `class Combined(Left, Right): ...` → `class Combined(Right, Left): ...`. Probe

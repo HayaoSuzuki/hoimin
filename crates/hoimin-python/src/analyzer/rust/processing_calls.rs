@@ -1,8 +1,10 @@
 //! Shared source and callable checks for collection and precision edits.
 
 use super::{
-    AnalysisCancelled, AstFacts, HelperSite, NameResolution, callable_imports::CallableImports,
-    source_delimiters::DelimiterDepth, source_text,
+    AnalysisCancelled, AstFacts, HelperSite, NameResolution,
+    callable_imports::{CallableImports, Destination},
+    source_delimiters::DelimiterDepth,
+    source_text,
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{Tokens, parenthesized_range};
@@ -141,11 +143,23 @@ impl Builtins {
         anchor: &Expr,
         site: &Site<'_>,
     ) -> Option<String> {
-        imports.destination_spelling(member, anchor).or_else(|| {
+        self.import_destination(imports, module, member, anchor, site)
+            .map(|dest| dest.to_string())
+    }
+
+    pub(super) fn import_destination<'a>(
+        &self,
+        imports: &'a CallableImports,
+        module: &'a str,
+        member: &'a str,
+        anchor: &Expr,
+        site: &Site<'_>,
+    ) -> Option<Destination<'a>> {
+        imports.destination(member, anchor).or_else(|| {
             (self.ordinary_namespace()
                 && imports.import_builtin_available()
                 && site.delimiters.room_before(anchor.start(), 1))
-            .then(|| format!("__import__('{module}').{member}"))
+            .then_some(Destination::Import(module, member))
         })
     }
 }
