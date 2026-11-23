@@ -1,6 +1,6 @@
-# CLI reference
-
 <!-- Generated; do not edit by hand. -->
+
+# CLI reference
 
 Source: [Rust CLI definitions](../../../crates/hoimin-cli/src/cli.rs).
 
@@ -606,7 +606,9 @@ Options:
           Exclude a path while copying; may be repeated and wins over include
 
       --operators <OPERATORS>
-          Include only named mutation operators; omit for the default runtime set. Repeatable or comma-delimited
+          Select mutation operator IDs or selector families; repeatable or comma-delimited.
+
+          Omit --operators to use the default runtime set. An explicit selection replaces that set. Selecting a family includes all its listed members, including opt-in IDs. --exclude-operators is applied afterward.
 
       --profile <PROFILE>
           Candidate-selection profile
@@ -615,7 +617,9 @@ Options:
           [possible values: full, focused]
 
       --exclude-operators <EXCLUDE_OPERATORS>
-          Exclude named mutation operators; may be repeated or comma-delimited
+          Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+
+          Remove the named IDs or every member of the named families after the default or explicit --operators selection. At least one operator must remain selected.
 
       --jobs <JOBS>
           Maximum concurrently active workers
@@ -693,11 +697,6 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
-
-Mutation selection:
-  Omit --operators for the default runtime set. --operators replaces that set.
-  --exclude-operators removes IDs or whole families after selection.
-  Families expand to their members, including opt-in IDs when selected.
 
 Operator examples, applicability and limits for released hoimin 0.15.0:
   https://github.com/HayaoSuzuki/hoimin/blob/v0.15.0/docs/user/guides/usage.md#mutation-operators
@@ -976,7 +975,9 @@ Options:
           Exclude a path while copying; may be repeated and wins over include
 
       --operators <OPERATORS>
-          Include only named mutation operators; omit for the default runtime set. Repeatable or comma-delimited
+          Select mutation operator IDs or selector families; repeatable or comma-delimited.
+
+          Omit --operators to use the default runtime set. An explicit selection replaces that set. Selecting a family includes all its listed members, including opt-in IDs. --exclude-operators is applied afterward.
 
       --profile <PROFILE>
           Candidate-selection profile
@@ -985,7 +986,9 @@ Options:
           [possible values: full, focused]
 
       --exclude-operators <EXCLUDE_OPERATORS>
-          Exclude named mutation operators; may be repeated or comma-delimited
+          Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+
+          Remove the named IDs or every member of the named families after the default or explicit --operators selection. At least one operator must remain selected.
 
       --jobs <JOBS>
           Maximum concurrently active workers
@@ -1054,11 +1057,6 @@ Options:
 
   -h, --help
           Print help (see a summary with '-h')
-
-Mutation selection:
-  Omit --operators for the default runtime set. --operators replaces that set.
-  --exclude-operators removes IDs or whole families after selection.
-  Families expand to their members, including opt-in IDs when selected.
 
 Operator examples, applicability and limits for released hoimin 0.15.0:
   https://github.com/HayaoSuzuki/hoimin/blob/v0.15.0/docs/user/guides/usage.md#mutation-operators
@@ -1369,13 +1367,27 @@ Usage: hoimin help help
 
 ## Operator selection
 
-This index is generated from the same registry, defaults and family expansion used
-by the CLI. See the [operator reference](operators.md) for examples and applicability,
-and [choose operators](../guides/usage.md#mutation-operators) for selection and version guidance.
+Use this index to check each operator's default state and selector families.
+The option explanations below are the same text as in run/plan --help.
+See the [operator reference](operators.md) for examples and applicability,
+and [choose operators](../guides/usage.md#mutation-operators) for workflow and version guidance.
 
-Omitting `--operators` selects rows marked **yes**. An explicit `--operators` list
-replaces that set; `--exclude-operators` then removes IDs or family members.
-A dash in the family column means that the ID has no family alias.
+Rows marked **yes** are enabled by default. A dash in the family column means
+that the ID has no family alias.
+
+### `--operators`
+
+Select mutation operator IDs or selector families; repeatable or comma-delimited.
+
+Omit --operators to use the default runtime set. An explicit selection replaces that set. Selecting a family includes all its listed members, including opt-in IDs. --exclude-operators is applied afterward.
+
+### `--exclude-operators`
+
+Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+
+Remove the named IDs or every member of the named families after the default or explicit --operators selection. At least one operator must remain selected.
+
+### Operator IDs
 
 | Operator ID | Default runtime selection | Selector families |
 | --- | --- | --- |

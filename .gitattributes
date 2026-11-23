@@ -1,2 +1,4 @@
 # The sdist byte-retention test compares this metadata with the checkout.
 crates/hoimin-budget-math/Cargo.toml text eol=lf
+# These documents are compiled into help and generated Web reference text.
+crates/hoimin-cli/docs/* text eol=lf

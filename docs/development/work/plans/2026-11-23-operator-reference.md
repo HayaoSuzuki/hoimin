@@ -148,6 +148,86 @@ No extra runtime interface or metadata framework was introduced. The remaining
 maintenance cost is factual review of handwritten semantics when analyzers change;
 automated completeness and link checks cannot prove prose correctness.
 
+## Shared prose revision
+
+Review identified a missed ownership problem: explanatory paragraphs were embedded
+in rendering code and selection rules were restated in the guide and index.
+Use Clap doc comments for argument explanations and crate-local external document
+fragments for long text. Generate the website's CLI reference from those same
+inputs. Keep the operator registry responsible only for identity and selection.
+Do not introduce a Markdown parser, template engine or runtime document lookup.
+
+Design reviews:
+
+1. Reader requirement: the CLI and website must use the same sentences, not merely
+   independently maintained explanations with similar meaning.
+2. Ownership: argument doc comments belong beside their declarations; long text
+   belongs in external documents. The renderer owns only composition and metadata.
+3. Packaging: crate-local compile-time includes remain available in Cargo and
+   Python source distributions without installing documents beside the binary.
+4. Presentation: retain short `-h` summaries and detailed `--help`; render the same
+   long descriptions in the operator index, and link workflow instructions to it.
+5. Complexity: reuse Clap reflection and `include_str!`; no new parser or runtime
+   interface. The previous assessment missed diagnostic rows 3 and 6 (independent
+   editing and information ownership). Revision starts at 7.5/10; reassess after checks.
+
+Implementation-plan reviews:
+
+1. Add cross-output consistency checks before changing the renderer and observe
+   failures where the website does not reuse the argument explanations.
+2. Move the root/verify footers, operator navigation and generated-reference prose
+   into crate-local documents; preserve version interpolation and generated lists.
+3. Expand selection argument doc comments and reuse the reflected long help in
+   the generated index; remove repeated policy prose from the usage procedure.
+4. Keep includes deterministic across Windows/Unix checkouts; verify generation,
+   publication and source-distribution retention, not just local compilation.
+5. Run focused CLI, generator, property, site and static checks; request independent
+   review, update the existing PR and follow hosted CI.
+
+Implementation reviews:
+
+1. Removed explanatory paragraphs from `format!`/`push_str` in the help and reference
+   generator. Root/verify footers and operator navigation use external documents;
+   selection/exclusion explanations use argument doc comments.
+2. The operator index obtains the same long help that Clap displays. The usage
+   procedure links to it instead of restating selection policy. The existing
+   full command-help sections continue to use Clap's renderer.
+3. Formatting code retains structural headings, table delimiters and generated
+   metadata only. Version/command interpolation uses compile-time format strings;
+   no runtime parser, file access or additional dependency was introduced.
+4. Kept all six fragments within the crate and pinned their checkout newlines to
+   LF. Actual source-distribution checks confirmed byte-for-byte retention.
+5. Independent review found no blocking issues. Removed a reviewer-noted sentence
+   exposing doc-comment ownership in the user workflow; that explanation belongs
+   in contributor documentation. Generated HTML was checked for wording, not claimed
+   to have undergone a visual-layout review.
+
+Test reviews:
+
+1. All four cross-output selection/exclusion cases failed before the change and
+   pass after generation. Assertions compare real Clap descriptions with the
+   website index rather than copying the expected paragraph into a test.
+2. Seven parameterized real-binary checks run help from an empty temporary working
+   directory and compare its wording with the published Markdown. Each case
+   covers one command and uses Arrange/Act/Assert phases.
+3. A generative test covers Unicode wording and LF/CRLF long-help inputs. Existing
+   arbitrary operator-selection properties remain intact; wrapping differences
+   are normalized without rewriting the explanation's words.
+4. Source-archive and documentation suites passed: 109 Python tests, including
+   six parameterized shared-document byte-retention checks. Focused Rust checks
+   passed: 234 CLI configuration, 26 reference and 10 generator tests.
+5. Strict site construction and links passed. Parsed generated HTML contains the
+   actual help wording for all seven commands. Clippy with denied warnings,
+   formatting, Ruff and focused ty checks passed. Final generator freshness tests
+   passed after the last prose edit; hosted CI is tracked by PR #1207.
+
+Revised software-design assessment: **9/10**, all eight diagnostic rows satisfied
+within this change. Rows 3 and 6 now have explicit ownership: edit prose in doc
+comments/fragments, metadata in the registry, and presentation in the renderer.
+The documentation assessment remains **9/10**, with no blocking or failed Quick
+Diagnostic rows. Handwritten applicability still requires factual review when
+analyzers change; sharing text does not prove its semantics.
+
 ## Documentation Audit: operator help and reference
 
 **Score:** 9/10 — ready for review. **Shippable:** yes.

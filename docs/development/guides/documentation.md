@@ -6,6 +6,13 @@ The site is published through GitHub Pages by the Documentation workflow.
 
 Current user and maintainer guides, navigation, and theme controls use English.
 Historical design, audit, and investigation records retain their original language.
+
+CLI option explanations have one source: Rust doc comments reflected by Clap.
+Long shared text lives in the [CLI document fragments](../../../crates/hoimin-cli/docs/).
+The [generated CLI reference](../../user/reference/cli.md) publishes the same
+sentences as the command help. Edit those inputs and regenerate the reference;
+do not maintain another copy of the explanation in the website or usage guide.
+See [CLI reference generation](contributing.md#generated-cli-reference).
 The site uses the same Material theme, indigo palettes, light/dark toggle, and
 hidden secondary sidebar as the [user site](https://hayaosuzuki.github.io/).
 Search, code-copy controls, and navigation labels remain in English.

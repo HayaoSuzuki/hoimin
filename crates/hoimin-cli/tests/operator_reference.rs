@@ -106,6 +106,88 @@ fn reference_has_exactly_one_entry_for_every_public_operator() {
 }
 
 #[rstest]
+#[case::run_selection("run", "operators")]
+#[case::plan_selection("plan", "operators")]
+#[case::run_exclusion("run", "exclude_operators")]
+#[case::plan_exclusion("plan", "exclude_operators")]
+fn website_operator_index_uses_the_cli_argument_explanation(
+    #[case] command: &str,
+    #[case] argument: &str,
+) {
+    // Arrange
+    let cli = hoimin_cli::cli::root_command();
+    let argument = cli
+        .find_subcommand(command)
+        .unwrap()
+        .get_arguments()
+        .find(|arg| arg.get_id() == argument)
+        .unwrap();
+    let explanation = argument
+        .get_long_help()
+        .or_else(|| argument.get_help())
+        .unwrap()
+        .to_string();
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user/reference/cli.md");
+
+    // Act
+    let reference = std::fs::read_to_string(path).unwrap().replace("\r\n", "\n");
+    let index = reference
+        .split_once("\n## Operator selection\n")
+        .unwrap()
+        .1
+        .split("\n## Selector families\n")
+        .next()
+        .unwrap();
+
+    // Assert: compare independently consumed outputs, not a copy of manual prose.
+    assert!(
+        index
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .contains(&explanation.split_whitespace().collect::<Vec<_>>().join(" "))
+    );
+}
+
+#[rstest]
+#[case::root(None)]
+#[case::run(Some("run"))]
+#[case::plan(Some("plan"))]
+#[case::verify(Some("verify"))]
+#[case::progress(Some("progress"))]
+#[case::review(Some("review"))]
+#[case::reduce(Some("reduce"))]
+fn website_publishes_the_actual_command_help(#[case] subcommand: Option<&str>) {
+    // Arrange
+    let directory = tempfile::tempdir().unwrap();
+    let reference = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user/reference/cli.md"),
+    )
+    .unwrap();
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_hoimin"));
+    command.current_dir(directory.path());
+    if let Some(subcommand) = subcommand {
+        command.arg(subcommand);
+    }
+
+    // Act
+    let output = command.arg("--help").output().unwrap();
+    let help = String::from_utf8(output.stdout).unwrap();
+
+    // Assert
+    assert!(output.status.success());
+    assert_eq!(output.stderr.as_slice(), b"");
+    assert!(
+        reference
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .contains(&help.split_whitespace().collect::<Vec<_>>().join(" "))
+    );
+}
+
+#[rstest]
 #[case::slice(
     "structure_slice_bound_move",
     "result = items[:n]\n",

@@ -89,6 +89,36 @@ def test_sdist_excludes_untracked_vendor_build_and_cache_outputs(
     assert not any("/hoimin-sdist-excluded-" in name for name in names)
 
 
+@pytest.mark.parametrize(
+    "fragment",
+    [
+        "root-help.txt",
+        "verify-help.txt",
+        "operator-help.txt",
+        "cli-reference.md",
+        "operator-selection.md",
+        "selector-families.md",
+    ],
+)
+def test_sdist_retains_shared_cli_and_website_documents(
+    source_archive: Path, fragment: str
+) -> None:
+    # Arrange
+    member = f"crates/hoimin-cli/docs/{fragment}"
+    expected = (ROOT / member).read_bytes()
+
+    # Act
+    with tarfile.open(source_archive) as archive:
+        matches = [name for name in archive.getnames() if name.endswith("/" + member)]
+        assert len(matches) == 1, f"missing or duplicate shared document: {member}"
+        source = archive.extractfile(matches[0])
+        assert source is not None
+        actual = source.read()
+
+    # Assert
+    assert actual == expected
+
+
 @pytest.mark.parametrize("line_ending", [b"\n", b"\r\n"], ids=["lf", "crlf"])
 def test_sdist_retains_workspace_manifest_text(
     source_archive: Path, line_ending: bytes

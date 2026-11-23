@@ -11,12 +11,12 @@ use hoimin_core::{
     SymbolSelection,
 };
 
+/// Bounded mutation testing for focused Python changes.
 #[derive(Debug, Parser)]
 #[command(
     name = "hoimin",
     version,
-    about = "Bounded mutation testing for focused Python changes",
-    after_help = "Run contract:\n  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...\n\nTarget selectors:\n  --root --source --file --line --symbol --changed --changed-context --diff-base\nCopy options:\n  --include --exclude\nMutation options:\n  --operators --exclude-operators --profile\nSafety options:\n  --jobs --max-mutants --max-candidates\n  --baseline-timeout --mutant-timeout --total-timeout --max-memory\n  --max-output --max-copy-size --max-workspace-size --min-free-space\n  --max-processes --allow-best-effort-memory\nOutput/session options:\n  --metrics <PATH> --session --resume"
+    after_help = include_str!("../docs/root-help.txt").trim_end()
 )]
 struct RootCli {
     #[command(subcommand)]
@@ -175,7 +175,11 @@ struct RawMutationArgs {
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
 
-    /// Include only named mutation operators; omit for the default runtime set. Repeatable or comma-delimited.
+    /// Select mutation operator IDs or selector families; repeatable or comma-delimited.
+    ///
+    /// Omit --operators to use the default runtime set. An explicit selection
+    /// replaces that set. Selecting a family includes all its listed members,
+    /// including opt-in IDs. --exclude-operators is applied afterward.
     #[arg(long, value_delimiter = ',')]
     operators: Vec<String>,
 
@@ -183,7 +187,10 @@ struct RawMutationArgs {
     #[arg(long, value_enum, default_value_t = ProfileArg::Full)]
     profile: ProfileArg,
 
-    /// Exclude named mutation operators; may be repeated or comma-delimited.
+    /// Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+    ///
+    /// Remove the named IDs or every member of the named families after the default
+    /// or explicit --operators selection. At least one operator must remain selected.
     #[arg(long, value_delimiter = ',')]
     exclude_operators: Vec<String>,
 
@@ -288,7 +295,7 @@ struct RawPlanArgs {
             .multiple(false)
             .args(["candidate_ids", "top", "sample"])
     ),
-    after_help = "Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them."
+    after_help = include_str!("../docs/verify-help.txt").trim_end()
 )]
 struct RawVerifyArgs {
     /// Path to a manifest saved by hoimin plan.
@@ -599,10 +606,10 @@ fn operator_help() -> String {
         groups[group].push(name);
     }
     let mut help = format!(
-        "Mutation selection:\n  Omit --operators for the default runtime set. --operators replaces that set.\n  --exclude-operators removes IDs or whole families after selection.\n  Families expand to their members, including opt-in IDs when selected.\n\nOperator examples, applicability and limits for released hoimin {}:\n  https://github.com/HayaoSuzuki/hoimin/blob/v{}/docs/user/guides/usage.md#mutation-operators\n  Source builds: read docs/user/reference/operators.md in the same checkout.\n\n",
-        env!("CARGO_PKG_VERSION"),
-        env!("CARGO_PKG_VERSION"),
+        include_str!("../docs/operator-help.txt"),
+        version = env!("CARGO_PKG_VERSION")
     );
+    help.push('\n');
     for (heading, names) in ["Default runtime IDs", "Opt-in IDs", "Selector families"]
         .into_iter()
         .zip(groups)

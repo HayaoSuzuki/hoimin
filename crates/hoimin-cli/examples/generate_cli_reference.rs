@@ -34,10 +34,14 @@ fn code_block(output: &mut String, text: &str) {
 
 fn render(mut command: Command) -> String {
     command.build();
-    let mut output =
-        String::from("# CLI reference\n\n<!-- Generated; do not edit by hand. -->\n\n");
-    writeln!(output, "Source: [Rust CLI definitions](../../../crates/hoimin-cli/src/cli.rs).\n\nRegenerate with `{REGENERATE}`; append ` -- --check` to verify without writing.\n").unwrap();
-    output.push_str("See the [usage guide](../guides/usage.md) for examples, OS-specific resource limits,\nplan/verify inheritance and validation beyond Clap. Conditional requirements\nand numeric parser bounds have no general stable Clap reflection API; their\nhelp text and the manual guide remain authoritative. The metadata below lists\nreflected arity, repetition, required arguments/groups, conflicts and delimiters.\n\n");
+    let mut output = String::from("<!-- Generated; do not edit by hand. -->\n\n");
+    write!(
+        output,
+        include_str!("../docs/cli-reference.md"),
+        regenerate = REGENERATE
+    )
+    .unwrap();
+    output.push('\n');
     let name = command.get_name().to_owned();
     render_command(&mut command, &name, &mut output);
     let normalized = output
@@ -185,12 +189,13 @@ fn main() -> Result<(), String> {
 }
 
 fn render_reference() -> String {
-    let mut reference = render(hoimin_cli::cli::root_command());
-    render_operator_index(&mut reference);
+    let command = hoimin_cli::cli::root_command();
+    let mut reference = render(command.clone());
+    render_operator_index(&command, &mut reference);
     reference
 }
 
-fn render_operator_index(output: &mut String) {
+fn render_operator_index(command: &Command, output: &mut String) {
     use hoimin_core::{MutationOperator, MutationOperatorSelection};
 
     let defaults = MutationOperatorSelection::default();
@@ -206,7 +211,25 @@ fn render_operator_index(output: &mut String) {
             )
         })
         .collect();
-    output.push_str("\n## Operator selection\n\nThis index is generated from the same registry, defaults and family expansion used\nby the CLI. See the [operator reference](operators.md) for examples and applicability,\nand [choose operators](../guides/usage.md#mutation-operators) for selection and version guidance.\n\nOmitting `--operators` selects rows marked **yes**. An explicit `--operators` list\nreplaces that set; `--exclude-operators` then removes IDs or family members.\nA dash in the family column means that the ID has no family alias.\n\n| Operator ID | Default runtime selection | Selector families |\n| --- | --- | --- |\n");
+    writeln!(
+        output,
+        "\n{}",
+        include_str!("../docs/operator-selection.md")
+    )
+    .unwrap();
+    let run = command.find_subcommand("run").expect("public run command");
+    for id in ["operators", "exclude_operators"] {
+        let arg = run
+            .get_arguments()
+            .find(|arg| arg.get_id() == id)
+            .expect("selection argument");
+        let description = arg
+            .get_long_help()
+            .or_else(|| arg.get_help())
+            .expect("selection help");
+        writeln!(output, "### `{}`\n\n{description}\n", spelling(arg)).unwrap();
+    }
+    output.push_str("### Operator IDs\n\n| Operator ID | Default runtime selection | Selector families |\n| --- | --- | --- |\n");
     for name in names {
         let Some(operator) = MutationOperator::from_name(name) else {
             continue;
@@ -232,7 +255,12 @@ fn render_operator_index(output: &mut String) {
         )
         .unwrap();
     }
-    output.push_str("\n## Selector families\n\nA family is a selection alias, not another mutation. Selecting or excluding it\naffects exactly the following members. Individual default states are in the index.\n");
+    writeln!(
+        output,
+        "\n{}",
+        include_str!("../docs/selector-families.md").trim_end()
+    )
+    .unwrap();
     for (family, members) in families {
         writeln!(output, "\n### `{family}`\n").unwrap();
         for member in members {
@@ -246,6 +274,28 @@ fn render_operator_index(output: &mut String) {
 mod tests {
     use super::render;
     use clap::{Arg, ArgAction, ArgGroup, Command, builder::PossibleValue};
+
+    proptest::proptest! {
+        #[test]
+        fn long_help_words_reach_the_website_without_rewriting(
+            words in proptest::collection::vec("[a-zA-Zα-ωぁ-ん]{1,12}", 1..30),
+            windows_newlines in proptest::bool::ANY,
+        ) {
+            // Arrange
+            let separator = if windows_newlines { "\r\n" } else { "\n" };
+            let explanation = words.join(separator);
+            let command = Command::new("fixture").arg(
+                Arg::new("selected").long("selected").long_help(explanation.clone())
+            );
+
+            // Act
+            let reference = render(command);
+
+            // Assert
+            proptest::prop_assert!(reference.split_whitespace().collect::<Vec<_>>().join(" ")
+                .contains(&explanation.split_whitespace().collect::<Vec<_>>().join(" ")));
+        }
+    }
 
     #[test]
     fn actual_reference_is_current_and_covers_public_commands() {

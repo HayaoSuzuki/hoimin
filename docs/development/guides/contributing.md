@@ -2232,6 +2232,20 @@ cargo test --locked -p hoimin-cli --example generate_cli_reference
 ```
 
 The development example uses the same command factory as parsing and completions.
+Argument and command descriptions are Rust doc comments consumed by Clap.
+Long help footers and reference introductions are editable document fragments in
+[`crates/hoimin-cli/docs/`](../../../crates/hoimin-cli/docs/), included at compile
+time. The CLI reference on the website renders those same inputs; the operator
+index also reuses the selection arguments' reflected long help. Do not write a
+second explanation of an option in the generator or usage guide. Put workflow
+examples in the guide and link to the shared option explanation.
+
+The fragments use LF checkouts and remain inside the CLI crate for source
+distribution builds. Only the navigation fragment's `{version}` and the reference
+introduction's `{regenerate}` are Rust format arguments; no template engine or
+runtime document read is involved. After changing a doc comment or fragment,
+regenerate the reference with the commands above.
+
 Check mode never writes; missing or stale output fails with a regeneration command.
 It accepts CRLF checkouts but generation writes UTF-8/LF, with fixed help width,
 no terminal color, timestamps or absolute paths. Rust CI checks freshness, including

@@ -679,13 +679,10 @@ lists each alias's exact members.
 
 ### Choose and preview operators
 
-1. Start with the defaults, or provide `--operators` to replace them with an
-   explicit comma-separated set of IDs or families. Selecting a family includes
-   its listed members, including any opt-in IDs.
-2. Use `--exclude-operators` to remove IDs or whole families from that selection.
-   For example, `--exclude-operators collection_ops` removes that family from the
-   defaults. Exclusions apply after selection.
-3. Create a plan and preview the mutations before running tests. For example,
+1. Look up the IDs, defaults and families in the
+   [selection index](../reference/cli.md#operator-selection). Read the
+   `--operators` and `--exclude-operators` explanations there or in the command help.
+2. Create a plan and preview the mutations before running tests. For example,
    select the regex family while excluding the whole-pattern ASCII-mode toggle:
 
    ```console
