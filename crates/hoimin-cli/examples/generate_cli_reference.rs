@@ -181,7 +181,65 @@ fn main() -> Result<(), String> {
         _ => return Err(format!("Usage: {REGENERATE} [-- --check]")),
     };
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user/reference/cli.md");
-    update(&path, &render(hoimin_cli::cli::root_command()), check)
+    update(&path, &render_reference(), check)
+}
+
+fn render_reference() -> String {
+    let mut reference = render(hoimin_cli::cli::root_command());
+    render_operator_index(&mut reference);
+    reference
+}
+
+fn render_operator_index(output: &mut String) {
+    use hoimin_core::{MutationOperator, MutationOperatorSelection};
+
+    let defaults = MutationOperatorSelection::default();
+    let names = MutationOperatorSelection::valid_names();
+    let families: Vec<_> = names
+        .iter()
+        .copied()
+        .filter(|name| MutationOperator::from_name(name).is_none())
+        .map(|name| {
+            (
+                name,
+                MutationOperatorSelection::parse_selector(name).unwrap(),
+            )
+        })
+        .collect();
+    output.push_str("\n## Operator selection\n\nThis index is generated from the same registry, defaults and family expansion used\nby the CLI. See the [operator reference](operators.md) for examples and applicability,\nand [choose operators](../guides/usage.md#mutation-operators) for selection and version guidance.\n\nOmitting `--operators` selects rows marked **yes**. An explicit `--operators` list\nreplaces that set; `--exclude-operators` then removes IDs or family members.\nA dash in the family column means that the ID has no family alias.\n\n| Operator ID | Default runtime selection | Selector families |\n| --- | --- | --- |\n");
+    for name in names {
+        let Some(operator) = MutationOperator::from_name(name) else {
+            continue;
+        };
+        let selected = if defaults.contains(operator) {
+            "yes"
+        } else {
+            "opt-in"
+        };
+        let members: Vec<_> = families
+            .iter()
+            .filter(|(_, members)| members.contains(&operator))
+            .map(|(family, _)| format!("[`{family}`](#{family})"))
+            .collect();
+        let family = if members.is_empty() {
+            "—".to_owned()
+        } else {
+            members.join(", ")
+        };
+        writeln!(
+            output,
+            "| [`{name}`](operators.md#{name}) | {selected} | {family} |"
+        )
+        .unwrap();
+    }
+    output.push_str("\n## Selector families\n\nA family is a selection alias, not another mutation. Selecting or excluding it\naffects exactly the following members. Individual default states are in the index.\n");
+    for (family, members) in families {
+        writeln!(output, "\n### `{family}`\n").unwrap();
+        for member in members {
+            let name = member.as_str();
+            writeln!(output, "- [`{name}`](operators.md#{name})").unwrap();
+        }
+    }
 }
 
 #[cfg(test)]
@@ -191,7 +249,7 @@ mod tests {
 
     #[test]
     fn actual_reference_is_current_and_covers_public_commands() {
-        let text = render(hoimin_cli::cli::root_command());
+        let text = super::render_reference();
         for command in ["run", "plan", "verify", "progress", "review"] {
             assert!(text.contains(&format!("## hoimin {command}\n")));
         }
@@ -211,6 +269,69 @@ mod tests {
             .join("../../docs/user/reference/cli.md");
         super::update(&path, &text, true).unwrap();
         assert!(!text.contains(env!("CARGO_MANIFEST_DIR")));
+    }
+
+    #[test]
+    fn operator_index_links_each_id_with_its_actual_default_status() {
+        // Arrange
+        let defaults = hoimin_core::MutationOperatorSelection::default();
+        let names = hoimin_core::MutationOperatorSelection::valid_names();
+
+        // Act
+        let reference = super::render_reference();
+
+        // Assert: registry changes must reach the generated, linked selection index.
+        for name in names {
+            if let Some(operator) = hoimin_core::MutationOperator::from_name(name) {
+                let selected = if defaults.contains(operator) {
+                    "yes"
+                } else {
+                    "opt-in"
+                };
+                let row = format!("| [`{name}`](operators.md#{name}) | {selected} |");
+                assert!(
+                    reference.contains(&row),
+                    "missing selection metadata for {name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn operator_index_expands_every_advertised_family() {
+        // Arrange
+        let families: Vec<_> = hoimin_core::MutationOperatorSelection::valid_names()
+            .into_iter()
+            .filter(|name| hoimin_core::MutationOperator::from_name(name).is_none())
+            .collect();
+
+        // Act
+        let reference = super::render_reference();
+
+        // Assert
+        for family in families {
+            let heading = format!("### `{family}`\n");
+            let section = reference
+                .split_once(&heading)
+                .unwrap()
+                .1
+                .split("\n### ")
+                .next()
+                .unwrap();
+            let actual: Vec<_> = section
+                .lines()
+                .filter_map(|line| {
+                    line.strip_prefix("- [`")
+                        .and_then(|link| link.split_once("`](").map(|(id, _)| id))
+                })
+                .collect();
+            let expected: Vec<_> = hoimin_core::MutationOperatorSelection::parse_selector(family)
+                .unwrap()
+                .into_iter()
+                .map(hoimin_core::MutationOperator::as_str)
+                .collect();
+            assert_eq!(actual, expected, "incorrect family expansion for {family}");
+        }
     }
 
     #[test]

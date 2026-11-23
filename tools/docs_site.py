@@ -49,7 +49,11 @@ PUBLICATION_PATHS = {
     # The old contributing guide already occupies /docs/development/.
     "docs/development/index.md": "docs/development/overview.md",
 }
-PUBLIC_PAGES = (*PUBLICATION_PATHS, "docs/user/index.md")
+PUBLIC_PAGES = (
+    *PUBLICATION_PATHS,
+    "docs/user/index.md",
+    "docs/user/reference/operators.md",
+)
 
 
 def site_path(source: str) -> str:

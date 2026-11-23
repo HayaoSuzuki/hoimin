@@ -1,13 +1,14 @@
 use std::ffi::OsString;
-use std::fmt;
+use std::fmt::{self, Write as _};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 use camino::Utf8PathBuf;
 use clap::{ArgGroup, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use hoimin_core::{
-    CommandArg, ConfigError, LineRange, LineSelection, MutationOperatorSelection, MutationProfile,
-    OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig, SymbolSelection,
+    CommandArg, ConfigError, LineRange, LineSelection, MutationOperator, MutationOperatorSelection,
+    MutationProfile, OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
+    SymbolSelection,
 };
 
 #[derive(Debug, Parser)]
@@ -590,13 +591,30 @@ pub fn root_command() -> clap::Command {
 }
 
 fn operator_help() -> String {
-    let names = MutationOperatorSelection::valid_names();
-    let rows = names
-        .chunks(4)
-        .map(|row| row.join(", "))
-        .collect::<Vec<_>>()
-        .join("\n  ");
-    format!("Mutation operator IDs and selector families:\n  {rows}")
+    let defaults = MutationOperatorSelection::default();
+    let mut groups = [Vec::new(), Vec::new(), Vec::new()];
+    for name in MutationOperatorSelection::valid_names() {
+        let group = MutationOperator::from_name(name)
+            .map_or(2, |operator| usize::from(!defaults.contains(operator)));
+        groups[group].push(name);
+    }
+    let mut help = format!(
+        "Mutation selection:\n  Omit --operators for the default runtime set. --operators replaces that set.\n  --exclude-operators removes IDs or whole families after selection.\n  Families expand to their members, including opt-in IDs when selected.\n\nOperator examples, applicability and limits for released hoimin {}:\n  https://github.com/HayaoSuzuki/hoimin/blob/v{}/docs/user/guides/usage.md#mutation-operators\n  Source builds: read docs/user/reference/operators.md in the same checkout.\n\n",
+        env!("CARGO_PKG_VERSION"),
+        env!("CARGO_PKG_VERSION"),
+    );
+    for (heading, names) in ["Default runtime IDs", "Opt-in IDs", "Selector families"]
+        .into_iter()
+        .zip(groups)
+    {
+        let rows = names
+            .chunks(4)
+            .map(|row| row.join(", "))
+            .collect::<Vec<_>>()
+            .join("\n  ");
+        writeln!(help, "{heading}:\n  {rows}\n").expect("writing to a string cannot fail");
+    }
+    help.trim_end().to_owned()
 }
 
 fn validate_mutation_inputs(raw: &RawMutationArgs, test_argv: &[OsString]) -> Result<(), CliError> {

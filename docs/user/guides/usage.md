@@ -670,323 +670,64 @@ the detailed capability and cleanup model.
 
 ## Mutation operators
 
-Without `--operators`, a run selects 107 default runtime operators. `--operators`
-(comma-separated) selects an explicit set; `--exclude-operators` then removes
-individual IDs or selector families. Hoimin exposes 126 operator IDs in total:
-107 default runtime IDs, seven opt-in type IDs, five opt-in risky exception IDs,
-`exception_hierarchy`, and six opt-in analyzers: `condition_constant`,
-`function_body_erase`, `enum_member_replace`, `condition_clause_delete`,
-`container_element_delete`, and `optional_keyword_delete`.
+Use `hoimin run --help` or `hoimin plan --help` to see separate lists of default
+runtime IDs, opt-in IDs and selector families. For each ID's meaning, before/after
+example, applicability and limitations, see the [operator reference](../reference/operators.md).
+The generated [selection index](../reference/cli.md#operator-selection) records
+default states and links every ID; the [family index](../reference/cli.md#selector-families)
+lists each alias's exact members.
 
-The defaults include `statement_delete`, `integer_literal_neighbor`,
-`augmented_to_assignment`, `return_tuple_swap`, `string_literal_empty`,
-`while_condition_false`, `conversion_call_remove`, `method_call_remove`,
-`function_body_return_constant`, `string_segment_empty`,
-`stdlib_conversion_call_remove`, `loop_break_insert`, `iterator_stop_insert`, and
-`async_iterator_stop_insert`, `list_comprehension_to_generator`,
-`generator_return_insert`, `generator_skip_first`, `generator_empty`,
-`none_truthiness`, `mutable_default_share`, `nonlocal_remove`,
-`yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`,
-`deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`,
-`itertools_take_drop_swap`, and `fstring_conversion_swap`.
-To disable any of these,
-use, for example, `--exclude-operators statement_delete,string_literal_empty`.
-The defaults also include `binary_div_floor`, `structure_slice_bound_omit` and
-`structure_slice_bound_move`. To omit these from a new run or plan, use
-`--exclude-operators binary_div_floor,structure_slice_bound_omit,structure_slice_bound_move`.
+### Choose and preview operators
 
-Defaults also include `continue_remove`, `comparison_not_implemented`
-and `exception_cause_remove`. Each is individually selectable or
-excludable; no selector family is expanded by these additions.
+1. Start with the defaults, or provide `--operators` to replace them with an
+   explicit comma-separated set of IDs or families. Selecting a family includes
+   its listed members, including any opt-in IDs.
+2. Use `--exclude-operators` to remove IDs or whole families from that selection.
+   For example, `--exclude-operators collection_ops` removes that family from the
+   defaults. Exclusions apply after selection.
+3. Create a plan and preview the mutations before running tests. For example,
+   select the regex family while excluding the whole-pattern ASCII-mode toggle:
 
-Defaults also include `dataclass_factory_share`, `sort_key_swap`,
-`lambda_capture_late`, `encoding_errors_ignore`, `base_order_shuffle`,
-`override_method_delete` and `super_call_move`. Each can be selected or
-excluded individually, without expanding any existing selector family.
+   ```console
+   hoimin plan --root . --source src --operators regex --exclude-operators regex_ascii_mode -- python -m pytest -q > plan.json
+   hoimin verify plan.json --top 10 --dry-run > preview.json
+   ```
 
-To disable a control-flow mutation, pass its ID to `--exclude-operators`, for example
-`--exclude-operators finally_unwrap,statement_order_swap`.
+   Replace `src` with your source directory and the command after `--` with your
+   test command. Planning and dry-run verification analyze source and validate the
+   plan without running that command. The preview shows the retained candidates;
+   exclusions, applicability guards and candidate limits can leave fewer than ten.
+   If the plan contains no candidates, choose different targets or operators;
+   `verify --top` rejects an empty selection with exit code 2.
 
-Select the three call contract operators with `--operators call_contracts`.
-To disable one while using the defaults, pass its ID to `--exclude-operators`,
-for example `--exclude-operators call_result_default`.
+Use an operator's entry to choose test inputs and observations. For example,
+`finally_unwrap` distinguishes cleanup on an escaping exception from cleanup on
+normal completion. For `regex_character_set`, decide whether the specification
+requires ASCII digits or all Unicode decimal digits before interpreting a survivor.
+A survivor alone does not decide which behavior is correct.
 
-Use `--operators collection_processing` for comprehensions, lazy predicates, set
-operations, and aggregation. Use `--operators rounding` for rounding functions and
-Decimal precision. Both families are enabled by default. To omit individual
-operators, use, for example,
-`--exclude-operators filter_predicate_swap,decimal_quantum_shift`.
-
-New default runs can generate more candidates and take longer. With a candidate
-cap, the retained prefix can also change. Explicit `--operators` selections and
-saved plans keep their operator sets; saved plans are not expanded on reload.
-The six analyzers above remain opt-in for a staged rollout: coarse whole-condition
-or body edits overlap finer mutations, clause/container deletion can add many
-candidates per expression, and enum/optional-keyword edits require extra module
-binding analysis. Their existing applicability guards are unchanged.
-
-| Group | Runtime IDs | Mutations |
-| --- | --- | --- |
-| State, sorting, capture and encoding | `dataclass_factory_share`, `sort_key_swap`, `lambda_capture_late`, `encoding_errors_ignore` | Shared empty factories, key priority, late capture and lossy encoding policies; enabled by default |
-| Continuation, comparison and causes | `continue_remove`, `comparison_not_implemented`, `exception_cause_remove` | Same-iteration continuation, reflected comparison and explicit diagnostic causes; enabled by default |
-| Existing expression/control flow | `compare_eq_ne`, `compare_order`, `membership`, `identity`, `boolean_and_or`, `binary_add_sub`, `augmented_add_sub`, `binary_mul_div`, `augmented_mul_div`, `binary_floor_mod`, `binary_div_floor`, `augmented_floor_mod`, `unary_sign`, `remove_not`, `boolean_literal`, `break_continue` | comparisons; membership and identity; binary `+`/`-`, `*`/`/`, `//`/`%`, and `/`/`//`; augmented `+=`/`-=`, `*=`/`/=`, and `//=`/`%=`; unary signs; boolean expressions and literals, including `True`/`False` match patterns; and control flow |
-| Generator behavior | `list_comprehension_to_generator`, `generator_return_insert`, `generator_skip_first`, `generator_empty` | Eager/lazy conversion, early return, first-item consumption and empty output; enabled by default |
-| Cleanup | `finally_unwrap` | Run cleanup after normal completion. Returning, raising, or leaving the loop from the protected suite skips cleanup. |
-| Pattern dispatch | `match_case_delete`, `match_guard_constant`, `match_or_alternative_delete` | Skip one case, force a guard after pattern binding, or remove one OR alternative. |
-| Call escaping | `stdlib_escape_remove` | Bypass a resolved `re.escape`, `html.escape`, `urllib.parse.quote`, or `urllib.parse.quote_plus` call. Evaluate each supplied argument once in its original order and return the primary input. URL quoting requires a supported text input. |
-| Argument roles | `call_argument_swap` | Exchange the bindings of two adjacent explicit arguments. Preserve the original evaluation order. Keyword and mixed pairs require proven parameter roles. |
-| Call results | `call_result_default` | Execute a consumed call or directly awaited coroutine once, then replace its result with a default for its known type. |
-| Comprehension filters | `comprehension_filter_remove`, `comprehension_filter_invert` | Bypass or negate a single filter in a list, set, dictionary, or generator comprehension. Negation still evaluates the predicate once per item that reaches it. |
-| Lazy predicates | `filter_predicate_swap` | Exchange the builtin `filter` and `itertools.filterfalse` for two explicit positional arguments. Keep the predicate and iterable, including a `None` predicate. |
-| Set operations | `set_union_intersection_swap` | Exchange `union` and `intersection` on a confirmed builtin set or frozenset. The receiver determines the result type. |
-| Aggregation | `aggregate_sum_count` | Count the items of a one-argument builtin `sum`, or sum an explicit numeric list or tuple passed to builtin `len`. Counting consumes the original iterable once. |
-| Rounding function | `rounding_function_swap` | Exchange one-argument `round`, `math.floor`, and `math.ceil`. They can dispatch to different numeric methods and raise on non-finite inputs. |
-| Digits | `round_digits_remove` | Evaluate the explicit `ndigits` expression and pass `None` in its place. The result type can change. |
-| Decimal mode | `decimal_rounding_mode_swap` | Change a known rounding mode in quantization, a context constructor, or a context assignment. |
-| Decimal quantum | `decimal_quantum_shift` | Increase or decrease the exponent of a known finite Decimal quantum by one. |
-| Decimal precision | `decimal_context_precision` | Set an explicit Decimal context precision of three or more to one, or increase a precision of one or two by two. |
-| Match boundary | `regex_match_boundary` | Exchange whole-input, prefix, and substring matching, or change a start/end assertion. Compiled receiver edits preserve `pos` and `endpos`. |
-| Regex character set | `regex_character_set` | Change one decimal, word, whitespace, complement, boundary, or case-insensitive class between ASCII and Unicode behavior. |
-| Regex ASCII mode | `regex_ascii_mode` | Toggle the root text-pattern mode while preserving scoped overrides and other flags. The compiled pattern exposes the changed flags. |
-| Rounding stage | `intermediate_rounding_remove` | Skip an inner `round` or Decimal quantization in an arithmetic expression followed by final rounding. Evaluate the inner numeric value and options in source order. |
-| Statement order | `statement_order_swap` | Exchange adjacent calls, assignments, or assertions when at least one can have an effect. Direct local-name dependencies and directive comments exclude a pair. |
-| Single inheritance | `override_method_delete`, `super_call_move` | Remove an ordinary overriding method or move its standalone same-method delegation; enabled by default |
-| Multiple inheritance | `base_order_shuffle` | Change the order of distinct simple-name direct bases; enabled by default, with stable source-derived permutations |
-| Missing values and shared state | `none_truthiness`, `mutable_default_share`, `nonlocal_remove`, `yield_from_to_yield`, `mapping_setdefault_to_get`, `bisect_boundary_swap`, `deepcopy_to_copy`, `deque_popleft_to_pop`, `gather_return_exceptions`, `itertools_take_drop_swap`, `fstring_conversion_swap` | Empty/missing distinctions, shared defaults, lost outer updates, delegation, dictionary insertion, duplicate boundaries, nested copies, FIFO order, exception results, iterator prefixes and representations; enabled by default |
-| Early iterator exhaustion | `iterator_stop_insert`, `async_iterator_stop_insert` | Insert a stop exception at iterator protocol method entry; enabled by default |
-| Premature loop exit | `loop_break_insert` | Appends `break` to eligible `for`, `async for`, and `while` bodies; enabled by default |
-| Collection calls and literals | `collection_any_all`, `collection_list_tuple`, `collection_set_frozenset`, `collection_append_insert` | `any(x)` ↔ `all(x)`; `list`/`tuple` calls and load-context literals outside exception-handler type positions (which Python requires to be an exception class or tuple of exception classes); `set` ↔ `frozenset` calls; `seq.append(x)` ↔ `seq.insert(0, x)` |
-| Same-contract methods | `collection_min_max`, `collection_set_add_discard`, `collection_set_remove_discard`, `collection_string_starts_ends`, `collection_string_split_rsplit` | `min(...)` ↔ `max(...)`; `add`/`discard`, `remove`/`discard`, `startswith`/`endswith`, and `split`/`rsplit` when `maxsplit` is supplied |
-| Structural calls | `structure_append_extend`, `structure_mapping_get_subscript`, `structure_sort_reverse`, `structure_sorted_reversed` | `append(x)` ↔ `extend([x])`; `mapping.get(k)` ↔ `mapping[k]`; `sort()` ↔ `reverse()`; `sorted(x)` ↔ `reversed(x)` |
-| Bitwise operators | `bitwise_and_or`, `bitwise_shift` | `&` ↔ `\|`; `<<` ↔ `>>` |
-| Additional operator syntax | `binary_power`, `binary_matmul`, `augmented_power`, `augmented_matmul`, `bitwise_xor`, `bitwise_invert`, `augmented_bitwise_and_or`, `augmented_bitwise_xor`, `augmented_bitwise_shift` | `**` and `@` become `*`; `**=` and `@=` become `*=`; `^` becomes `&`; `~` becomes unary `+`; `&=`/`\|=` and `<<=`/`>>=` exchange; `^=` becomes `&=` |
-| Standard-library operator functions | `operator_function` | Mutates trusted Python 3.14 `operator` callable references across comparison, arithmetic, bitwise, unary, truth, identity, in-place, and sequence operations; also covers `contains`, `getitem`, `setitem`, `delitem`, and `call` |
-| Boundary operators | `structure_index_neighbor`, `structure_slice_neighbor` | adjacent plain-decimal index and slice-bound values, including unary-minus integers |
-| Slice ranges | `structure_slice_bound_omit`, `structure_slice_bound_move` | omit one of two explicit bounds, or move a single bound to the other side; enabled by default |
-| Exception types | `exception_type_pair` | curated pairs such as `ValueError` ↔ `TypeError` in simple `except`/`except*` clauses and supported `raise` expressions |
-
-Escaping mutations require a statically resolved standard-library callable.
-Argument swaps hold expression evaluation order fixed. The analyzer can swap
-explicit positional values at a dynamic call site. It requires a known
-signature to swap a keyword with another keyword or a positional value.
-`*args` and `**kwargs` expansions suppress swaps. Result replacement requires a
-supported known return type. The call still runs and can produce its usual
-effects. Replacing the result can shorten the original object's lifetime.
-
-To check a cleanup guarantee with `finally_unwrap`, exercise an early return
-or an escaping exception and assert the cleanup event for that path.
-A normal-path cleanup assertion can pass under both executions.
-
-Use `--operators regex` to select all three regex operators, or exclude one
-with `--exclude-operators regex_ascii_mode`. An imported `re` name must
-resolve to the standard library. The analyzer recognizes literal text and byte
-patterns, uniquely initialized module and local literal bindings, and trusted compiled
-receivers. Bytes have no Unicode-mode mutation. Dynamic patterns can still
-support a method edit when both methods accept the supplied arguments. When flags
-come from a runtime value, a literal pattern must parse in ordinary or verbose
-mode for the analyzer to emit a method edit. For a pattern such as
-`re.compile(r'(?a)\d', re.A)`, one `regex_ascii_mode` candidate changes both
-mode declarations. If the call references a shared pattern literal, the
-candidate changes that use while preserving other consumers.
-Pattern analysis skips ambiguous future set operators and groups nested more
-than 255 levels deep.
-
-A complement such as `\D` accepts characters outside the decimal class.
-When the excluded class narrows to ASCII digits, the complement also accepts
-Unicode digits such as `９`. A word boundary `\b` checks word status on both
-sides of its position. It matches when one neighbor is a word character and
-the other is nonword in the effective mode. An input edge has a nonword
-neighbor.
-
-For an ASCII-only field, an original `\d+` accepting fullwidth digits can
-fail the specification before any mutant runs. A Unicode decimal field
-requires a test accepting such digits to distinguish it from `[0-9]+`.
-A survivor shows that the test command accepted the altered behavior. Use the
-field's specification to decide which digit repertoire, match span, or newline
-behavior the tests should distinguish.
-
-Decimal rounding changes can affect the value, exponent, flags, and traps of
-a calculation. When checking a scoped context, assert precision-sensitive
-results in the context and check that the outer context is restored afterward.
-
-Slice range operators apply only to one-dimensional load-context slices without
-an explicit step value. Bounds must be names or integer literals, including
-parenthesized and negative integers. They exclude call, attribute and compound
-bounds, annotations, and direct assignment/deletion targets. Omission deletes a
-complete bound, including its parentheses, and emits at most two candidates for
-`xs[a:b]`; movement emits one candidate for `xs[:n]` or `xs[n:]`. `xs[:]` has no
-candidate. Both belong to `structure_ops`; numeric-neighbor behavior is unchanged.
-
-`binary_div_floor` exchanges only binary `/` and `//`, preserving operand
-evaluation once each in left-to-right order. It changes rounding and can change
-the result type or dispatched overloaded method. Existing `*`/`/` and `//`/`%`
-mutations remain separate; `/=` and `//=` are not expanded. A runtime exception
-or a survivor alone does not establish a test defect. See the
-[research and implementation evidence](../../development/work/reports/issues-1121-1122-1124/implementation.md)
-for measured scope and limitations.
-
-User-defined exceptions have a separate, explicit-only operator:
-
-```console
-hoimin plan --file src/service.py --import-root src --operators exception_hierarchy -- pytest -q
-```
-
-`exception_hierarchy` reads project Python class definitions and explicit imports,
-then replaces a visible exception with its direct user-defined parent, child, or
-sibling. It supports `except`, `except*`, and `raise`; raised-exception replacements
-require both classes to inherit `Exception`'s constructor without a custom
-`__init__` or `__new__`. For example, `MissingError(AppError)` and
-`ConflictError(AppError)` can be exchanged when both names are visible.
-This operator can broaden handlers and is not included in the default selection,
-`exception_ops`, or `exception_risky`.
-
-Analysis does not import project modules. Dynamic or ambiguous definitions,
-re-exports, multiple inheritance, termination exceptions, and exception groups are
-skipped. Imports using top-level standard-library module names are conservatively
-excluded, even when a project contains a file with that name. Definitions must precede the containing function or the module-level use;
-class bodies are skipped, while method bodies use module bindings. No imports are
-inserted. A per-file diagnostic reports incomplete analysis with its reason and
-first location. Valid exclusions, such as having no related class or an incompatible
-constructor, do not produce this diagnostic. All allowed project Python files, including unselected files, become
-fingerprint inputs for this operator, so dependency additions, removals and changes
-invalidate saved plans and resumed results. Function/container aliases that the
-analysis does not track can still change a class binding, even within indexed
-project files; such changes are not guaranteed to suppress affected candidates.
-The operator does not guarantee that every replacement denotes an exception class
-at runtime. See [the implementation boundaries](../../development/guides/contributing.md#user-defined-exception-hierarchies).
-
-Eager import cycles exclude their member modules, while a module that merely
-imports a cycle can remain eligible. Import depth uses a name-order-independent
-conservative bound with a limit of 256: on an acyclic graph it is the longest
-import path in edges; through a cycle it counts the component's module count.
-A bound of 255 is allowed and 256 is excluded. This can suppress additional
-candidates compared with the former order-dependent traversal, particularly for
-joined long paths or large cyclic components; it does not restore modules that
-the old cycle/depth check excluded. Lazy imports do not add eager graph edges.
-
-Boundary operators recognize ASCII decimal digits with an optional unary minus,
-including grouped or multiline spellings such as `items[(-1)]` and `items[-(1)]`.
-`items[-1]` and `items[:-1]` produce `0` and `-2`; `items[::-1]` produces only
-`-2`, because slice-step replacements never contain zero. `-2` produces `-1`
-and `-3`. The magnitude must fit `u64` (at most `18446744073709551615`);
-larger Python integers and neighbors outside that range are skipped. Unsigned
-`0` retains its existing `1` candidate; `-0` produces `1` and `-1`. Hexadecimal,
-underscored, float, unary-plus, repeated-sign and computed expressions are
-excluded. Type annotations and store/delete subscripts remain excluded.
-
-Boolean and complex-separator mapping-pattern key edits that would duplicate a
-sibling literal key are excluded, including Python equality such as `True == 1`. Valid key,
-value-pattern, and ordinary dictionary-expression mutations remain eligible.
-
-The runtime selector families are `collection_ops`, `structure_ops`, and
-`bitwise_ops`, and `exception_ops`; for example,
-`--exclude-operators collection_ops` removes the collection family while
-leaving the other selected IDs enabled. The type selector families are
-`type_nullable`, `type_collections`, and `type_iterables`. The type operator
-IDs are `type_nullable_remove`, `type_nullable_add`, `type_list_sequence`,
-`type_set_abstract_set`, `type_dict_mapping`, `type_iterable_iterator`, and
-`type_sequence_iterable`. Saved configurations require `type_dict_mapping`;
-the historical `type_mapping` alias is rejected. Regenerate plans containing
-old names. Timeout and command-argument variants likewise require `auto` / `fixed`
-and `unix` / `windows`; `Auto`, `Fixed`, `Unix` and `Windows` are rejected.
-This removal of saved-input aliases raises the release floor to 0.7.0.
-
-Builtin call and exception pairs require both names to resolve to builtins.
-Class bodies with bases or keyword arguments may use a metaclass-prepared
-namespace, so class-visible builtin names are treated as uncertain. This also
-applies to builtin names in class-visible type annotations. Bare classes and
-empty `()` headers retain ordinary lookup; methods and closures skip the class
-namespace, and explicit `global` declarations bypass it per name. Even known
-`object` bases or `metaclass=type` are conservatively excluded at class-visible
-sites.
-PEP 695 type parameters can shadow either name in generic function and class
-bodies, including nested closures and comprehensions. Function defaults and
-decorators use the enclosing scope; generic class bases and keywords can see
-the type parameters. Runtime mutations remain excluded from type positions.
-
-Import-dependent type replacements are emitted only when their direct name or
-module alias remains unshadowed at the annotation site. If no safe spelling is
-available, the candidate is skipped. Class-visible annotation imports and module
-aliases are also excluded when the class may have a prepared namespace, including
-explicit class imports and `nonlocal` references. Lexical descendants skip the
-class namespace; explicit `global` declarations bypass it for each declared name. Private
-import aliases and their mangled spelling (such as `__Seq` and `_C__Seq` inside
-class `C`) are conservatively excluded at both endpoints, including methods and
-nested functions that retain that compiler context. Leading underscores in class
-names are stripped; trailing-dunder aliases and underscore-only class names do
-not trigger mangling. Actual private writes to an explicitly mangled import name
-also invalidate its provenance in the destination namespace. Clean private
-aliases may therefore produce fewer candidates; ordinary aliases retain their
-existing behavior.
-
-The `operator_function` selector recognizes the documented callable pairs
-`eq`/`ne`, `lt`/`le`, `gt`/`ge`, `add`/`sub`, `mul`/`truediv`,
-`floordiv`/`mod`, `and_`/`or_`, `lshift`/`rshift`, `neg`/`pos`,
-`not_`/`truth`, `is_`/`is_not`, `is_none`/`is_not_none`, `iadd`/`isub`, `imul`/`itruediv`,
-`ifloordiv`/`imod`, `iand`/`ior`, `ilshift`/`irshift`,
-`concat`/`iconcat`, and `countOf`/`indexOf`. It also maps `pow` and `matmul`
-to `mul`; `xor` to `and_`; `abs` to `neg`; `index`, `inv`, and `invert` to
-`pos`; `ipow` and `imatmul` to `imul`; `ixor` to `iand`; and `getitem` to
-`contains`. The `contains` replacement reverses membership, while `setitem`,
-`delitem`, and `call` evaluate their arguments but suppress the underlying
-operation. Documented dunder aliases follow the same mappings. The unrelated
-helpers `attrgetter`, `itemgetter`, `methodcaller`, and `length_hint` stay out of
-scope, as do functions outside the documented Python 3.14 inventory.
-
-Hoimin trusts only unique, unmodified, unconditional module-level
-`import operator` and absolute `from operator import ...` bindings. It skips a
-binding after shadowing, deletion, wildcard or conditional imports, dynamic
-namespace access, module attribute writes, or an uncertain `__import__`
-binding. Hoimin excludes relative and local imports. Stores, annotations, and
-match patterns do not produce function candidates; match guards remain ordinary
-expressions. Hoimin excludes every imported-alias load evaluated in a class
-namespace because a custom metaclass can supply ordinary names without an AST
-assignment. Method and lambda bodies remain eligible because they use
-function/global lookup. An alias beginning with `__` stays excluded throughout
-a class definition because private-name mangling and compiler-provided class
-names can resolve it to another object. These checks operate within one module
-and assume the normal standard-library `operator` module; they do not prove
-anything about a custom import loader or external monkey-patching.
-
-The exception selector `exception_risky` is opt-in only; enable it with
-`--operators exception_risky` (or select individual IDs). It exposes
-`exception_bare_to_exception`, `exception_exception_to_bare`,
-`exception_base_boundary`, `exception_tuple_add_pair`, and
-`exception_tuple_remove_member`. These mutations can broaden or narrow a
-handler and the BaseException boundary can catch `SystemExit`,
-`KeyboardInterrupt`, or `GeneratorExit`; none is enabled by default. Safe
-exception pairs are limited to `ValueError`/`TypeError`, `KeyError`/`IndexError`,
-`AttributeError`/`KeyError`, `FileNotFoundError`/`PermissionError`,
-`ConnectionError`/`TimeoutError`, `ImportError`/`ModuleNotFoundError`, and
-`ZeroDivisionError`/`OverflowError`. Qualified or dynamic handlers and tuple
-members are skipped. Simple names in `except*` handlers use the same safe pairs
-and resolution checks as ordinary handlers, while the five structural
-`exception_risky` operators remain limited to ordinary `except` handlers. The
-same safe pairs apply to the primary name in `raise ValueError`,
-`raise ValueError(...)`, and
-`raise ValueError(...) from cause`. Constructor arguments and the cause are
-preserved. Bare re-raise, qualified or dynamic primary expressions, shadowed
-source or replacement names, and termination exceptions are not changed.
-
-The collection/structural operators are deliberately syntax-directed. They do
-not include an `append`/`pop` mutation, comprehensions, assignment or delete
-targets, or wrapping set literals in `frozenset(...)`. Unsupported keyword or
-starred call forms, arbitrary index expressions, and zero-step slice mutations
-are also excluded. See the development guide for the exact accepted shapes.
-
-For example, run a type checker against nullable and collection annotation mutations:
+For annotation mutations, run a type checker as the configured command:
 
 ```console
 hoimin run --root . --source src --operators type_nullable,type_collections -- uv run ty check
 ```
 
-For example, append `--exclude-operators type_nullable_add` to retain
-nullable-removal mutations only. As with every command after `--`, `uv`, `run`,
-`ty`, and `check` are direct argv elements on both Windows and Unix.
+To exclude nullable addition, place `--exclude-operators type_nullable_add`
+**before** the `--` separator. Arguments after `--` belong to the configured
+command on Windows and Unix. A type checker's nonzero exit kills the mutant.
 
-A type checker that exits nonzero for a mutated annotation kills that mutant.
+Default selections can grow between releases and change the prefix retained by a
+candidate cap. Explicit selections and saved plans keep their recorded operator
+sets; reloading a saved plan does not expand it with additional defaults.
 
-The Rust analyzer preserves the original source except for exactly one replacement per mutant.
+### Match documentation to your installation
+
+Check `hoimin --version`. The installed `run`/`plan` help links to the usage guide
+at that package version's release tag. For a release, follow that tag's own links;
+older releases may not have the separate operator reference. The hosted website
+follows `main`, so it can describe behavior absent from your installed release.
+For a source build, read the documentation in the same checkout; a package version
+alone does not identify an untagged source revision.
 
 ## Mutation profiles
 
@@ -1461,287 +1202,7 @@ The active session database, its `-wal`, `-shm`, and `-journal` sidecars, and it
 
 ## Additional runtime mutations
 
-`--operators statement_delete` replaces an independent call statement (for example
-`store.persist(record)`) with `pass`. It removes evaluation of the callee and all
-arguments. It is enabled by default. Assignment, return, import, compound
-statements, and calls containing assignment expressions, `await`, `yield` or
-`yield from` (including nested lambda bodies) are excluded. An empty suite remains
-valid, and neighbouring statements and trailing comments are preserved. The usual
-profile, line/symbol/changed selection, limits and cancellation still apply.
-A surviving deletion means the missing effect deserves inspection; it does not
-prove a test defect or that the mutation is non-equivalent.
-
-`--operators integer_literal_neighbor` changes ordinary decimal integers from `n`
-to `n-1` or `n+1`, with parenthesized replacements. Unary-negative decimal literals
-are one expression, not a separate positive operand. Magnitudes through
-`18446744073709551615` are supported; neighbors outside the corresponding signed
-range are omitted. This is not arbitrary-precision integer mutation. Underscores,
-other bases, floats, complex numbers, bools, type expressions, match patterns,
-assignment/deletion targets and subscript slice expressions are excluded. Index
-and slice neighbors remain the responsibility of the structural operators.
-The operator is enabled by default.
-
-`--operators condition_constant` fixes an entire `if`/`elif` condition to `True`
-or `False`, skipping evaluation and side effects of the original condition.
-Existing boolean constants and conditions containing nested assignment expressions,
-`await`, `yield` or `yield from` are excluded. Bodies, else clauses and neighbouring
-clauses are preserved. While/assert/ternary/comprehension predicates are not targets.
-The operator is disabled by default, and focused-profile exclusions still apply.
-Killing both branch mutations does not establish finer boundary correctness.
-
-`--operators function_body_erase` replaces the body of a synchronous function or
-method with `pass`, preserving its leading docstring, decorators, signature and
-defaults. Value-returning functions, generators, async functions, dunder names and
-obvious docstring/pass/None-return/ellipsis stubs are excluded. Nested definitions'
-returns/yields belong to their own scopes; suspension in their evaluated defaults
-still excludes the outer function. This opt-in operator is a limited extreme
-mutation, not coverage collection or automatic identification of pseudo-tested code.
-
-Its selection anchor is the first erased statement (after the docstring): selecting
-only a later body line does not select the whole-function mutation. Symbol selection
-uses the erased function, even when its first statement defines a nested function.
-Preview shows the whole body span. The shared 2 MiB serialized-candidate limit still
-applies. A survivor remains `survived`; it does not establish whether the function
-ran, was observed, or was equivalent, and this score cannot replace fine-grained mutation.
-
-`--operators enum_member_replace` changes a same-module Enum/IntEnum/StrEnum
-member reference to a canonical member with a different value. Only unconditional
-top-level definitions with one trusted standard-library base and homogeneous
-integer/string literals or standard `auto()` calls are supported. Aliases share
-one destination; the attribute token's original spelling is preserved. The operator remains
-opt-in. Local/rebound names, annotations, patterns and class-body
-self references are excluded. Unsupported definitions emit `enum_definition_skipped`.
-Custom decorators/metaclasses/generators, reserved attributes (including `_ignore_`),
-mixed values, Flag/IntFlag, integers exceeding u64 magnitude, strings containing
-U+FFFD or parser-replaced surrogate escapes, and non-ASCII StrEnum auto names are
-conservatively excluded. Dynamic namespace operations, tracked global declarations
-and direct alias assignments invalidate this initial module index. Methods with
-ordinary undecorated names are ignored as non-members; decorated/special methods
-exclude the definition. No target module is imported by the analyzer.
-
-`--operators augmented_to_assignment` replaces any augmented-assignment operator
-on a simple name (`total += amount`) with `=` (`total = amount`). All 13 augmented
-operators are supported. Attributes and subscripts are excluded; only the operator
-token changes. Existing arithmetic substitutions may coexist at that location.
-This removes the old-value read and in-place operation, including list/object
-side effects; it is not restricted to numbers. The operator is enabled by default.
-
-`--operators return_tuple_swap` swaps two simple elements directly returned as a
-tuple by a synchronous, non-generator function. Names and standalone number/string/
-Boolean/None literals are supported, including signed numbers. Calls, attributes,
-subscripts, nested containers, implicit string concatenation, bytes/fstrings and
-suspension expressions are excluded. A single tuple span changes; element separators,
-comments, parentheses and trailing commas are preserved. Keyword-adjacent bare tuples
-are parenthesized when needed for lexical separation. Identical source atoms or
-normalized names are skipped. Names may have different runtime types; this operator
-does not promise type preservation or identify all equivalent swaps. It is enabled by default.
-
-`override_method_delete` and `super_call_move` are enabled by default. Disable
-both with `--exclude-operators override_method_delete,super_call_move`, or pass
-one ID to select or exclude it individually. Neither belongs to a selector family.
-
-`override_method_delete` replaces an overriding method definition with `pass`,
-so dispatch uses the parent's implementation. It can expose tests that omit the
-child's specialized behavior. `super_call_move` moves a standalone
-`super().same_method(...)` call from first to last executable statement, or from
-another position to first. It can expose missing assertions about the order of
-parent and child effects. A kill does not by itself establish whether `super()`
-is used correctly; assess the required behavior.
-
-Both recognize ordinary top-level single inheritance within one source module,
-with the parent declared earlier and without explicit bases. Class and method
-bindings must remain unambiguous. Decorators, class keywords, generic classes,
-class escapes, dynamic namespace operations, method aliases/writes and lookup
-hooks are excluded. Class attributes must use literal values; named values can
-be descriptors with class-creation hooks. Decorated methods elsewhere in the
-class and method references in class-evaluated headers are also excluded.
-Methods must be synchronous instance methods with matching
-parameter names/kinds, no defaults or annotations, and no variadics, nested
-definitions, suspension, special names or private mangled names. Imported,
-conditional, nested and multiple inheritance are outside these two operators.
-The checks cannot detect monkey-patching performed by external modules.
-
-Movement additionally requires builtin zero-argument `super`, a single delegation
-to the current method, and at least two straight-line expression statements.
-Walrus assignments, starred arguments and control-flow statements are excluded.
-The initial docstring stays fixed; edits that create a docstring are excluded.
-Statement fragments move between the original separator slots, so comments stay
-in their slots and whitespace, grouping and newline styles are retained.
-
-`base_order_shuffle` is enabled by default. Disable it with
-`--exclude-operators base_order_shuffle`, or select it alone with
-`--operators base_order_shuffle`. It swaps two direct bases, for example
-`class Child(A, B)` becomes `class Child(B, A)`. With three or more bases it
-generates one deterministic shuffle from the original base-list source; an
-unchanged shuffle falls back to swapping the first two bases. The order always
-changes, with every base retained once. Repeated plans and selectors produce
-the same candidate; there is no separate seed option or uniform-sampling promise.
-
-Eligible classes have at least two distinct simple-name bases and no decorators,
-type parameters or class keywords. Imported names and nested classes are supported.
-Calls, attributes, subscripts, starred bases, duplicate normalized identifiers,
-explicit metaclasses and other class keywords are excluded. Only the name slots
-change, preserving surrounding commas, comments, parentheses, trailing commas,
-class bodies and newline style. Line selection uses the first base name's line;
-symbol selection uses the containing class. Generation does not import targets.
-
-The mutation probes assertions about provider selection and cooperative call
-order, not correct `super()` usage. It does not resolve runtime base identities,
-MRO, implicit metaclasses or subclass hooks. Reordering dependent bases can raise
-`TypeError`; normal test-process classification applies, so a kill can include
-an execution error rather than an assertion gap. Inspect the failure before
-adding a test, and do not require an order the API does not promise.
-
-`--operators string_literal_empty` replaces each nonempty, single-token runtime str
-literal with `""`, including raw/u/triple-quoted strings. Decoded empty values,
-bytes, f/t strings (including their fields), implicit concatenation, module/class/
-function docstrings, annotations, explicit type-alias expressions and match patterns
-are excluded. Ordinary string expressions and call messages remain eligible. PEP613
-markers imported from typing/typing_extensions, including quoted/parenthesized markers,
-are recognized conservatively across scopes; shadowed or unusual marker spellings can
-suppress a candidate. Normal annotated assignment values remain eligible. Prefix and
-quote style need not survive; the replacement is an empty str. It is enabled by default.
-
-`string_segment_empty` is enabled by default; disable it with
-`--exclude-operators string_segment_empty`, or select it alone with
-`--operators string_segment_empty`. It removes the first eligible nonempty top-level
-literal segment of each f-string expression, or empties the first nonempty token of
-an implicitly concatenated ordinary string. Mixed ordinary/f-string concatenation
-is treated as one expression. Empty decoded pieces are skipped. For example,
-`f'prefix:{value}:suffix'` becomes `f'{value}:suffix'`, and
-`'prefix' 'suffix'` becomes `"" 'suffix'`. Only one candidate is generated per
-expression. Interpolation fields, conversion flags, format specs, debug text and
-comments between concatenated tokens keep their source text. Raw/triple-quoted
-strings, Unicode, escapes and doubled braces use AST source spans rather than
-decoded character lengths. Complete ordinary tokens become `""`; f-string text is
-deleted without losing interpolation side effects. An f-string token consisting
-only of fixed text becomes `f""`. Separating spaces are added against immediately
-adjacent quote tokens where needed to keep their lexical boundaries valid.
-
-Docstrings, annotations, explicit type aliases, patterns, bytes and t-strings
-(including their fields) are excluded. Interpolation contents and format-spec
-internals, including nested f-strings, are also excluded. Debug-derived text is not
-a literal segment; separately written text surrounding a debug field is eligible.
-This operator does not target single ordinary string tokens, which remain the
-responsibility of `string_literal_empty`. The existing operator's behavior is unchanged.
-A strong assertion on `state() == 'prefix:1'` kills the segment mutation of
-`f'prefix:{1}'`; a weaker `state().endswith('1')` assertion survives. This demonstrates
-missing fixed-text coverage, rather than establishing that every changed string is
-a useful defect. Existing explicit operator sets, candidate IDs and saved plan
-operator sets retain their meaning; default candidate counts and capped selections
-can change.
-
-`--operators while_condition_false` replaces eligible while tests with `(False)`.
-It skips both the original condition's evaluation and the loop body; an existing
-else suite still runs. Boolean literals, binding and suspension expressions are
-excluded. It is enabled by default and does not affect for loops or comprehensions.
-
-`--operators condition_clause_delete` removes one top-level operand from an if/elif
-and/or condition. Retained expressions keep their order and nested grouping;
-inter-operand formatting is normalized. The removed expression's effects disappear,
-and short-circuit behavior may expose previously skipped operands. Binding/suspension
-expressions and other condition contexts are excluded.
-
-`--operators container_element_delete` removes one list/parenthesized-tuple element
-or dict entry. Whole-literal reconstruction normalizes separators and inter-element
-comments while protecting retained expression grouping. Tuple kind, retained order,
-and dict key/value pairs are preserved; removed elements are not evaluated. Unpacking,
-binding/suspension expressions, nonruntime roles and assignment targets are excluded.
-
-`--operators conversion_call_remove` replaces a statically resolved builtin conversion
-with its single positional argument in parentheses. It supports int/float/complex/bool/
-str/bytes/list/tuple/dict/set/frozenset and skips keywords, unpacking, generators,
-binding/suspension, shadowed names, type roles and assignment targets. The argument is
-evaluated once; conversion hooks, validation, copying and iterator consumption disappear.
-Known scope rebinding is checked; arbitrary external builtin monkey patching is not proven.
-This operator is enabled by default.
-
-`--operators stdlib_conversion_call_remove` replaces a supported one-positional-argument
-conversion with its argument in parentheses. It covers these explicit Python 3.14
-constructors and factory methods:
-
-| Module | Supported calls |
-| --- | --- |
-| `decimal` | `Decimal`, `Decimal.from_float`, `Decimal.from_number` |
-| `fractions` | `Fraction`, `Fraction.from_float`, `Fraction.from_decimal`, `Fraction.from_number` |
-| `http` | `HTTPStatus` |
-| `socket` | `AddressFamily`, `SocketKind`, `MsgFlag`, `AddressInfo` |
-| `signal` | `Signals`, `Handlers`, `Sigmasks` (Unix only) |
-| `ssl` | `VerifyMode`, `VerifyFlags`, `Options`, `AlertDescription`, `SSLErrorNumber`, `TLSVersion` |
-| `re` | `RegexFlag` |
-| `calendar` | `Day`, `Month` |
-| `inspect` | `BufferFlags` |
-| `annotationlib` | `Format` |
-
-Both direct imports and module imports, including aliases, are supported, for
-example `from decimal import Decimal as D; D.from_float(value)` and
-`import http as h; h.HTTPStatus(code)`. A unique unconditional module-level import
-must establish the callable's identity. Enum availability and valid member values
-follow the target Python platform; analysis does not import the target modules.
-
-The argument is evaluated once; conversion, validation, copying and conversion
-hooks disappear. Numeric equality can hold while the result's type changes:
-removing `Decimal.from_float(value)` for `value = 1.5` can survive a comparison
-with `Decimal("1.5")`; removing `HTTPStatus(200)` can survive comparison with 200.
-An assertion such as `isinstance(result.amount, Decimal)` or
-`isinstance(result.status, HTTPStatus)` detects the retained float or int.
-
-The operator conservatively skips rebinding anywhere in the file, class-namespace
-loads, local/conditional imports, escaped or modified module objects, and dynamic
-namespace access. Factory methods additionally require that their class is not
-written through or referenced outside an immediate constructor/factory callee.
-This includes class aliases, extracted bound methods, class references in
-annotations, and possible references through duplicate/local imports or class
-scopes. Such uncertainty suppresses that class's factory candidates; direct
-constructor candidates and the other numeric class remain independently eligible.
-Arguments of otherwise accepted calls are still checked for escaping class references.
-
-The builtin conversion operator's argument and syntax-role exclusions also apply.
-Multi-argument calls, keywords (including Decimal's `context`), `typing.cast`,
-custom enum subclasses, enum base classes and types absent from the table are
-outside this operator's scope. `ctypes` conversions are excluded; any future
-support is intended to be opt-in. Static imports do not prove the absence of
-external monkey patching, import-path shadowing, or class recovery and mutation
-through constructed instances or arbitrary dataflow.
-
-This operator is enabled by default starting with the 0.5 version floor; disable
-it with `--exclude-operators stdlib_conversion_call_remove`. Existing saved plans
-retain their explicit operator set and candidates; regenerate plans to include
-new candidates. The larger candidate population can affect retained prefixes,
-runtime and mutation scores. See the
-[design and verification record](../../development/work/maintenance/2026-10-13-stdlib-conversion.md).
-
-`--operators optional_keyword_delete` removes one explicitly supplied optional keyword
-from a uniquely bound, undecorated synchronous top-level function in the same file.
-It validates the original argument binding, preserves other argument order and uses
-the existing default object without evaluating the removed argument. Calls before the
-definition ends, function escapes/aliases, known rebinding, dynamic namespace access,
-variadics, type parameters, names beginning with `__`, expansions and unsafe/type/target
-roles are excluded.
-Reconstruction normalizes inter-argument trivia; external monkey patching is not proven.
-
-`--operators method_call_remove` replaces an argument-free attribute call such as
-`text.strip()` with `(text)`. It retains receiver evaluation once and removes
-attribute lookup and invocation, including their side effects. It is enabled by default and
-syntax based: the callable need not be a bound method, and the result type may
-change. Arguments, binding/suspension/generator receivers, annotations, explicit
-type aliases, patterns and assignment targets are excluded. This is a restricted
-static adaptation of [PyTation's RemMetCall](https://arxiv.org/html/2601.19088v2).
-See the [design and evidence](../../development/work/reports/method-call-remove/design.md).
-
-`--operators function_body_return_constant` replaces a synchronous value-returning
-function body with complementary constants, preserving its header and leading
-docstring. A direct, unshadowed builtin return annotation selects `False`/`True`
-(`bool`), `0`/`1` (`int`), or `""`/`"A"` (`str`). An annotation is a heuristic, not a
-runtime type guarantee. Async functions, generators, dunder methods, functions
-without an own-scope value return, and ambiguous/quoted/composite annotations are
-excluded. A sole return of the same literal is skipped. Body side effects are
-intentionally removed. This extreme mutation is enabled by default and complements `function_body_erase`;
-a surviving mutant does not establish that covered code is pseudo-tested.
-See the [design and paper reference](../../development/work/reports/function-body-return-constant/design.md).
-
-The [default-selection policy](../../development/work/reports/recent-analyzer-defaults/design.md)
-supersedes the opt-in rollout described in the two original design reports.
+For per-operator examples and guards, see [statements, conditions and function results](../reference/operators.md#statements-conditions-and-function-results), [collections](../reference/operators.md#collections-indexing-and-slicing), and [state and object contracts](../reference/operators.md#state-ordering-and-object-contracts). Check defaults and family membership in the [selection index](../reference/cli.md#operator-selection).
 
 ## Human review of mutation candidates
 
@@ -1841,255 +1302,27 @@ formal verification boundaries.
 
 ## Premature loop exit
 
-`loop_break_insert` appends one `break` at the end of an eligible `for`, `async for`,
-or `while` body. When execution reaches that point, it exits the selected loop
-and skips the loop's `else` suite. This tests whether assertions distinguish
-complete iteration from premature termination.
-
-```python
-for item in items:
-    process(item)
-    break  # inserted by loop_break_insert
-```
-
-The operator is enabled by default. Use
-`--exclude-operators loop_break_insert` to disable it, or
-`--operators loop_break_insert` to select only it. Existing `break_continue`
-swaps an existing `break` and `continue`; it remains independently selectable.
-
-A direct unconditional `break`, `continue`, `return`, or `raise` anywhere in the
-body suppresses an unreachable tail insertion. Conditional `continue` can bypass
-the inserted `break`, so this does not guarantee exactly one iteration. Nested
-loops receive separate candidates; each candidate exits only its selected loop.
-The insertion preserves comments, indentation, logical line boundaries and line
-endings, including inline suites. It uses the final source anchor's line for
-line selection and the containing loop's enclosing symbol for symbol selection.
-An empty iterator or an initially false while condition never executes the new
-`break`. No `continue` insertion operator is provided.
+See [`loop_break_insert`](../reference/operators.md#loop_break_insert) for insertion points, loop-else behavior and applicability.
 
 ## Early iterator exhaustion
 
-`iterator_stop_insert` inserts `raise StopIteration()` at the entry of an
-undecorated synchronous class method named `__next__`. `async_iterator_stop_insert`
-inserts `raise StopAsyncIteration()` in an undecorated async `__anext__` method.
-Both preserve an initial docstring and the original body. A consumer receives no
-items from that method, which checks whether tests assert expected produced values.
-These mutations do not model dropping only a later item.
-
-Both operators are enabled by default. Disable either individually, or use
-`--exclude-operators iterator_stop_insert,async_iterator_stop_insert` to disable
-both. Select either by its ID with `--operators`.
-
-Generator and async-generator methods are excluded: a stop exception escaping a
-generator does not represent ordinary exhaustion. Nested generators do not exclude
-the enclosing method. Non-method functions, decorated methods, mismatched async
-forms, docstring-only bodies, methods declaring the inserted name global in their
-own scope, and methods already raising the same exception at
-entry are excluded. The inserted exception name must statically resolve to the
-builtin; shadowed or uncertain bindings suppress the candidate. Insertion happens
-before an existing statement, so its line and containing method identify the
-candidate for `--line` and `--symbol` selection. A surviving mutant identifies a
-test gap to inspect; it does not by itself establish a defect in the iterator.
+See [`iterator_stop_insert`](../reference/operators.md#iterator_stop_insert) and [`async_iterator_stop_insert`](../reference/operators.md#async_iterator_stop_insert) for synchronous and asynchronous protocol-entry mutations.
 
 ## Generator behavior
 
-These four operators are enabled by default and independently removable with
-`--exclude-operators`. Select an individual ID with `--operators`.
-
-| Operator | Change | What tests can detect |
-| --- | --- | --- |
-| `list_comprehension_to_generator` | `[f(x) for x in items]` becomes `(f(x) for x in items)` | One-shot iteration, truthiness and lazy evaluation; async comprehensions also change to generator expressions |
-| `generator_return_insert` | Inserts bare `return` after a docstring in a generator `def` or `async def` | Missing produced values; original `yield` source remains so the function retains its generator kind |
-| `generator_skip_first` | Consumes one item from a synchronous generator expression at construction and returns the same generator | Missing first values and earlier evaluation; empty dynamic inputs remain empty |
-| `generator_empty` | Constructs the original synchronous generator expression, then substitutes an empty generator | Tests accepting missing values despite successful iterable construction |
-
-For example, changing a list comprehension into a generator can make a second
-traversal empty. Testing `bool(generator)` does not establish whether it contains
-values. Assertions should check the values needed by the application.
-
-Skip-first and empty target explicit synchronous generator expressions, including
-implicit sole call arguments. They do not infer arbitrary variables' iterator
-types or consume asynchronous generators. A construction-time `await` in the
-leftmost iterable can still produce a synchronous generator; awaits executing
-inside its frame make it asynchronous. Syntactically known-empty list/tuple
-iterables are excluded from these two operators.
-
-Skip-first requires static proof that `next` refers to the builtin. Shadowed or
-uncertain bindings suppress it. Its single `next` call evaluates user code sooner
-and can raise that code's errors; normal hoimin execution budgets still apply.
-Empty preserves the original leftmost iterable evaluation and iterator acquisition
-once, without consuming its values. It models no remaining items, not the side
-effects of actually exhausting an entire stream. No full-drain mutation is used.
-
-Early return excludes non-generator functions and an existing first `return`.
-Nested function bodies do not make their enclosing function a generator; defaults
-evaluated in the enclosing scope can. Docstrings, original body source and
-LF/CRLF/CR spelling are retained. Expression mutations use their expression's
-start line; entry insertion uses the existing statement's line. Existing
-line/symbol selection, profiles, candidate caps and payload limits apply.
-A surviving mutant is a reason to inspect a test's assertions, not proof of a bug.
-
+See [loops, iterators and generators](../reference/operators.md#loops-iterators-and-generators) for eager/lazy conversion, early return, skipped first items, empty streams and delegation.
 
 ## Missing values, shared state and delegation
 
-These eleven operators are enabled by default. Select one with `--operators`, or
-exclude any IDs with `--exclude-operators`:
-
-| Operator | Mutation | Assertions it exercises |
-| --- | --- | --- |
-| `none_truthiness` | A single `is None` becomes a falsiness test; `is not None` becomes a truthiness test | Distinguish omitted values from valid zero, False, empty strings and containers |
-| `mutable_default_share` | A None parameter default becomes [] or {} when its entry guard initializes that same parameter | Detect state shared across calls or instances; explicitly passed None still creates a fresh object |
-| `nonlocal_remove` | Replace a nonlocal declaration with pass | Check updates to enclosing state, including multi-name declarations |
-| `yield_from_to_yield` | Remove only the from token, yielding the operand itself instead of delegating | Check individual produced values, their shape and delegation behavior |
-| `mapping_setdefault_to_get` | Rename an eligible setdefault call to get | Check that missing-key defaults are stored, not just returned |
-| `bisect_boundary_swap` | Swap bisect_left and bisect_right | Check insertion boundaries when equal values repeat |
-| `deepcopy_to_copy` | Replace a one-argument deepcopy call with copy | Check that nested mutable objects remain independent |
-| `deque_popleft_to_pop` | Rename a zero-argument popleft call to pop | Check FIFO order using at least two items |
-| `gather_return_exceptions` | Add return_exceptions=True to an eligible asyncio.gather call | Check that failed tasks are propagated or inspected instead of treated as successful results |
-| `itertools_take_drop_swap` | Swap takewhile and dropwhile | Check selected values and iterator consumption at the predicate boundary |
-| `fstring_conversion_swap` | Swap explicit !r and !s in an f-string | Check display/debug representations, including nested format fields |
-
-None comparisons support either operand order and retain a bool result without
-introducing a bool function lookup. Chained comparisons, None/None comparisons,
-annotations and pattern expressions are excluded. The operand runs once; source
-grouping, comments and continuation lines are retained; grouping around the removed
-None operand is removed with that operand.
-
-Shared defaults require the first statement after an optional docstring to be an
-if statement testing that parameter `is None`, with exactly one assignment to it
-of an empty list or dict and no elif/else. Its parameter default must be None.
-Decorated and generic definitions, additional initializer statements, other
-factories and nonempty containers are excluded. Positional-only, keyword-only,
-async functions and methods are supported. The original guard/body remains;
-only omitted arguments share the new default. Dataclass fields are not rewritten.
-
-Nonlocal removal affects the entire declaration; an existing global declaration
-is not changed. Yield-from changes preserve the enclosing generator kind but
-intentionally change delegation, including its completion/send/throw behavior.
-Both retain surrounding comments and inline suite structure.
-
-Setdefault renaming accepts one or two ordinary positional arguments, no keywords
-or starred arguments, and a name or attribute receiver. It follows the existing
-syntactic method-operator model: it does not prove the receiver is a builtin dict,
-and custom same-name methods can also be affected. Receiver and argument source
-remain unchanged and execute once in their original order.
-
-Candidates use the changed token's line (default None, nonlocal, from or method
-name), or the comparison start for none_truthiness. Existing symbol/line selection,
-profiles, caps, payload budgets and cancellation apply. A surviving mutant needs
-inspection against the application's observable contract; it is not proof of a bug.
-
-
-The bisect and copy mutations require a stable top-level standard-library import,
-including aliases. They skip shadowed, rebound or escaped bindings according to
-the shared import resolver. Imported function aliases use a guarded __import__
-lookup; module attributes retain their receiver and change only the member.
-Deepcopy calls with memo arguments, keywords or starred arguments are excluded.
-Bisect's unsuffixed alias and insort functions are excluded.
-
-The queue mutation accepts simple name or attribute receivers, zero arguments
-and no keywords. Like setdefault matching, it is syntactic and can affect custom
-methods. It changes popleft to pop only; ordinary pop calls are unaffected.
-
-
-Gather matching requires a trusted asyncio import and at least one ordinary
-positional argument. Calls with keywords, starred arguments or generator
-expressions are excluded. Existing return_exceptions values are unchanged by
-this operator; boolean_literal already changes an explicit False to True.
-The edit replaces the closing parenthesis, so that token determines line
-selection. Comments, trailing commas and argument evaluation order are retained.
-Successful tasks keep their result values; failed tasks become exception objects
-in the returned list instead of propagating through gather.
-
-The iterator-prefix swap requires trusted itertools imports and supports
-module/function aliases under the same conservative resolver. It preserves the
-predicate and iterable expressions, while deliberately changing yielded values
-and how far the iterator is consumed.
-
-The formatting swap changes only an explicit r or s conversion letter in an
-f-string. It includes nested format fields and concatenated f-strings. It skips
-!a, omitted conversions, implicit debug repr and conversions in t-strings.
-Ordinary f-strings inside t-string expressions remain eligible. Expressions run
-once; debug text, format specs, comments and literal text are preserved.
+See [state, ordering and object contracts](../reference/operators.md#state-ordering-and-object-contracts) for missing values, shared defaults, outer bindings, dictionary insertion, copying, asynchronous results and formatted representations. See [`yield_from_to_yield`](../reference/operators.md#yield_from_to_yield) for delegation.
 
 ## Loop continuation, comparison delegation and exception causes
 
-`continue_remove` replaces a `continue` statement with `pass`, allowing later
-statements in the same iteration to run. Unlike `break_continue`, it does not
-stop later iterations. It applies inside nested loops, `with`, `try`/`finally`
-and loop `else`; existing surrounding control flow remains intact. A tail
-`continue` can be equivalent, so survival alone is not a missing-test claim.
-
-`comparison_not_implemented` replaces an unshadowed builtin `NotImplemented`
-returned directly by an ordinary synchronous class rich-comparison method
-(`__eq__`, `__ne__`, `__lt__`, `__le__`, `__gt__`, `__ge__`) with `False`. This
-can prevent reflected comparison delegation. Decorated, asynchronous, generator,
-arithmetic and non-method functions are excluded, as are nested function
-returns and uncertain/shadowed builtin references. It does not claim to infer
-the runtime operand types or support arithmetic delegation.
-
-`exception_cause_remove` changes an explicit named cause in `raise E from cause`
-to `None`. It suppresses explicit chaining; Python retains implicit
-`__context__` and sets `__suppress_context__`. Bare raises, existing `from None`,
-constructor calls, attributes and compound cause expressions are excluded.
-Only APIs promising cause diagnostics justify strengthening a test for this
-survivor; error-type/message-only contracts need no new cause assertion.
-
-All three use the existing candidate budget, selection and cancellation paths.
-They add no target imports during analysis, dependencies or saved schema.
-See the [bounded research and decisions](../../development/work/reports/issues-1125-1131/README.md)
-for rejected candidates and evidence limits.
+See [`continue_remove`](../reference/operators.md#continue_remove), [`comparison_not_implemented`](../reference/operators.md#comparison_not_implemented), and [`exception_cause_remove`](../reference/operators.md#exception_cause_remove) for examples and limits.
 
 ## Dataclass ownership, sorting keys, captures and encoding
 
-`dataclass_factory_share` replaces builtin list/dict/set factories in direct
-annotated fields with a lambda returning one shared empty container. It keeps
-field options and permits trusted dataclasses import aliases. Initially it
-accepts direct top-level ordinary dataclasses with no explicit bases, metaclass,
-type parameters or extra decorators. Class suites must contain only annotated
-name fields, pass and string literals; methods, assignments, control flow,
-private/duplicate field names and conflicting aliases are excluded. Uncertain
-imports, dynamic namespace access and shadowed builtin factories are excluded.
-A module rebinding after class evaluation does not change the already captured
-factory identity. Existing import resolution outside this guarded dataclass
-path is unchanged. Arbitrary factories are excluded; source code is never
-imported for discovery. Sharing/definition-time empty allocation and factory
-metadata changes are intentional mutation effects.
-
-`sort_key_swap` swaps two distinct simple reads in the tuple returned by an
-explicit key lambda on a proven builtin sorted call. Reads can be names,
-attribute chains or literal-index subscripts. Calls, compound expressions,
-variable/slice indices, starred elements, duplicate reads and named key functions
-are excluded; list.sort is not included. Grouping, separators and comments are
-retained. Line selection uses the actual edit-start line, including multiline
-calls. Each key component is still evaluated once, but the evaluation order
-changes; properties and custom subscripts can execute user code. This operator
-does not infer purity or require every detection to be unique to that operator.
-
-`lambda_capture_late` targets one-parameter `lambda value=value: value` captures
-inside a same-scope ordinary for-loop with a matching simple name target. A
-private getter/sentinel wrapper makes omitted values late-bound while retaining
-the original positional/keyword parameter and explicit overrides, including None
-and mutable identity. Helpers are wrapper-local with collision-free names. It
-excludes class-body loops, comprehensions, nested lambda/function/class scope crossings, async or
-unpacking target bindings, complex defaults/bodies, positional-only/keyword-only
-or variadic parameters and the matched loop's else suite. It can recognize a
-matching outer loop through a differently named inner loop. The mutation adds
-closures and a sentinel per callback and changes defaults/closure metadata and
-traceback shape; exact introspection equivalence is not promised.
-
-`encoding_errors_ignore` changes an explicit literal errors='surrogateescape'
-to errors='ignore' in trusted codecs.encode/decode imports or nominal simple
-receiver encode/decode methods. Nominal matching does not prove receiver type;
-a custom same-named method can match. Uncertain imported codecs references are
-excluded rather than falling back to nominal matching. Calls on computed
-receivers, dynamic keyword/positional expansion, positional errors, implicit
-string concatenation and f-strings are excluded. Encode/decode candidates may
-expose the same losslessness requirement; count that as one requirement.
-
-All four share candidate limits, payload admission, selection, profiles and
-cancellation. They add no dependency or saved-format compatibility path.
-See the [implementation and evidence](../../development/work/reports/issues-1125-1131/four-implementation.md).
+See [`dataclass_factory_share`](../reference/operators.md#dataclass_factory_share), [`sort_key_swap`](../reference/operators.md#sort_key_swap), [`lambda_capture_late`](../reference/operators.md#lambda_capture_late), and [`encoding_errors_ignore`](../reference/operators.md#encoding_errors_ignore) for examples and eligibility rules.
 
 ## Explore test reductions
 

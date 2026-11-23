@@ -155,9 +155,10 @@ def test_nonexistent_source_is_not_hidden_by_rewriting(tmp_path: Path) -> None:
     [
         ("docs/user/guides/usage.md", "docs/usage.md"),
         ("docs/user/reference/cli.md", "docs/cli-reference.md"),
+        ("docs/user/reference/operators.md", "docs/user/reference/operators.md"),
         ("docs/development/guides/contributing.md", "docs/development.md"),
     ],
-    ids=["user-guide", "user-reference", "contributor-guide"],
+    ids=["user-guide", "user-reference", "operator-reference", "contributor-guide"],
 )
 def test_published_page_stays_local(
     tmp_path: Path, source: str, published: str

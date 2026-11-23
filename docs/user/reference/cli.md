@@ -694,42 +694,55 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-Mutation operator IDs and selector families:
+Mutation selection:
+  Omit --operators for the default runtime set. --operators replaces that set.
+  --exclude-operators removes IDs or whole families after selection.
+  Families expand to their members, including opt-in IDs when selected.
+
+Operator examples, applicability and limits for released hoimin 0.15.0:
+  https://github.com/HayaoSuzuki/hoimin/blob/v0.15.0/docs/user/guides/usage.md#mutation-operators
+  Source builds: read docs/user/reference/operators.md in the same checkout.
+
+Default runtime IDs:
   aggregate_sum_count, async_iterator_stop_insert, augmented_add_sub, augmented_bitwise_and_or
   augmented_bitwise_shift, augmented_bitwise_xor, augmented_floor_mod, augmented_matmul
   augmented_mul_div, augmented_power, augmented_to_assignment, base_order_shuffle
   binary_add_sub, binary_div_floor, binary_floor_mod, binary_matmul
   binary_mul_div, binary_power, bisect_boundary_swap, bitwise_and_or
-  bitwise_invert, bitwise_ops, bitwise_shift, bitwise_xor
-  boolean_and_or, boolean_literal, break_continue, call_argument_swap
-  call_contracts, call_result_default, collection_any_all, collection_append_insert
-  collection_list_tuple, collection_min_max, collection_ops, collection_processing
+  bitwise_invert, bitwise_shift, bitwise_xor, boolean_and_or
+  boolean_literal, break_continue, call_argument_swap, call_result_default
+  collection_any_all, collection_append_insert, collection_list_tuple, collection_min_max
   collection_set_add_discard, collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit
   collection_string_starts_ends, compare_eq_ne, compare_order, comparison_not_implemented
-  comprehension_filter_invert, comprehension_filter_remove, condition_clause_delete, condition_constant
-  container_element_delete, continue_remove, conversion_call_remove, dataclass_factory_share
-  decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap, deepcopy_to_copy
-  deque_popleft_to_pop, encoding_errors_ignore, enum_member_replace, exception_bare_to_exception
-  exception_base_boundary, exception_cause_remove, exception_exception_to_bare, exception_hierarchy
-  exception_ops, exception_risky, exception_tuple_add_pair, exception_tuple_remove_member
+  comprehension_filter_invert, comprehension_filter_remove, continue_remove, conversion_call_remove
+  dataclass_factory_share, decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap
+  deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore, exception_cause_remove
   exception_type_pair, filter_predicate_swap, finally_unwrap, fstring_conversion_swap
-  function_body_erase, function_body_return_constant, gather_return_exceptions, generator_empty
-  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
-  intermediate_rounding_remove, iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late
-  list_comprehension_to_generator, loop_break_insert, mapping_setdefault_to_get, match_case_delete
-  match_guard_constant, match_or_alternative_delete, membership, method_call_remove
-  mutable_default_share, none_truthiness, nonlocal_remove, operator_function
-  optional_keyword_delete, override_method_delete, regex, regex_ascii_mode
-  regex_character_set, regex_match_boundary, remove_not, return_tuple_swap
-  round_digits_remove, rounding, rounding_function_swap, set_union_intersection_swap
+  function_body_return_constant, gather_return_exceptions, generator_empty, generator_return_insert
+  generator_skip_first, identity, integer_literal_neighbor, intermediate_rounding_remove
+  iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
+  loop_break_insert, mapping_setdefault_to_get, match_case_delete, match_guard_constant
+  match_or_alternative_delete, membership, method_call_remove, mutable_default_share
+  none_truthiness, nonlocal_remove, operator_function, override_method_delete
+  regex_ascii_mode, regex_character_set, regex_match_boundary, remove_not
+  return_tuple_swap, round_digits_remove, rounding_function_swap, set_union_intersection_swap
   sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
   stdlib_escape_remove, string_literal_empty, string_segment_empty, structure_append_extend
-  structure_index_neighbor, structure_mapping_get_subscript, structure_ops, structure_slice_bound_move
-  structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed
-  super_call_move, type_collections, type_dict_mapping, type_iterable_iterator
-  type_iterables, type_list_sequence, type_nullable, type_nullable_add
-  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
-  while_condition_false, yield_from_to_yield
+  structure_index_neighbor, structure_mapping_get_subscript, structure_slice_bound_move, structure_slice_bound_omit
+  structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed, super_call_move
+  unary_sign, while_condition_false, yield_from_to_yield
+
+Opt-in IDs:
+  condition_clause_delete, condition_constant, container_element_delete, enum_member_replace
+  exception_bare_to_exception, exception_base_boundary, exception_exception_to_bare, exception_hierarchy
+  exception_tuple_add_pair, exception_tuple_remove_member, function_body_erase, optional_keyword_delete
+  type_dict_mapping, type_iterable_iterator, type_list_sequence, type_nullable_add
+  type_nullable_remove, type_sequence_iterable, type_set_abstract_set
+
+Selector families:
+  bitwise_ops, call_contracts, collection_ops, collection_processing
+  exception_ops, exception_risky, regex, rounding
+  structure_ops, type_collections, type_iterables, type_nullable
 ```
 
 Argument constraints:
@@ -1042,42 +1055,55 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-Mutation operator IDs and selector families:
+Mutation selection:
+  Omit --operators for the default runtime set. --operators replaces that set.
+  --exclude-operators removes IDs or whole families after selection.
+  Families expand to their members, including opt-in IDs when selected.
+
+Operator examples, applicability and limits for released hoimin 0.15.0:
+  https://github.com/HayaoSuzuki/hoimin/blob/v0.15.0/docs/user/guides/usage.md#mutation-operators
+  Source builds: read docs/user/reference/operators.md in the same checkout.
+
+Default runtime IDs:
   aggregate_sum_count, async_iterator_stop_insert, augmented_add_sub, augmented_bitwise_and_or
   augmented_bitwise_shift, augmented_bitwise_xor, augmented_floor_mod, augmented_matmul
   augmented_mul_div, augmented_power, augmented_to_assignment, base_order_shuffle
   binary_add_sub, binary_div_floor, binary_floor_mod, binary_matmul
   binary_mul_div, binary_power, bisect_boundary_swap, bitwise_and_or
-  bitwise_invert, bitwise_ops, bitwise_shift, bitwise_xor
-  boolean_and_or, boolean_literal, break_continue, call_argument_swap
-  call_contracts, call_result_default, collection_any_all, collection_append_insert
-  collection_list_tuple, collection_min_max, collection_ops, collection_processing
+  bitwise_invert, bitwise_shift, bitwise_xor, boolean_and_or
+  boolean_literal, break_continue, call_argument_swap, call_result_default
+  collection_any_all, collection_append_insert, collection_list_tuple, collection_min_max
   collection_set_add_discard, collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit
   collection_string_starts_ends, compare_eq_ne, compare_order, comparison_not_implemented
-  comprehension_filter_invert, comprehension_filter_remove, condition_clause_delete, condition_constant
-  container_element_delete, continue_remove, conversion_call_remove, dataclass_factory_share
-  decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap, deepcopy_to_copy
-  deque_popleft_to_pop, encoding_errors_ignore, enum_member_replace, exception_bare_to_exception
-  exception_base_boundary, exception_cause_remove, exception_exception_to_bare, exception_hierarchy
-  exception_ops, exception_risky, exception_tuple_add_pair, exception_tuple_remove_member
+  comprehension_filter_invert, comprehension_filter_remove, continue_remove, conversion_call_remove
+  dataclass_factory_share, decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap
+  deepcopy_to_copy, deque_popleft_to_pop, encoding_errors_ignore, exception_cause_remove
   exception_type_pair, filter_predicate_swap, finally_unwrap, fstring_conversion_swap
-  function_body_erase, function_body_return_constant, gather_return_exceptions, generator_empty
-  generator_return_insert, generator_skip_first, identity, integer_literal_neighbor
-  intermediate_rounding_remove, iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late
-  list_comprehension_to_generator, loop_break_insert, mapping_setdefault_to_get, match_case_delete
-  match_guard_constant, match_or_alternative_delete, membership, method_call_remove
-  mutable_default_share, none_truthiness, nonlocal_remove, operator_function
-  optional_keyword_delete, override_method_delete, regex, regex_ascii_mode
-  regex_character_set, regex_match_boundary, remove_not, return_tuple_swap
-  round_digits_remove, rounding, rounding_function_swap, set_union_intersection_swap
+  function_body_return_constant, gather_return_exceptions, generator_empty, generator_return_insert
+  generator_skip_first, identity, integer_literal_neighbor, intermediate_rounding_remove
+  iterator_stop_insert, itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator
+  loop_break_insert, mapping_setdefault_to_get, match_case_delete, match_guard_constant
+  match_or_alternative_delete, membership, method_call_remove, mutable_default_share
+  none_truthiness, nonlocal_remove, operator_function, override_method_delete
+  regex_ascii_mode, regex_character_set, regex_match_boundary, remove_not
+  return_tuple_swap, round_digits_remove, rounding_function_swap, set_union_intersection_swap
   sort_key_swap, statement_delete, statement_order_swap, stdlib_conversion_call_remove
   stdlib_escape_remove, string_literal_empty, string_segment_empty, structure_append_extend
-  structure_index_neighbor, structure_mapping_get_subscript, structure_ops, structure_slice_bound_move
-  structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed
-  super_call_move, type_collections, type_dict_mapping, type_iterable_iterator
-  type_iterables, type_list_sequence, type_nullable, type_nullable_add
-  type_nullable_remove, type_sequence_iterable, type_set_abstract_set, unary_sign
-  while_condition_false, yield_from_to_yield
+  structure_index_neighbor, structure_mapping_get_subscript, structure_slice_bound_move, structure_slice_bound_omit
+  structure_slice_neighbor, structure_sort_reverse, structure_sorted_reversed, super_call_move
+  unary_sign, while_condition_false, yield_from_to_yield
+
+Opt-in IDs:
+  condition_clause_delete, condition_constant, container_element_delete, enum_member_replace
+  exception_bare_to_exception, exception_base_boundary, exception_exception_to_bare, exception_hierarchy
+  exception_tuple_add_pair, exception_tuple_remove_member, function_body_erase, optional_keyword_delete
+  type_dict_mapping, type_iterable_iterator, type_list_sequence, type_nullable_add
+  type_nullable_remove, type_sequence_iterable, type_set_abstract_set
+
+Selector families:
+  bitwise_ops, call_contracts, collection_ops, collection_processing
+  exception_ops, exception_risky, regex, rounding
+  structure_ops, type_collections, type_iterables, type_nullable
 ```
 
 Argument constraints:
@@ -1340,3 +1366,237 @@ Print this message or the help of the given subcommand(s)
 
 Usage: hoimin help help
 ```
+
+## Operator selection
+
+This index is generated from the same registry, defaults and family expansion used
+by the CLI. See the [operator reference](operators.md) for examples and applicability,
+and [choose operators](../guides/usage.md#mutation-operators) for selection and version guidance.
+
+Omitting `--operators` selects rows marked **yes**. An explicit `--operators` list
+replaces that set; `--exclude-operators` then removes IDs or family members.
+A dash in the family column means that the ID has no family alias.
+
+| Operator ID | Default runtime selection | Selector families |
+| --- | --- | --- |
+| [`aggregate_sum_count`](operators.md#aggregate_sum_count) | yes | [`collection_processing`](#collection_processing) |
+| [`async_iterator_stop_insert`](operators.md#async_iterator_stop_insert) | yes | — |
+| [`augmented_add_sub`](operators.md#augmented_add_sub) | yes | — |
+| [`augmented_bitwise_and_or`](operators.md#augmented_bitwise_and_or) | yes | [`bitwise_ops`](#bitwise_ops) |
+| [`augmented_bitwise_shift`](operators.md#augmented_bitwise_shift) | yes | [`bitwise_ops`](#bitwise_ops) |
+| [`augmented_bitwise_xor`](operators.md#augmented_bitwise_xor) | yes | [`bitwise_ops`](#bitwise_ops) |
+| [`augmented_floor_mod`](operators.md#augmented_floor_mod) | yes | — |
+| [`augmented_matmul`](operators.md#augmented_matmul) | yes | — |
+| [`augmented_mul_div`](operators.md#augmented_mul_div) | yes | — |
+| [`augmented_power`](operators.md#augmented_power) | yes | — |
+| [`augmented_to_assignment`](operators.md#augmented_to_assignment) | yes | — |
+| [`base_order_shuffle`](operators.md#base_order_shuffle) | yes | — |
+| [`binary_add_sub`](operators.md#binary_add_sub) | yes | — |
+| [`binary_div_floor`](operators.md#binary_div_floor) | yes | — |
+| [`binary_floor_mod`](operators.md#binary_floor_mod) | yes | — |
+| [`binary_matmul`](operators.md#binary_matmul) | yes | — |
+| [`binary_mul_div`](operators.md#binary_mul_div) | yes | — |
+| [`binary_power`](operators.md#binary_power) | yes | — |
+| [`bisect_boundary_swap`](operators.md#bisect_boundary_swap) | yes | — |
+| [`bitwise_and_or`](operators.md#bitwise_and_or) | yes | [`bitwise_ops`](#bitwise_ops) |
+| [`bitwise_invert`](operators.md#bitwise_invert) | yes | [`bitwise_ops`](#bitwise_ops) |
+| [`bitwise_shift`](operators.md#bitwise_shift) | yes | [`bitwise_ops`](#bitwise_ops) |
+| [`bitwise_xor`](operators.md#bitwise_xor) | yes | [`bitwise_ops`](#bitwise_ops) |
+| [`boolean_and_or`](operators.md#boolean_and_or) | yes | — |
+| [`boolean_literal`](operators.md#boolean_literal) | yes | — |
+| [`break_continue`](operators.md#break_continue) | yes | — |
+| [`call_argument_swap`](operators.md#call_argument_swap) | yes | [`call_contracts`](#call_contracts) |
+| [`call_result_default`](operators.md#call_result_default) | yes | [`call_contracts`](#call_contracts) |
+| [`collection_any_all`](operators.md#collection_any_all) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_append_insert`](operators.md#collection_append_insert) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_list_tuple`](operators.md#collection_list_tuple) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_min_max`](operators.md#collection_min_max) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_set_add_discard`](operators.md#collection_set_add_discard) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_set_frozenset`](operators.md#collection_set_frozenset) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_set_remove_discard`](operators.md#collection_set_remove_discard) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_string_split_rsplit`](operators.md#collection_string_split_rsplit) | yes | [`collection_ops`](#collection_ops) |
+| [`collection_string_starts_ends`](operators.md#collection_string_starts_ends) | yes | [`collection_ops`](#collection_ops) |
+| [`compare_eq_ne`](operators.md#compare_eq_ne) | yes | — |
+| [`compare_order`](operators.md#compare_order) | yes | — |
+| [`comparison_not_implemented`](operators.md#comparison_not_implemented) | yes | — |
+| [`comprehension_filter_invert`](operators.md#comprehension_filter_invert) | yes | [`collection_processing`](#collection_processing) |
+| [`comprehension_filter_remove`](operators.md#comprehension_filter_remove) | yes | [`collection_processing`](#collection_processing) |
+| [`condition_clause_delete`](operators.md#condition_clause_delete) | opt-in | — |
+| [`condition_constant`](operators.md#condition_constant) | opt-in | — |
+| [`container_element_delete`](operators.md#container_element_delete) | opt-in | — |
+| [`continue_remove`](operators.md#continue_remove) | yes | — |
+| [`conversion_call_remove`](operators.md#conversion_call_remove) | yes | — |
+| [`dataclass_factory_share`](operators.md#dataclass_factory_share) | yes | — |
+| [`decimal_context_precision`](operators.md#decimal_context_precision) | yes | [`rounding`](#rounding) |
+| [`decimal_quantum_shift`](operators.md#decimal_quantum_shift) | yes | [`rounding`](#rounding) |
+| [`decimal_rounding_mode_swap`](operators.md#decimal_rounding_mode_swap) | yes | [`rounding`](#rounding) |
+| [`deepcopy_to_copy`](operators.md#deepcopy_to_copy) | yes | — |
+| [`deque_popleft_to_pop`](operators.md#deque_popleft_to_pop) | yes | — |
+| [`encoding_errors_ignore`](operators.md#encoding_errors_ignore) | yes | — |
+| [`enum_member_replace`](operators.md#enum_member_replace) | opt-in | — |
+| [`exception_bare_to_exception`](operators.md#exception_bare_to_exception) | opt-in | [`exception_risky`](#exception_risky) |
+| [`exception_base_boundary`](operators.md#exception_base_boundary) | opt-in | [`exception_risky`](#exception_risky) |
+| [`exception_cause_remove`](operators.md#exception_cause_remove) | yes | — |
+| [`exception_exception_to_bare`](operators.md#exception_exception_to_bare) | opt-in | [`exception_risky`](#exception_risky) |
+| [`exception_hierarchy`](operators.md#exception_hierarchy) | opt-in | — |
+| [`exception_tuple_add_pair`](operators.md#exception_tuple_add_pair) | opt-in | [`exception_risky`](#exception_risky) |
+| [`exception_tuple_remove_member`](operators.md#exception_tuple_remove_member) | opt-in | [`exception_risky`](#exception_risky) |
+| [`exception_type_pair`](operators.md#exception_type_pair) | yes | [`exception_ops`](#exception_ops) |
+| [`filter_predicate_swap`](operators.md#filter_predicate_swap) | yes | [`collection_processing`](#collection_processing) |
+| [`finally_unwrap`](operators.md#finally_unwrap) | yes | — |
+| [`fstring_conversion_swap`](operators.md#fstring_conversion_swap) | yes | — |
+| [`function_body_erase`](operators.md#function_body_erase) | opt-in | — |
+| [`function_body_return_constant`](operators.md#function_body_return_constant) | yes | — |
+| [`gather_return_exceptions`](operators.md#gather_return_exceptions) | yes | — |
+| [`generator_empty`](operators.md#generator_empty) | yes | — |
+| [`generator_return_insert`](operators.md#generator_return_insert) | yes | — |
+| [`generator_skip_first`](operators.md#generator_skip_first) | yes | — |
+| [`identity`](operators.md#identity) | yes | — |
+| [`integer_literal_neighbor`](operators.md#integer_literal_neighbor) | yes | — |
+| [`intermediate_rounding_remove`](operators.md#intermediate_rounding_remove) | yes | [`rounding`](#rounding) |
+| [`iterator_stop_insert`](operators.md#iterator_stop_insert) | yes | — |
+| [`itertools_take_drop_swap`](operators.md#itertools_take_drop_swap) | yes | — |
+| [`lambda_capture_late`](operators.md#lambda_capture_late) | yes | — |
+| [`list_comprehension_to_generator`](operators.md#list_comprehension_to_generator) | yes | — |
+| [`loop_break_insert`](operators.md#loop_break_insert) | yes | — |
+| [`mapping_setdefault_to_get`](operators.md#mapping_setdefault_to_get) | yes | — |
+| [`match_case_delete`](operators.md#match_case_delete) | yes | — |
+| [`match_guard_constant`](operators.md#match_guard_constant) | yes | — |
+| [`match_or_alternative_delete`](operators.md#match_or_alternative_delete) | yes | — |
+| [`membership`](operators.md#membership) | yes | — |
+| [`method_call_remove`](operators.md#method_call_remove) | yes | — |
+| [`mutable_default_share`](operators.md#mutable_default_share) | yes | — |
+| [`none_truthiness`](operators.md#none_truthiness) | yes | — |
+| [`nonlocal_remove`](operators.md#nonlocal_remove) | yes | — |
+| [`operator_function`](operators.md#operator_function) | yes | — |
+| [`optional_keyword_delete`](operators.md#optional_keyword_delete) | opt-in | — |
+| [`override_method_delete`](operators.md#override_method_delete) | yes | — |
+| [`regex_ascii_mode`](operators.md#regex_ascii_mode) | yes | [`regex`](#regex) |
+| [`regex_character_set`](operators.md#regex_character_set) | yes | [`regex`](#regex) |
+| [`regex_match_boundary`](operators.md#regex_match_boundary) | yes | [`regex`](#regex) |
+| [`remove_not`](operators.md#remove_not) | yes | — |
+| [`return_tuple_swap`](operators.md#return_tuple_swap) | yes | — |
+| [`round_digits_remove`](operators.md#round_digits_remove) | yes | [`rounding`](#rounding) |
+| [`rounding_function_swap`](operators.md#rounding_function_swap) | yes | [`rounding`](#rounding) |
+| [`set_union_intersection_swap`](operators.md#set_union_intersection_swap) | yes | [`collection_processing`](#collection_processing) |
+| [`sort_key_swap`](operators.md#sort_key_swap) | yes | — |
+| [`statement_delete`](operators.md#statement_delete) | yes | — |
+| [`statement_order_swap`](operators.md#statement_order_swap) | yes | — |
+| [`stdlib_conversion_call_remove`](operators.md#stdlib_conversion_call_remove) | yes | — |
+| [`stdlib_escape_remove`](operators.md#stdlib_escape_remove) | yes | [`call_contracts`](#call_contracts) |
+| [`string_literal_empty`](operators.md#string_literal_empty) | yes | — |
+| [`string_segment_empty`](operators.md#string_segment_empty) | yes | — |
+| [`structure_append_extend`](operators.md#structure_append_extend) | yes | [`structure_ops`](#structure_ops) |
+| [`structure_index_neighbor`](operators.md#structure_index_neighbor) | yes | [`structure_ops`](#structure_ops) |
+| [`structure_mapping_get_subscript`](operators.md#structure_mapping_get_subscript) | yes | [`structure_ops`](#structure_ops) |
+| [`structure_slice_bound_move`](operators.md#structure_slice_bound_move) | yes | [`structure_ops`](#structure_ops) |
+| [`structure_slice_bound_omit`](operators.md#structure_slice_bound_omit) | yes | [`structure_ops`](#structure_ops) |
+| [`structure_slice_neighbor`](operators.md#structure_slice_neighbor) | yes | [`structure_ops`](#structure_ops) |
+| [`structure_sort_reverse`](operators.md#structure_sort_reverse) | yes | [`structure_ops`](#structure_ops) |
+| [`structure_sorted_reversed`](operators.md#structure_sorted_reversed) | yes | [`structure_ops`](#structure_ops) |
+| [`super_call_move`](operators.md#super_call_move) | yes | — |
+| [`type_dict_mapping`](operators.md#type_dict_mapping) | opt-in | [`type_collections`](#type_collections) |
+| [`type_iterable_iterator`](operators.md#type_iterable_iterator) | opt-in | [`type_iterables`](#type_iterables) |
+| [`type_list_sequence`](operators.md#type_list_sequence) | opt-in | [`type_collections`](#type_collections) |
+| [`type_nullable_add`](operators.md#type_nullable_add) | opt-in | [`type_nullable`](#type_nullable) |
+| [`type_nullable_remove`](operators.md#type_nullable_remove) | opt-in | [`type_nullable`](#type_nullable) |
+| [`type_sequence_iterable`](operators.md#type_sequence_iterable) | opt-in | [`type_iterables`](#type_iterables) |
+| [`type_set_abstract_set`](operators.md#type_set_abstract_set) | opt-in | [`type_collections`](#type_collections) |
+| [`unary_sign`](operators.md#unary_sign) | yes | — |
+| [`while_condition_false`](operators.md#while_condition_false) | yes | — |
+| [`yield_from_to_yield`](operators.md#yield_from_to_yield) | yes | — |
+
+## Selector families
+
+A family is a selection alias, not another mutation. Selecting or excluding it
+affects exactly the following members. Individual default states are in the index.
+
+### `bitwise_ops`
+
+- [`bitwise_and_or`](operators.md#bitwise_and_or)
+- [`bitwise_shift`](operators.md#bitwise_shift)
+- [`bitwise_xor`](operators.md#bitwise_xor)
+- [`bitwise_invert`](operators.md#bitwise_invert)
+- [`augmented_bitwise_and_or`](operators.md#augmented_bitwise_and_or)
+- [`augmented_bitwise_xor`](operators.md#augmented_bitwise_xor)
+- [`augmented_bitwise_shift`](operators.md#augmented_bitwise_shift)
+
+### `call_contracts`
+
+- [`stdlib_escape_remove`](operators.md#stdlib_escape_remove)
+- [`call_argument_swap`](operators.md#call_argument_swap)
+- [`call_result_default`](operators.md#call_result_default)
+
+### `collection_ops`
+
+- [`collection_any_all`](operators.md#collection_any_all)
+- [`collection_list_tuple`](operators.md#collection_list_tuple)
+- [`collection_set_frozenset`](operators.md#collection_set_frozenset)
+- [`collection_append_insert`](operators.md#collection_append_insert)
+- [`collection_min_max`](operators.md#collection_min_max)
+- [`collection_set_add_discard`](operators.md#collection_set_add_discard)
+- [`collection_set_remove_discard`](operators.md#collection_set_remove_discard)
+- [`collection_string_starts_ends`](operators.md#collection_string_starts_ends)
+- [`collection_string_split_rsplit`](operators.md#collection_string_split_rsplit)
+
+### `collection_processing`
+
+- [`comprehension_filter_remove`](operators.md#comprehension_filter_remove)
+- [`comprehension_filter_invert`](operators.md#comprehension_filter_invert)
+- [`filter_predicate_swap`](operators.md#filter_predicate_swap)
+- [`set_union_intersection_swap`](operators.md#set_union_intersection_swap)
+- [`aggregate_sum_count`](operators.md#aggregate_sum_count)
+
+### `exception_ops`
+
+- [`exception_type_pair`](operators.md#exception_type_pair)
+
+### `exception_risky`
+
+- [`exception_bare_to_exception`](operators.md#exception_bare_to_exception)
+- [`exception_exception_to_bare`](operators.md#exception_exception_to_bare)
+- [`exception_base_boundary`](operators.md#exception_base_boundary)
+- [`exception_tuple_add_pair`](operators.md#exception_tuple_add_pair)
+- [`exception_tuple_remove_member`](operators.md#exception_tuple_remove_member)
+
+### `regex`
+
+- [`regex_match_boundary`](operators.md#regex_match_boundary)
+- [`regex_character_set`](operators.md#regex_character_set)
+- [`regex_ascii_mode`](operators.md#regex_ascii_mode)
+
+### `rounding`
+
+- [`rounding_function_swap`](operators.md#rounding_function_swap)
+- [`round_digits_remove`](operators.md#round_digits_remove)
+- [`decimal_rounding_mode_swap`](operators.md#decimal_rounding_mode_swap)
+- [`decimal_quantum_shift`](operators.md#decimal_quantum_shift)
+- [`decimal_context_precision`](operators.md#decimal_context_precision)
+- [`intermediate_rounding_remove`](operators.md#intermediate_rounding_remove)
+
+### `structure_ops`
+
+- [`structure_append_extend`](operators.md#structure_append_extend)
+- [`structure_mapping_get_subscript`](operators.md#structure_mapping_get_subscript)
+- [`structure_sort_reverse`](operators.md#structure_sort_reverse)
+- [`structure_sorted_reversed`](operators.md#structure_sorted_reversed)
+- [`structure_index_neighbor`](operators.md#structure_index_neighbor)
+- [`structure_slice_neighbor`](operators.md#structure_slice_neighbor)
+- [`structure_slice_bound_omit`](operators.md#structure_slice_bound_omit)
+- [`structure_slice_bound_move`](operators.md#structure_slice_bound_move)
+
+### `type_collections`
+
+- [`type_list_sequence`](operators.md#type_list_sequence)
+- [`type_set_abstract_set`](operators.md#type_set_abstract_set)
+- [`type_dict_mapping`](operators.md#type_dict_mapping)
+
+### `type_iterables`
+
+- [`type_iterable_iterator`](operators.md#type_iterable_iterator)
+- [`type_sequence_iterable`](operators.md#type_sequence_iterable)
+
+### `type_nullable`
+
+- [`type_nullable_remove`](operators.md#type_nullable_remove)
+- [`type_nullable_add`](operators.md#type_nullable_add)

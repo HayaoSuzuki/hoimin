@@ -11,6 +11,7 @@ to plan a mutation check, interpret its results, or integrate hoimin with an age
 ## Reference
 
 - [CLI reference](reference/cli.md): generated command help and options.
+- [Mutation operators](reference/operators.md): examples, applicability and test interpretation for each operator.
 - [Compatibility](reference/compatibility.md): versioned CLI, plan, session and output contracts.
 - [JSON schemas](reference/json-schema/): machine-readable output and report formats.
 
