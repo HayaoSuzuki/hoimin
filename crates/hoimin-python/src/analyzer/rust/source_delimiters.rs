@@ -5,11 +5,11 @@ use ruff_python_ast::token::{TokenKind, Tokens};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
 // CPython caps delimiters at 200, including redundant parentheses absent
-// from the AST. Record only the intervals that exclude our 1-, 2-, or
-// 3-delimiter additions, so shallow files need no per-token storage.
+// from the AST. Record only the intervals that exclude up to eight additional
+// delimiters, so shallow files need no per-token storage.
 #[derive(Default)]
 pub(super) struct DelimiterDepth {
-    forbidden: [Vec<TextRange>; 3],
+    forbidden: [Vec<TextRange>; 8],
 }
 
 impl DelimiterDepth {
@@ -18,10 +18,10 @@ impl DelimiterDepth {
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisCancelled> {
         const LIMIT: usize = 200;
-        let near_limit = |depth| LIMIT.checked_sub(depth).filter(|index| *index < 3);
+        let near_limit = |depth| LIMIT.checked_sub(depth).filter(|index| *index < 8);
         let mut index = Self::default();
         let mut depth = 0usize;
-        let mut openings = [None; 3];
+        let mut openings = [None; 8];
         for token in tokens {
             if cancelled() {
                 return Err(AnalysisCancelled);

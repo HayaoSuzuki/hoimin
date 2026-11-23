@@ -1481,6 +1481,31 @@ fn candidate_prefix_retains_the_earliest_k_plus_one_unique_candidates() {
 }
 
 #[test]
+fn candidate_prefix_retains_distinct_edit_lengths() {
+    // Arrange: deleting one byte and two bytes at one position are different edits.
+    let mut prefix = CandidatePrefix::new(2, super::payload::PayloadBudget::default());
+    let mut short = prefix_candidate(1, "", MutationOperator::RegexAlternativeDelete);
+    short.span.length = 1;
+    let mut long = prefix_candidate(1, "", MutationOperator::RegexAlternativeDelete);
+    long.span.length = 2;
+
+    // Act
+    prefix.push(short).unwrap();
+    prefix.push(long).unwrap();
+    let result = prefix.finish().unwrap();
+
+    // Assert
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|c| c.span.length)
+            .collect::<Vec<_>>(),
+        vec![1, 2]
+    );
+}
+
+#[test]
 fn candidate_prefix_keeps_emission_order_for_equal_sort_keys() {
     let mut prefix = CandidatePrefix::new(2, super::payload::PayloadBudget::default());
     for candidate in [
@@ -3909,6 +3934,13 @@ fn collection_excludes_unsupported_call_and_literal_shapes() {
     );
 }
 
+const STRUCTURE_CALL_OPERATORS: &[&str] = &[
+    "structure_append_extend",
+    "structure_mapping_get_subscript",
+    "structure_sort_reverse",
+    "structure_sorted_reversed",
+];
+
 #[test]
 fn structure_calls_emit_exact_parseable_candidates() {
     let source = concat!(
@@ -3922,14 +3954,10 @@ fn structure_calls_emit_exact_parseable_candidates() {
         "flipped = reversed(items)\n",
     );
 
-    let output = analyze(source);
-    let candidates: Vec<_> = output
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.operator.as_str().starts_with("structure_"))
-        .collect();
+    let output = analyze_selected(STRUCTURE_CALL_OPERATORS, source);
 
-    let actual: Vec<_> = candidates
+    let actual: Vec<_> = output
+        .candidates
         .iter()
         .map(|candidate| {
             (
@@ -3970,9 +3998,7 @@ fn structure_calls_emit_exact_parseable_candidates() {
         ]
     );
 
-    for candidate in candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -3990,14 +4016,10 @@ fn structure_replacements_preserve_nested_sources_and_reparse() {
         "reversed_result = reversed(produce_items())\n",
     );
 
-    let output = analyze(source);
-    let candidates: Vec<_> = output
-        .candidates
-        .iter()
-        .filter(|candidate| candidate.operator.as_str().starts_with("structure_"))
-        .collect();
+    let output = analyze_selected(STRUCTURE_CALL_OPERATORS, source);
 
-    let actual: Vec<_> = candidates
+    let actual: Vec<_> = output
+        .candidates
         .iter()
         .map(|candidate| {
             (
@@ -4036,9 +4058,7 @@ fn structure_replacements_preserve_nested_sources_and_reparse() {
         ]
     );
 
-    for candidate in candidates {
-        apply_candidate_and_reparse(source, candidate);
-    }
+    assert_candidates_reparse(source, &output.candidates);
 }
 
 #[test]
@@ -4280,9 +4300,17 @@ fn structure_candidates_skip_type_annotation_expressions() {
     assert_eq!(
         candidates
             .iter()
-            .map(|candidate| candidate.original.as_str())
+            .map(|candidate| (
+                candidate.original.as_str(),
+                candidate.operator.as_str(),
+                candidate.line,
+            ))
             .collect::<Vec<_>>(),
-        vec!["mapping[key]"],
+        vec![
+            ("mapping[key]", "structure_index_neighbor", 5),
+            ("mapping[key]", "structure_index_neighbor", 5),
+            ("mapping[key]", "structure_mapping_get_subscript", 5),
+        ],
     );
     for candidate in candidates {
         apply_candidate_and_reparse(source, candidate);
@@ -4307,10 +4335,10 @@ fn existing_structure_families_exclude_unsupported_shapes_and_receivers() {
         "mapping.get(*keys)\n",
         "mapping.get(**options)\n",
         "factory().get(key)\n",
-        "factory()[key]\n",
+        "factory()['key']\n",
         "mapping[first, second]\n",
         "mapping[*keys]\n",
-        "mapping[key:stop]\n",
+        "mapping['key':'stop']\n",
         "mapping[key] = value\n",
         "del mapping[key]\n",
         "items.sort(key=rank)\n",
@@ -4323,8 +4351,6 @@ fn existing_structure_families_exclude_unsupported_shapes_and_receivers() {
         "reversed(iterable=items)\n",
         "sorted(*items)\n",
     );
-    // A variable-bound slice remains unsupported by numeric neighbors and
-    // mapping-get replacement; the dedicated bound operators support it.
     let output = analyze_selected(
         &[
             "structure_append_extend",
@@ -4497,13 +4523,12 @@ fn bitwise_shift() {
 }
 
 #[test]
-fn structure_index_neighbor_mutates_integer_load_indices_only() {
+fn structure_index_neighbor_preserves_integer_literal_spellings_in_load_indices() {
     let source = concat!(
         "zero = items[0]\n",
         "one = items[1]\n",
         "largest = items[18446744073709551615]\n",
         "negative = items[-1]\n",
-        "expression = items[index + 1]\n",
         "hexadecimal = items[0x10]\n",
         "underscored = items[1_000]\n",
         "annotation: items[1]\n",
@@ -4545,12 +4570,11 @@ fn structure_index_neighbor_mutates_integer_load_indices_only() {
 }
 
 #[test]
-fn structure_slice_neighbor_mutates_integer_bounds_without_zero_steps() {
+fn structure_slice_neighbor_mutates_integer_literal_bounds_without_zero_steps() {
     let source = concat!(
         "all_bounds = items[1:3:1]\n",
         "empty_start_and_step = items[:3:]\n",
         "empty_bounds = items[:]\n",
-        "expression = items[start:stop:step]\n",
         "negative = items[-1:-3:-1]\n",
         "hexadecimal = items[0x10:0x20:0x1]\n",
         "underscored = items[1_000:2_000:3_000]\n",
@@ -4604,6 +4628,30 @@ fn structure_slice_neighbor_mutates_integer_bounds_without_zero_steps() {
     }
 }
 
+#[rstest::rstest]
+#[case::computed_index("items[index + 1]", "structure_index_neighbor", 2)]
+#[case::computed_receiver("factory()[key]", "structure_index_neighbor", 2)]
+#[case::signed_boolean("items[-True]", "structure_index_neighbor", 2)]
+#[case::nested_sign("items[--1]", "structure_index_neighbor", 2)]
+#[case::signed_arithmetic("items[-(1+2)]", "structure_index_neighbor", 2)]
+#[case::two_bounds("mapping[key:stop]", "structure_slice_neighbor", 4)]
+#[case::three_bounds("items[start:stop:step]", "structure_slice_neighbor", 6)]
+fn computed_structure_neighbors_edit_the_load_expression_and_reparse(
+    #[case] expression: &str,
+    #[case] operator: &str,
+    #[case] count: usize,
+) {
+    let source = format!("value = {expression}\n");
+
+    let output = analyze_selected(&[operator], &source);
+
+    assert_eq!(output.candidates.len(), count);
+    assert!(output.candidates.iter().all(|candidate| {
+        candidate.operator.as_str() == operator && candidate.original == expression
+    }));
+    assert_candidates_reparse(&source, &output.candidates);
+}
+
 #[test]
 fn collection_literals_and_inner_token_candidates_remain_individually_parseable() {
     let source = "value = [a == b]\n";
@@ -4626,6 +4674,7 @@ fn collection_literals_and_inner_token_candidates_remain_individually_parseable(
         vec![
             ("[a == b]", "(a == b,)", "collection_list_tuple"),
             ("==", "!=", "compare_eq_ne"),
+            ("==", " is ", "identity_equality_swap"),
         ]
     );
     assert_candidates_reparse(source, &output.candidates);
@@ -4804,7 +4853,8 @@ fn native_python_operator_syntax_obeys_line_symbol_and_candidate_limits() {
         "def ignored(a, b):\n",
         "    return a @ b\n",
     );
-    let selected = analyze_with(
+    let selected = analyze_selected_with(
+        NATIVE_PYTHON_OPERATOR_NAMES,
         Utf8Path::new("pkg/sample.py"),
         &[LineRange { start: 2, end: 2 }],
         &["pkg.sample:selected".to_owned()],
@@ -4816,7 +4866,14 @@ fn native_python_operator_syntax_obeys_line_symbol_and_candidate_limits() {
     assert_eq!(selected.candidates[0].operator.as_str(), "binary_power");
     assert_eq!(selected.candidates[0].symbol.as_deref(), Some("selected"));
 
-    let bounded = analyze_with(Utf8Path::new("pkg/sample.py"), &[], &[], 1, source);
+    let bounded = analyze_selected_with(
+        NATIVE_PYTHON_OPERATOR_NAMES,
+        Utf8Path::new("pkg/sample.py"),
+        &[],
+        &[],
+        1,
+        source,
+    );
     assert_eq!(bounded.candidates.len(), 1);
     assert_eq!(bounded.candidates[0].operator.as_str(), "binary_power");
     assert!(bounded.truncated);
@@ -5403,13 +5460,21 @@ fn line_index_positions_token_and_type_annotation_candidates() {
         .map(|candidate| {
             (
                 candidate.original.as_str(),
+                candidate.operator.as_str(),
                 candidate.line,
                 candidate.column,
             )
         })
         .collect();
 
-    assert_eq!(positions, vec![("==", 2, 9), ("Optional[int]", 3, 3)]);
+    assert_eq!(
+        positions,
+        vec![
+            ("==", "compare_eq_ne", 2, 9),
+            ("==", "identity_equality_swap", 2, 9),
+            ("Optional[int]", "type_nullable_remove", 3, 3),
+        ],
+    );
 }
 
 #[test]
@@ -5741,6 +5806,7 @@ fn focused_profile_applies_after_line_and_symbol_selection() {
     assert_eq!(
         descriptors,
         vec![
+            (2, "return_value_none"),
             (2, "integer_literal_neighbor"),
             (2, "integer_literal_neighbor"),
             (2, "binary_add_sub"),
@@ -7725,6 +7791,7 @@ fn assigns_ast_scopes_to_decorators_async_definitions_and_not_following_code() {
         .map(|candidate| {
             (
                 candidate.original.as_str(),
+                candidate.operator.as_str(),
                 candidate.symbol.as_deref(),
                 candidate.line,
             )
@@ -7734,10 +7801,23 @@ fn assigns_ast_scopes_to_decorators_async_definitions_and_not_following_code() {
     assert_eq!(
         observed,
         vec![
-            ("==", Some("Outer.method"), 2),
-            ("not (ready and enabled)", Some("Outer.method"), 4),
-            ("and", Some("Outer.method"), 4),
-            ("==", None, 5),
+            ("==", "compare_eq_ne", Some("Outer.method"), 2),
+            ("==", "identity_equality_swap", Some("Outer.method"), 2),
+            (
+                "return not (ready and enabled)",
+                "return_value_none",
+                Some("Outer.method"),
+                4
+            ),
+            (
+                "not (ready and enabled)",
+                "remove_not",
+                Some("Outer.method"),
+                4
+            ),
+            ("and", "boolean_and_or", Some("Outer.method"), 4),
+            ("==", "compare_eq_ne", None, 5),
+            ("==", "identity_equality_swap", None, 5),
         ]
     );
 }
@@ -7837,8 +7917,18 @@ fn assigns_nested_definition_symbols_and_init_module_selectors() {
         source,
     );
 
-    assert_eq!(output.candidates.len(), 1);
-    assert_eq!(output.candidates[0].symbol.as_deref(), Some("Outer.method"));
+    assert_eq!(
+        output
+            .candidates
+            .iter()
+            .map(|candidate| (candidate.operator.as_str(), candidate.symbol.as_deref()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("return_value_none", Some("Outer.method")),
+            ("compare_eq_ne", Some("Outer.method")),
+            ("identity_equality_swap", Some("Outer.method")),
+        ],
+    );
 }
 
 #[test]
@@ -7860,9 +7950,16 @@ fn filters_candidates_by_line_and_symbol() {
         output
             .candidates
             .iter()
-            .map(|candidate| (candidate.line, candidate.symbol.as_deref()))
+            .map(|candidate| (
+                candidate.operator.as_str(),
+                candidate.line,
+                candidate.symbol.as_deref()
+            ))
             .collect::<Vec<_>>(),
-        vec![(2, Some("selected"))]
+        vec![
+            ("compare_eq_ne", 2, Some("selected")),
+            ("identity_equality_swap", 2, Some("selected")),
+        ],
     );
 }
 
@@ -8857,10 +8954,7 @@ fn wide_mapping_keys_reject_conjugates_and_preserve_other_candidates() {
 #[case::items_0x10_18(17)]
 #[case::items_1_000_19(18)]
 #[case::items_1_0_20(19)]
-#[case::items_true_21(20)]
-#[case::items_1_22(21)]
-#[case::items_1_23(22)]
-#[case::items_1_2_24(23)]
+#[case::positive_sign(20)]
 fn structure_negative_neighbors_cover_positions_spelling_and_large_values(
     #[case] scenario_index: usize,
 ) {
@@ -8900,10 +8994,7 @@ fn structure_negative_neighbors_cover_positions_spelling_and_large_values(
         ("items[-0x10]", &["-0xf", "-0x11"]),
         ("items[-1_000]", &["-999", "-1001"]),
         ("items[-1.0]", &[]),
-        ("items[-True]", &[]),
-        ("items[--1]", &[]),
         ("items[+1]", &["2", "0"]),
-        ("items[-(1+2)]", &[]),
     ];
 
     let (expression, expected) = cases.get(scenario_index).unwrap();
@@ -10442,7 +10533,7 @@ fn private_annotation_import_keeps_context_and_unrelated_scopes_separate(
 fn private_annotation_import_parameter_bindings_shadow_canonical_roots() {
     let source = "from typing import Sequence as _C__Alias, Iterable\nclass C:\n    def factory(__Alias):\n        def inner(value: _C__Alias[int]): pass\n        return inner\n";
 
-    let output = analyze_types(source);
+    let output = analyze_selected(&["type_sequence_iterable"], source);
 
     assert!(output.candidates.is_empty(), "{source}");
 }

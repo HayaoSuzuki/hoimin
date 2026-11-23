@@ -60,6 +60,32 @@ fn contains_matches_inclusive_endpoints_and_gaps(#[case] line: u32, #[case] expe
 }
 
 #[rstest::rstest]
+#[case::covered_across_adjacent_selectors(3, 5, true)]
+#[case::overlaps_but_crosses_unselected_gap(4, 9, false)]
+#[case::unselected_gap(6, 8, false)]
+#[case::reversed(5, 3, false)]
+fn range_queries_require_complete_coverage(
+    #[case] start: u32,
+    #[case] end: u32,
+    #[case] covered: bool,
+) {
+    let path = Utf8Path::new("src/calc.py");
+    let index = LineSelectionIndex::new(
+        Utf8Path::new(""),
+        &[
+            selection(path.as_str(), 2, 4),
+            selection(path.as_str(), 5, 5),
+            selection(path.as_str(), 9, 11),
+        ],
+    );
+    let requested = LineRange { start, end };
+
+    let actual = index.covers(path, requested);
+
+    assert_eq!(actual, covered);
+}
+
+#[rstest::rstest]
 #[case::empty_zero(0, 0)]
 #[case::empty_inside(0, 3)]
 #[case::repeated_before(3, 2)]

@@ -46,7 +46,7 @@ fn analysis_request(id: u64, path: &str, final_target: bool) -> AnalyzeFile {
 fn handler(root: Utf8PathBuf, max_candidates: usize) -> AnalyzerHandler {
     AnalyzerHandler::new(
         root,
-        MutationOperatorSelection::default(),
+        serde_json::from_value(serde_json::json!(["compare_eq_ne"])).unwrap(),
         MutationProfile::Full,
         NonZeroUsize::new(max_candidates).unwrap(),
     )

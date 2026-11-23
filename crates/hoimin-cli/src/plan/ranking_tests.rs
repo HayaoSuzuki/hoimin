@@ -83,6 +83,61 @@ fn ranking_accumulates_selector_and_operator_reasons() {
     assert_eq!(ranked[0].rank, 1);
 }
 
+const MULTILINE_INDEX: &str = "values[\n    compute_index()\n]";
+
+#[rstest::rstest]
+#[case::fully_covered(vec![vec![(2, 3)]], MULTILINE_INDEX, 380)]
+#[case::target_crosses_gap(vec![vec![(2, 5)]], MULTILINE_INDEX, 80)]
+#[case::alternate_unrestricted_target(vec![vec![(2, 3)], vec![]], MULTILINE_INDEX, 80)]
+#[case::alternate_unrestricted_first(vec![vec![], vec![(2, 3)]], MULTILINE_INDEX, 80)]
+#[case::lone_carriage_return(vec![vec![(2, 2)]], "values[\r    compute_index()\r]", 380)]
+fn ranking_promotes_an_edit_before_the_anchor_only_with_full_target_line_coverage(
+    #[case] slices: Vec<Vec<(u32, u32)>>,
+    #[case] original: &str,
+    #[case] expected: u32,
+) {
+    let selection = Selection {
+        lines: vec![
+            LineSelection {
+                path: "src/calc.py".into(),
+                range: LineRange { start: 2, end: 3 },
+            },
+            LineSelection {
+                path: "src/calc.py".into(),
+                range: LineRange { start: 5, end: 5 },
+            },
+        ],
+        ..Selection::default()
+    };
+    let targets = slices
+        .into_iter()
+        .map(|ranges| TargetSlice {
+            path: "src/calc.py".into(),
+            lines: ranges
+                .into_iter()
+                .map(|(start, end)| LineRange { start, end })
+                .collect(),
+            symbols: vec![],
+        })
+        .collect::<Vec<_>>();
+    let mut input = candidate(
+        "index",
+        "src/calc.py",
+        1,
+        6,
+        "structure_index_neighbor",
+        None,
+    );
+    input.original = original.to_owned();
+    input.span.length = u64::try_from(original.len()).unwrap();
+
+    let ranked = rank_candidates(&selection, &targets, vec![input]);
+
+    assert_eq!(ranked[0].score, expected);
+    assert_eq!((ranked[0].line, ranked[0].column), (1, 6));
+    validate_ranking_against(&selection, &targets, &ranked).unwrap();
+}
+
 #[test]
 fn ranking_uses_all_resolved_target_symbols_without_changing_output_order() {
     let targets = vec![
@@ -455,6 +510,11 @@ fn mixed_selector_ranking() -> (Selection, Vec<TargetSlice>, Vec<RankedPlanCandi
             lines: Vec::new(),
             symbols: Vec::new(),
         },
+        TargetSlice {
+            path: Utf8PathBuf::from("src/symbol.py"),
+            lines: Vec::new(),
+            symbols: vec!["chosen".to_owned()],
+        },
     ];
     let candidates = vec![
         candidate(
@@ -467,7 +527,7 @@ fn mixed_selector_ranking() -> (Selection, Vec<TargetSlice>, Vec<RankedPlanCandi
         ),
         candidate(
             "line-gap-symbol",
-            "src/line.py",
+            "src/symbol.py",
             6,
             0,
             "binary_add_sub",
@@ -536,6 +596,10 @@ fn ranking_compares_explicit_line_paths_with_windows_case_rules() {
 }
 
 const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
+    "identity_equality_swap",
+    "compare_direction",
+    "else_suite_remove",
+    "yield_statement_remove",
     "conditional_branch_swap",
     "await_remove",
     "match_case_swap",
@@ -569,6 +633,8 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "yield_from_to_yield",
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
+    "context_exit_omit",
+    "context_exit_result_negate",
     "exception_handler_swap",
     "exception_cause_omit",
     "exception_cause_remove",
@@ -583,6 +649,15 @@ const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_tuple_remove_member",
 ];
 const BEHAVIORAL_OPERATORS: &[&str] = &[
+    "augmented_to_binary",
+    "assignment_target_swap",
+    "return_value_none",
+    "zip_strict_toggle",
+    "range_bound_neighbor",
+    "regex_quantifier_neighbor",
+    "regex_greediness_toggle",
+    "regex_alternative_delete",
+    "fstring_format_option_swap",
     "bytes_literal_empty",
     "fstring_format_spec_remove",
     "fstring_format_value_neighbor",
@@ -705,7 +780,7 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(tested.len(), 140);
+    assert_eq!(tested.len(), 155);
     assert_eq!(tested, canonical);
 }
 

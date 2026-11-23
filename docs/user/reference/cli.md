@@ -211,37 +211,40 @@ Operator examples, applicability and limits for released hoimin 0.15.0:
   Source builds: read docs/user/reference/operators.md in the same checkout.
 
 Default runtime IDs:
-  aggregate_sum_count, async_iterator_stop_insert, augmented_add_sub, augmented_bitwise_and_or
-  augmented_bitwise_shift, augmented_bitwise_xor, augmented_floor_mod, augmented_matmul
-  augmented_mul_div, augmented_power, augmented_to_assignment, await_remove
-  base_order_shuffle, binary_add_sub, binary_div_floor, binary_floor_mod
-  binary_matmul, binary_mul_div, binary_power, bisect_boundary_swap
-  bitwise_and_or, bitwise_invert, bitwise_shift, bitwise_xor
-  boolean_and_or, boolean_literal, break_continue, bytes_literal_empty
-  call_argument_swap, call_result_default, collection_any_all, collection_append_insert
-  collection_list_tuple, collection_min_max, collection_set_add_discard, collection_set_frozenset
-  collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends, compare_eq_ne
-  compare_order, comparison_not_implemented, comprehension_filter_invert, comprehension_filter_remove
-  conditional_branch_swap, continue_remove, conversion_call_remove, dataclass_factory_share
-  decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap, deepcopy_to_copy
-  del_remove, deque_popleft_to_pop, dict_unpack_delete, dict_unpack_order_swap
-  encoding_errors_ignore, exception_cause_omit, exception_cause_remove, exception_handler_swap
-  exception_type_pair, filter_predicate_swap, finally_unwrap, float_literal_neighbor
-  fstring_conversion_swap, fstring_format_spec_remove, fstring_format_value_neighbor, function_body_return_constant
-  gather_return_exceptions, generator_empty, generator_return_insert, generator_skip_first
-  identity, integer_literal_neighbor, intermediate_rounding_remove, iterator_stop_insert
+  aggregate_sum_count, assignment_target_swap, async_iterator_stop_insert, augmented_add_sub
+  augmented_bitwise_and_or, augmented_bitwise_shift, augmented_bitwise_xor, augmented_floor_mod
+  augmented_matmul, augmented_mul_div, augmented_power, augmented_to_assignment
+  augmented_to_binary, await_remove, base_order_shuffle, binary_add_sub
+  binary_div_floor, binary_floor_mod, binary_matmul, binary_mul_div
+  binary_power, bisect_boundary_swap, bitwise_and_or, bitwise_invert
+  bitwise_shift, bitwise_xor, boolean_and_or, boolean_literal
+  break_continue, bytes_literal_empty, call_argument_swap, call_result_default
+  collection_any_all, collection_append_insert, collection_list_tuple, collection_min_max
+  collection_set_add_discard, collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit
+  collection_string_starts_ends, compare_direction, compare_eq_ne, compare_order
+  comparison_not_implemented, comprehension_filter_invert, comprehension_filter_remove, conditional_branch_swap
+  context_exit_omit, context_exit_result_negate, continue_remove, conversion_call_remove
+  dataclass_factory_share, decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap
+  deepcopy_to_copy, del_remove, deque_popleft_to_pop, dict_unpack_delete
+  dict_unpack_order_swap, else_suite_remove, encoding_errors_ignore, exception_cause_omit
+  exception_cause_remove, exception_handler_swap, exception_type_pair, filter_predicate_swap
+  finally_unwrap, float_literal_neighbor, fstring_conversion_swap, fstring_format_option_swap
+  fstring_format_spec_remove, fstring_format_value_neighbor, function_body_return_constant, gather_return_exceptions
+  generator_empty, generator_return_insert, generator_skip_first, identity
+  identity_equality_swap, integer_literal_neighbor, intermediate_rounding_remove, iterator_stop_insert
   itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator, loop_break_insert
   mapping_setdefault_to_get, match_case_delete, match_case_swap, match_class_position_swap
   match_guard_constant, match_or_alternative_delete, match_pattern_wildcard, membership
   method_call_remove, mutable_default_share, none_truthiness, nonlocal_remove
-  operator_function, override_method_delete, regex_ascii_mode, regex_character_set
-  regex_match_boundary, remove_not, return_tuple_swap, round_digits_remove
-  rounding_function_swap, set_union_intersection_swap, sort_key_swap, statement_delete
-  statement_order_swap, stdlib_conversion_call_remove, stdlib_escape_remove, string_literal_empty
-  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
-  structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse
-  structure_sorted_reversed, super_call_move, unary_sign, while_condition_false
-  yield_from_to_yield
+  operator_function, override_method_delete, range_bound_neighbor, regex_alternative_delete
+  regex_ascii_mode, regex_character_set, regex_greediness_toggle, regex_match_boundary
+  regex_quantifier_neighbor, remove_not, return_tuple_swap, return_value_none
+  round_digits_remove, rounding_function_swap, set_union_intersection_swap, sort_key_swap
+  statement_delete, statement_order_swap, stdlib_conversion_call_remove, stdlib_escape_remove
+  string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
+  structure_mapping_get_subscript, structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor
+  structure_sort_reverse, structure_sorted_reversed, super_call_move, unary_sign
+  while_condition_false, yield_from_to_yield, yield_statement_remove, zip_strict_toggle
 
 Opt-in IDs:
   condition_clause_delete, condition_constant, container_element_delete, enum_member_replace
@@ -575,37 +578,40 @@ Operator examples, applicability and limits for released hoimin 0.15.0:
   Source builds: read docs/user/reference/operators.md in the same checkout.
 
 Default runtime IDs:
-  aggregate_sum_count, async_iterator_stop_insert, augmented_add_sub, augmented_bitwise_and_or
-  augmented_bitwise_shift, augmented_bitwise_xor, augmented_floor_mod, augmented_matmul
-  augmented_mul_div, augmented_power, augmented_to_assignment, await_remove
-  base_order_shuffle, binary_add_sub, binary_div_floor, binary_floor_mod
-  binary_matmul, binary_mul_div, binary_power, bisect_boundary_swap
-  bitwise_and_or, bitwise_invert, bitwise_shift, bitwise_xor
-  boolean_and_or, boolean_literal, break_continue, bytes_literal_empty
-  call_argument_swap, call_result_default, collection_any_all, collection_append_insert
-  collection_list_tuple, collection_min_max, collection_set_add_discard, collection_set_frozenset
-  collection_set_remove_discard, collection_string_split_rsplit, collection_string_starts_ends, compare_eq_ne
-  compare_order, comparison_not_implemented, comprehension_filter_invert, comprehension_filter_remove
-  conditional_branch_swap, continue_remove, conversion_call_remove, dataclass_factory_share
-  decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap, deepcopy_to_copy
-  del_remove, deque_popleft_to_pop, dict_unpack_delete, dict_unpack_order_swap
-  encoding_errors_ignore, exception_cause_omit, exception_cause_remove, exception_handler_swap
-  exception_type_pair, filter_predicate_swap, finally_unwrap, float_literal_neighbor
-  fstring_conversion_swap, fstring_format_spec_remove, fstring_format_value_neighbor, function_body_return_constant
-  gather_return_exceptions, generator_empty, generator_return_insert, generator_skip_first
-  identity, integer_literal_neighbor, intermediate_rounding_remove, iterator_stop_insert
+  aggregate_sum_count, assignment_target_swap, async_iterator_stop_insert, augmented_add_sub
+  augmented_bitwise_and_or, augmented_bitwise_shift, augmented_bitwise_xor, augmented_floor_mod
+  augmented_matmul, augmented_mul_div, augmented_power, augmented_to_assignment
+  augmented_to_binary, await_remove, base_order_shuffle, binary_add_sub
+  binary_div_floor, binary_floor_mod, binary_matmul, binary_mul_div
+  binary_power, bisect_boundary_swap, bitwise_and_or, bitwise_invert
+  bitwise_shift, bitwise_xor, boolean_and_or, boolean_literal
+  break_continue, bytes_literal_empty, call_argument_swap, call_result_default
+  collection_any_all, collection_append_insert, collection_list_tuple, collection_min_max
+  collection_set_add_discard, collection_set_frozenset, collection_set_remove_discard, collection_string_split_rsplit
+  collection_string_starts_ends, compare_direction, compare_eq_ne, compare_order
+  comparison_not_implemented, comprehension_filter_invert, comprehension_filter_remove, conditional_branch_swap
+  context_exit_omit, context_exit_result_negate, continue_remove, conversion_call_remove
+  dataclass_factory_share, decimal_context_precision, decimal_quantum_shift, decimal_rounding_mode_swap
+  deepcopy_to_copy, del_remove, deque_popleft_to_pop, dict_unpack_delete
+  dict_unpack_order_swap, else_suite_remove, encoding_errors_ignore, exception_cause_omit
+  exception_cause_remove, exception_handler_swap, exception_type_pair, filter_predicate_swap
+  finally_unwrap, float_literal_neighbor, fstring_conversion_swap, fstring_format_option_swap
+  fstring_format_spec_remove, fstring_format_value_neighbor, function_body_return_constant, gather_return_exceptions
+  generator_empty, generator_return_insert, generator_skip_first, identity
+  identity_equality_swap, integer_literal_neighbor, intermediate_rounding_remove, iterator_stop_insert
   itertools_take_drop_swap, lambda_capture_late, list_comprehension_to_generator, loop_break_insert
   mapping_setdefault_to_get, match_case_delete, match_case_swap, match_class_position_swap
   match_guard_constant, match_or_alternative_delete, match_pattern_wildcard, membership
   method_call_remove, mutable_default_share, none_truthiness, nonlocal_remove
-  operator_function, override_method_delete, regex_ascii_mode, regex_character_set
-  regex_match_boundary, remove_not, return_tuple_swap, round_digits_remove
-  rounding_function_swap, set_union_intersection_swap, sort_key_swap, statement_delete
-  statement_order_swap, stdlib_conversion_call_remove, stdlib_escape_remove, string_literal_empty
-  string_segment_empty, structure_append_extend, structure_index_neighbor, structure_mapping_get_subscript
-  structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor, structure_sort_reverse
-  structure_sorted_reversed, super_call_move, unary_sign, while_condition_false
-  yield_from_to_yield
+  operator_function, override_method_delete, range_bound_neighbor, regex_alternative_delete
+  regex_ascii_mode, regex_character_set, regex_greediness_toggle, regex_match_boundary
+  regex_quantifier_neighbor, remove_not, return_tuple_swap, return_value_none
+  round_digits_remove, rounding_function_swap, set_union_intersection_swap, sort_key_swap
+  statement_delete, statement_order_swap, stdlib_conversion_call_remove, stdlib_escape_remove
+  string_literal_empty, string_segment_empty, structure_append_extend, structure_index_neighbor
+  structure_mapping_get_subscript, structure_slice_bound_move, structure_slice_bound_omit, structure_slice_neighbor
+  structure_sort_reverse, structure_sorted_reversed, super_call_move, unary_sign
+  while_condition_false, yield_from_to_yield, yield_statement_remove, zip_strict_toggle
 
 Opt-in IDs:
   condition_clause_delete, condition_constant, container_element_delete, enum_member_replace
@@ -1389,6 +1395,7 @@ Remove the named IDs or every member of the named families after the default or 
 | Operator ID | Default runtime selection | Selector families |
 | --- | --- | --- |
 | [`aggregate_sum_count`](operators.md#aggregate_sum_count) | yes | [`collection_processing`](#collection_processing) |
+| [`assignment_target_swap`](operators.md#assignment_target_swap) | yes | — |
 | [`async_iterator_stop_insert`](operators.md#async_iterator_stop_insert) | yes | — |
 | [`augmented_add_sub`](operators.md#augmented_add_sub) | yes | — |
 | [`augmented_bitwise_and_or`](operators.md#augmented_bitwise_and_or) | yes | [`bitwise_ops`](#bitwise_ops) |
@@ -1399,6 +1406,7 @@ Remove the named IDs or every member of the named families after the default or 
 | [`augmented_mul_div`](operators.md#augmented_mul_div) | yes | — |
 | [`augmented_power`](operators.md#augmented_power) | yes | — |
 | [`augmented_to_assignment`](operators.md#augmented_to_assignment) | yes | — |
+| [`augmented_to_binary`](operators.md#augmented_to_binary) | yes | — |
 | [`await_remove`](operators.md#await_remove) | yes | — |
 | [`base_order_shuffle`](operators.md#base_order_shuffle) | yes | — |
 | [`binary_add_sub`](operators.md#binary_add_sub) | yes | — |
@@ -1427,6 +1435,7 @@ Remove the named IDs or every member of the named families after the default or 
 | [`collection_set_remove_discard`](operators.md#collection_set_remove_discard) | yes | [`collection_ops`](#collection_ops) |
 | [`collection_string_split_rsplit`](operators.md#collection_string_split_rsplit) | yes | [`collection_ops`](#collection_ops) |
 | [`collection_string_starts_ends`](operators.md#collection_string_starts_ends) | yes | [`collection_ops`](#collection_ops) |
+| [`compare_direction`](operators.md#compare_direction) | yes | — |
 | [`compare_eq_ne`](operators.md#compare_eq_ne) | yes | — |
 | [`compare_order`](operators.md#compare_order) | yes | — |
 | [`comparison_not_implemented`](operators.md#comparison_not_implemented) | yes | — |
@@ -1436,6 +1445,8 @@ Remove the named IDs or every member of the named families after the default or 
 | [`condition_constant`](operators.md#condition_constant) | opt-in | — |
 | [`conditional_branch_swap`](operators.md#conditional_branch_swap) | yes | — |
 | [`container_element_delete`](operators.md#container_element_delete) | opt-in | — |
+| [`context_exit_omit`](operators.md#context_exit_omit) | yes | — |
+| [`context_exit_result_negate`](operators.md#context_exit_result_negate) | yes | — |
 | [`continue_remove`](operators.md#continue_remove) | yes | — |
 | [`conversion_call_remove`](operators.md#conversion_call_remove) | yes | — |
 | [`dataclass_factory_share`](operators.md#dataclass_factory_share) | yes | — |
@@ -1447,6 +1458,7 @@ Remove the named IDs or every member of the named families after the default or 
 | [`deque_popleft_to_pop`](operators.md#deque_popleft_to_pop) | yes | — |
 | [`dict_unpack_delete`](operators.md#dict_unpack_delete) | yes | — |
 | [`dict_unpack_order_swap`](operators.md#dict_unpack_order_swap) | yes | — |
+| [`else_suite_remove`](operators.md#else_suite_remove) | yes | — |
 | [`encoding_errors_ignore`](operators.md#encoding_errors_ignore) | yes | — |
 | [`enum_member_replace`](operators.md#enum_member_replace) | opt-in | — |
 | [`exception_bare_to_exception`](operators.md#exception_bare_to_exception) | opt-in | [`exception_risky`](#exception_risky) |
@@ -1463,6 +1475,7 @@ Remove the named IDs or every member of the named families after the default or 
 | [`finally_unwrap`](operators.md#finally_unwrap) | yes | — |
 | [`float_literal_neighbor`](operators.md#float_literal_neighbor) | yes | — |
 | [`fstring_conversion_swap`](operators.md#fstring_conversion_swap) | yes | — |
+| [`fstring_format_option_swap`](operators.md#fstring_format_option_swap) | yes | — |
 | [`fstring_format_spec_remove`](operators.md#fstring_format_spec_remove) | yes | — |
 | [`fstring_format_value_neighbor`](operators.md#fstring_format_value_neighbor) | yes | — |
 | [`function_body_erase`](operators.md#function_body_erase) | opt-in | — |
@@ -1472,6 +1485,7 @@ Remove the named IDs or every member of the named families after the default or 
 | [`generator_return_insert`](operators.md#generator_return_insert) | yes | — |
 | [`generator_skip_first`](operators.md#generator_skip_first) | yes | — |
 | [`identity`](operators.md#identity) | yes | — |
+| [`identity_equality_swap`](operators.md#identity_equality_swap) | yes | — |
 | [`integer_literal_neighbor`](operators.md#integer_literal_neighbor) | yes | — |
 | [`intermediate_rounding_remove`](operators.md#intermediate_rounding_remove) | yes | [`rounding`](#rounding) |
 | [`iterator_stop_insert`](operators.md#iterator_stop_insert) | yes | — |
@@ -1494,11 +1508,16 @@ Remove the named IDs or every member of the named families after the default or 
 | [`operator_function`](operators.md#operator_function) | yes | — |
 | [`optional_keyword_delete`](operators.md#optional_keyword_delete) | opt-in | — |
 | [`override_method_delete`](operators.md#override_method_delete) | yes | — |
+| [`range_bound_neighbor`](operators.md#range_bound_neighbor) | yes | — |
+| [`regex_alternative_delete`](operators.md#regex_alternative_delete) | yes | — |
 | [`regex_ascii_mode`](operators.md#regex_ascii_mode) | yes | [`regex`](#regex) |
 | [`regex_character_set`](operators.md#regex_character_set) | yes | [`regex`](#regex) |
+| [`regex_greediness_toggle`](operators.md#regex_greediness_toggle) | yes | — |
 | [`regex_match_boundary`](operators.md#regex_match_boundary) | yes | [`regex`](#regex) |
+| [`regex_quantifier_neighbor`](operators.md#regex_quantifier_neighbor) | yes | — |
 | [`remove_not`](operators.md#remove_not) | yes | — |
 | [`return_tuple_swap`](operators.md#return_tuple_swap) | yes | — |
+| [`return_value_none`](operators.md#return_value_none) | yes | — |
 | [`round_digits_remove`](operators.md#round_digits_remove) | yes | [`rounding`](#rounding) |
 | [`rounding_function_swap`](operators.md#rounding_function_swap) | yes | [`rounding`](#rounding) |
 | [`set_union_intersection_swap`](operators.md#set_union_intersection_swap) | yes | [`collection_processing`](#collection_processing) |
@@ -1528,6 +1547,8 @@ Remove the named IDs or every member of the named families after the default or 
 | [`unary_sign`](operators.md#unary_sign) | yes | — |
 | [`while_condition_false`](operators.md#while_condition_false) | yes | — |
 | [`yield_from_to_yield`](operators.md#yield_from_to_yield) | yes | — |
+| [`yield_statement_remove`](operators.md#yield_statement_remove) | yes | — |
+| [`zip_strict_toggle`](operators.md#zip_strict_toggle) | yes | — |
 
 ## Selector families
 

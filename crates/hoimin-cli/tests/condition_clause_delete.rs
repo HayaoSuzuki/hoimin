@@ -100,6 +100,9 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
 #[case::if_a_and_b_or_c_pass_3("if a and (b or c): pass\n", 2)]
 #[case::if_a_and_a_pass_4("if a and a: pass\n", 1)]
 #[case::conditional_expression("result = 1 if a and b else 0\n", 2)]
+#[case::while_condition("while a and b: break\n", 2)]
+#[case::assert_condition("assert a and b\n", 2)]
+#[case::assigned_value("x = a and b\n", 2)]
 #[case::if_a_pass_elif_b_and_c_pass_5("if a: pass\nelif b and c: pass\n", 2)]
 #[case::input_1_if_a_and_comment_b_and_c_pass_6(
     "é = 1\r\nif (a and # comment\r\n b and c): pass\r\n",
@@ -129,16 +132,13 @@ async fn clauses_preserve_nested_structure_and_compile(#[case] source: &str, #[c
 }
 
 #[rstest::rstest]
-#[case::while_a_and_b_break_assert_a_and_b_x_a_and_b_y_1_if_a_a_1(
-    "while a and b: break\nassert a and b\nx = a and b\n"
-)]
 #[case::if_a_b_c_pass_2("if a < b < c: pass\n")]
 #[case::if_a_and_b_f_pass_3("if a and (b := f()): pass\n")]
 #[case::async_def_f_if_a_and_await_g_pass_4("async def f():\n    if a and await g(): pass\n")]
 #[case::def_f_if_a_and_yield_1_pass_5("def f():\n    if a and (yield 1): pass\n")]
 #[case::def_f_if_a_and_yield_from_g_pass_6("def f():\n    if a and (yield from g()): pass\n")]
 #[tokio::test]
-async fn clauses_exclude_other_contexts_and_binding_changes(#[case] source: &str) {
+async fn clauses_exclude_comparisons_and_binding_changes_in_direct_if_tests(#[case] source: &str) {
     let root = tempfile::tempdir().unwrap();
     std::fs::write(root.path().join("subject.py"), source).unwrap();
 

@@ -1,5 +1,7 @@
 //! Map decoded Python regex units back to the token bodies that produced them.
 //! Cover edits across tokens without reconstructing their quotes or comments.
+use super::super::source_escapes::{Decoded, decode};
+use super::characters;
 use ruff_python_ast::Expr;
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::ops::Range;
@@ -118,7 +120,12 @@ impl<'a> Literal<'a> {
                 c = '\n';
             }
             if c == '\\' && !raw {
-                match python_escape(&self.source[..body.end], &mut at, self.bytes)? {
+                match decode(
+                    &self.source[..body.end],
+                    &mut at,
+                    self.bytes,
+                    characters::named,
+                )? {
                     Decoded::Character(value) => c = value,
                     Decoded::Continuation => {
                         self.continuations.push(from..at);
@@ -246,7 +253,9 @@ impl<'a> Literal<'a> {
                 while let Some(r) = cont.next_if(|r| r.start >= left && r.end <= right) {
                     out.push_str(&self.source[r.clone()]);
                 }
-                let empty = index != first && left == token.body.start && right == token.body.end;
+                let empty = (index != first || code.is_empty())
+                    && left == token.body.start
+                    && right == token.body.end;
                 let after = token.whole.end;
                 let space = empty
                     && token.single
@@ -265,7 +274,7 @@ impl<'a> Literal<'a> {
             }
         }
         let edit = text_range(start, finish)?;
-        if first != last {
+        if first != last || finish != end {
             self.verify_cross_token(span, first..last + 1, edit, &out, code, suffix)?;
         }
         Some((edit, out))
@@ -323,73 +332,4 @@ impl<'a> Literal<'a> {
             &self.source[usize::from(range.end())..r]
         )
     }
-}
-
-enum Decoded {
-    Character(char),
-    Preserved(char),
-    Continuation,
-}
-
-fn python_escape(source: &str, at: &mut usize, bytes: bool) -> Option<Decoded> {
-    let escaped = source[*at..].chars().next()?;
-    *at += escaped.len_utf8();
-    let value = match escaped {
-        '\n' => return Some(Decoded::Continuation),
-        '\r' => {
-            if source.as_bytes().get(*at) == Some(&b'\n') {
-                *at += 1;
-            }
-            return Some(Decoded::Continuation);
-        }
-        '\\' | '\'' | '"' => escaped,
-        'a' => '\x07',
-        'b' => '\x08',
-        'f' => '\x0c',
-        't' => '\t',
-        'n' => '\n',
-        'r' => '\r',
-        'v' => '\x0b',
-        '0'..='7' => {
-            let mut number = escaped.to_digit(8)?;
-            for _ in 0..2 {
-                let Some(digit) = source
-                    .as_bytes()
-                    .get(*at)
-                    .and_then(|b| char::from(*b).to_digit(8))
-                else {
-                    break;
-                };
-                number = 8 * number + digit;
-                *at += 1;
-            }
-            char::from_u32(if bytes { number & 255 } else { number })?
-        }
-        'x' | 'u' | 'U' if escaped == 'x' || !bytes => {
-            let len = match escaped {
-                'x' => 2,
-                'u' => 4,
-                _ => 8,
-            };
-            let code = u32::from_str_radix(source.get(*at..*at + len)?, 16).ok()?;
-            *at += len;
-            char::from_u32(code)?
-        }
-        'N' if !bytes => {
-            if source.as_bytes().get(*at) != Some(&b'{') {
-                return None;
-            }
-            let end = *at
-                + 1
-                + source.as_bytes()[*at + 1..]
-                    .iter()
-                    .take(128)
-                    .position(|&b| b == b'}')?;
-            let symbol = super::characters::named(&source[*at + 1..end])?;
-            *at = end + 1;
-            symbol
-        }
-        _ => return Some(Decoded::Preserved(escaped)),
-    };
-    Some(Decoded::Character(value))
 }

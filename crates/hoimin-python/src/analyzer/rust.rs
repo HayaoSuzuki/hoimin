@@ -17,7 +17,7 @@ use ruff_python_ast::{
 };
 #[cfg(test)]
 use ruff_python_parser::{parse_module, parse_unchecked_source};
-use ruff_text_size::{Ranged, TextRange};
+use ruff_text_size::{Ranged, TextRange, TextSize};
 
 use super::{AnalyzerCandidate, AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
@@ -28,6 +28,8 @@ use payload::{Charged, PayloadBudget, PayloadLease};
 #[path = "exception_hierarchy.rs"]
 pub(crate) mod exception_hierarchy;
 
+#[path = "rust/assignment_results.rs"]
+mod assignment_results;
 #[path = "rust/base_order.rs"]
 mod base_order;
 #[path = "rust/container_elements.rs"]
@@ -54,6 +56,8 @@ mod inheritance;
 mod iterator_stop;
 #[path = "rust/lambda_capture.rs"]
 mod lambda_capture;
+#[path = "rust/lifecycle_mutations.rs"]
+mod lifecycle_mutations;
 #[path = "rust/loop_break.rs"]
 mod loop_break;
 #[path = "rust/optional_keywords.rs"]
@@ -74,6 +78,8 @@ mod statement_order;
 
 #[path = "rust/deletion.rs"]
 mod deletion;
+#[path = "rust/dynamic_boundaries.rs"]
+mod dynamic_boundaries;
 #[path = "rust/expression_behavior.rs"]
 mod expression_behavior;
 
@@ -105,6 +111,8 @@ mod regex;
 mod rounding;
 #[path = "rust/source_delimiters.rs"]
 mod source_delimiters;
+#[path = "rust/source_escapes.rs"]
+mod source_escapes;
 use finally_work::FinallyTransfer;
 #[path = "rust/lazy_imports.rs"]
 mod lazy_imports;
@@ -312,7 +320,7 @@ impl Eq for RetainedCandidate {}
 pub(crate) struct CandidatePrefix {
     entries: BinaryHeap<RetainedCandidate>,
     // Exact borrowed string lookup avoids allocating for duplicates/nonwinners.
-    identities: HashMap<(u64, MutationOperator), HashMap<String, PayloadLease>>,
+    identities: HashMap<(u64, u64, MutationOperator), HashMap<String, PayloadLease>>,
     payload: PayloadBudget,
     capacity: usize,
     overflowed: bool,
@@ -380,7 +388,11 @@ impl CandidatePrefix {
     }
 
     fn admit(&mut self, candidate: AnalyzerCandidate) -> Result<(), AnalysisError> {
-        let key = (candidate.span.start, candidate.operator);
+        let key = (
+            candidate.span.start,
+            candidate.span.length,
+            candidate.operator,
+        );
         if self
             .identities
             .get(&key)
@@ -397,7 +409,11 @@ impl CandidatePrefix {
                 return Ok(());
             }
             let evicted = self.entries.pop().unwrap();
-            let key = (evicted.candidate.span.start, evicted.candidate.operator);
+            let key = (
+                evicted.candidate.span.start,
+                evicted.candidate.span.length,
+                evicted.candidate.operator,
+            );
             let set = self.identities.get_mut(&key).unwrap();
             set.remove(evicted.candidate.replacement.as_str());
             if set.is_empty() {
@@ -643,6 +659,7 @@ pub fn analyze_source_with_exceptions(
                 source,
                 &line_index,
                 start..span_end,
+                start,
                 replacement,
                 operator,
                 symbol,
@@ -703,6 +720,7 @@ pub fn analyze_source_with_exceptions(
             .map(|candidate| {
                 seen.insert((
                     candidate.span.start,
+                    candidate.span.length,
                     candidate.replacement.as_str(),
                     candidate.operator,
                 ))
@@ -796,6 +814,7 @@ fn make_candidate(
     source: &str,
     line_index: &LineIndex,
     range: Range<usize>,
+    selection_start: usize,
     replacement: String,
     operator: MutationOperator,
     symbol: Option<String>,
@@ -807,7 +826,12 @@ fn make_candidate(
     let start = u64::try_from(range.start).ok()?;
     let length = u64::try_from(range.len()).ok()?;
     let (line, column) = line_index.line_and_column(range.start);
-    if !selection.includes(line, symbol.as_deref()) {
+    let selection_line = if selection_start == range.start {
+        line
+    } else {
+        line_index.line_and_column(selection_start).0
+    };
+    if !selection.includes(selection_line, symbol.as_deref()) {
         return None;
     }
     #[cfg(test)]
@@ -1314,10 +1338,43 @@ struct NameOccurrence {
     temporarily_shadowed: bool,
 }
 
+/// A generated load has its own evaluation point even when an original name
+/// is lexed at the same source offset.
+#[derive(Clone, Copy, Hash, Eq, PartialEq)]
+enum HelperSite {
+    BeforeOperand(TextSize),
+    AfterOperands(TextSize),
+}
+
+impl HelperSite {
+    fn subscript(subscript: &ExprSubscript) -> Self {
+        Self::AfterOperands(subscript.end() - TextSize::new(1))
+    }
+
+    fn names(self) -> &'static [&'static str] {
+        match self {
+            Self::BeforeOperand(_) => &lifecycle_mutations::BUILTIN_HELPERS,
+            Self::AfterOperands(_) => &dynamic_boundaries::INDEX_HELPERS,
+        }
+    }
+
+    fn offset(self) -> TextSize {
+        match self {
+            Self::BeforeOperand(offset) | Self::AfterOperands(offset) => offset,
+        }
+    }
+}
+
+struct HelperOccurrence {
+    binding: NameOccurrence,
+    temporarily_shadowed: HashSet<String>,
+}
+
 #[derive(Default)]
 struct NameResolutionIndex {
     scopes: Vec<NameScope>,
     occurrences: HashMap<usize, NameOccurrence>,
+    helper_sites: HashMap<HelperSite, HelperOccurrence>,
     generator_constructions: HashMap<TextRange, NameOccurrence>,
     back_edge_bindings: HashMap<usize, HashSet<String>>,
     unevaluated_annotations: HashSet<usize>,
@@ -1328,6 +1385,57 @@ struct NameResolutionIndex {
 }
 
 impl NameResolutionIndex {
+    fn helper_resolution(&self, site: HelperSite, name: &str) -> NameResolution {
+        let Some(helper) = self.helper_sites.get(&site) else {
+            return NameResolution::Unknown;
+        };
+        if helper.temporarily_shadowed.contains(name) {
+            return NameResolution::Shadowed;
+        }
+        self.resolution_at_site(usize::from(site.offset()), &helper.binding, name)
+    }
+
+    /// Check the lexical site of a generated import-root load. The import index
+    /// separately proves module origin, uniqueness and availability in source order.
+    /// This query does not infer scope from the shape of the original expression.
+    fn allows_injected_import(&self, site: HelperSite, name: &str) -> bool {
+        let Some(helper) = self.helper_sites.get(&site) else {
+            return false;
+        };
+        let scope_id = helper.binding.scope;
+        if self.scopes[scope_id.0].ambiguous_private_import(name)
+            || helper.temporarily_shadowed.contains(name)
+            || self
+                .back_edge_bindings
+                .get(&usize::from(site.offset()))
+                .is_some_and(|names| names.contains(name))
+        {
+            return false;
+        }
+        let mut current = Some(scope_id);
+        let mut direct = true;
+        while let Some(id) = current {
+            let scope = &self.scopes[id.0];
+            if direct && scope.kind == NameScopeKind::Class {
+                return false;
+            }
+            if scope.kind == NameScopeKind::Module {
+                return !scope.wildcard;
+            }
+            if scope.kind != NameScopeKind::Class
+                && (scope.wildcard
+                    || scope.locals.contains(name)
+                    || scope.nonlocals.contains(name)
+                    || scope.possible_bindings.contains(name))
+            {
+                return false;
+            }
+            direct &= scope.kind == NameScopeKind::TypeParameters;
+            current = scope.parent;
+        }
+        false
+    }
+
     fn unique_module_binding(&self, name: &str) -> bool {
         let scope = &self.scopes[0];
         !scope.wildcard
@@ -1974,6 +2082,7 @@ impl<'a> NameResolutionBuilder<'a> {
             index: NameResolutionIndex {
                 scopes: vec![NameScope::new(NameScopeKind::Module, None)],
                 occurrences: HashMap::new(),
+                helper_sites: HashMap::new(),
                 generator_constructions: HashMap::new(),
                 back_edge_bindings: HashMap::new(),
                 unevaluated_annotations: HashSet::new(),
@@ -2364,6 +2473,27 @@ impl<'a> NameResolutionBuilder<'a> {
         self.index.occurrences.insert(offset, site);
     }
 
+    fn record_helper_site(&mut self, site: HelperSite) {
+        let names = site.names();
+        let temporarily_shadowed = self
+            .temporary_shadowed
+            .iter()
+            .rev()
+            .filter(|(scope, _)| self.temporary_binding_visible(*scope))
+            .flat_map(|(_, bound)| bound.iter())
+            .filter(|name| names.contains(&name.as_str()) || self.imported_names.contains(*name))
+            .cloned()
+            .collect();
+        let binding = self.resolution_site(usize::from(site.offset()), false);
+        self.index.helper_sites.insert(
+            site,
+            HelperOccurrence {
+                binding,
+                temporarily_shadowed,
+            },
+        );
+    }
+
     fn record_generator_construction(&mut self, range: TextRange) {
         let temporarily_shadowed =
             self.temporary_shadowed.iter().rev().any(|(scope, names)| {
@@ -2625,6 +2755,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder<'_> {
             Stmt::With(statement_with) => {
                 self.conditional_depth += 1;
                 for item in &statement_with.items {
+                    self.record_helper_site(HelperSite::BeforeOperand(item.context_expr.start()));
                     self.visit_expr(&item.context_expr);
                     if let Some(target) = &item.optional_vars {
                         self.visit_assignment_target(target);
@@ -2660,6 +2791,12 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder<'_> {
             return;
         }
         match expression {
+            Expr::Subscript(subscript) if subscript.ctx == ExprContext::Load => {
+                self.visit_expr(&subscript.value);
+                self.visit_expr(&subscript.slice);
+                self.record_helper_site(HelperSite::subscript(subscript));
+                return;
+            }
             Expr::Name(name) => {
                 if name.ctx == ExprContext::Load && exposes_module_namespace(name.id.as_str()) {
                     self.index.module_namespace_exposed = true;
@@ -2789,6 +2926,7 @@ impl<'ast> Visitor<'ast> for NameResolutionBuilder<'_> {
 
 #[derive(Default)]
 struct AstFacts<'tokens> {
+    direct_if_boolean_tests: HashSet<TextRange>,
     colliding_mapping_key_starts: HashSet<usize>,
     operator_token_starts: HashSet<usize>,
     unary_sign_starts: HashSet<usize>,
@@ -3006,6 +3144,25 @@ impl<'tokens> AstFacts<'tokens> {
 impl<'ast> Visitor<'ast> for AstFacts<'_> {
     fn visit_stmt(&mut self, statement: &'ast Stmt) {
         match statement {
+            Stmt::If(conditional) => {
+                for test in std::iter::once(conditional.test.as_ref()).chain(
+                    conditional
+                        .elif_else_clauses
+                        .iter()
+                        .filter_map(|clause| clause.test.as_ref()),
+                ) {
+                    let mut pending = vec![test];
+                    while let Some(Expr::BoolOp(boolean)) = pending.pop() {
+                        self.direct_if_boolean_tests.insert(boolean.range());
+                        pending.extend(
+                            boolean
+                                .values
+                                .iter()
+                                .filter(|value| matches!(value, Expr::BoolOp(_))),
+                        );
+                    }
+                }
+            }
             Stmt::AugAssign(assign) => {
                 self.record_operator_tokens(
                     TextRange::new(assign.target.range().end(), assign.value.range().start()),
@@ -3209,6 +3366,11 @@ const CONTROL_BUILTINS: &[&str] = &[
 ];
 
 const CALL_CONTRACT_BUILTINS: &[&str] = &[
+    "property",
+    "TypeError",
+    "type",
+    "range",
+    "zip",
     "ascii",
     "bin",
     "callable",
@@ -3338,6 +3500,7 @@ fn selected_source_start(
 // Source, facts and every visited AST range come from the same checked parse.
 // Neither the source nor that tree is mutated during collection.
 struct AstCandidateCollector<'a, F> {
+    exit_scope: lifecycle_mutations::ExitScope,
     match_state: control_structure::MatchTraversal,
     private_class: Option<&'a str>,
     inheritance: inheritance::Index,
@@ -3460,6 +3623,13 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             optional_keywords::FunctionIndex::default()
         };
         let delimiters = if [
+            MutationOperator::ContextExitOmit,
+            MutationOperator::ContextExitResultNegate,
+            MutationOperator::YieldStatementRemove,
+            MutationOperator::AugmentedToBinary,
+            MutationOperator::ZipStrictToggle,
+            MutationOperator::RangeBoundNeighbor,
+            MutationOperator::ReturnTupleSwap,
             MutationOperator::IntegerLiteralNeighbor,
             MutationOperator::FloatLiteralNeighbor,
             MutationOperator::StructureIndexNeighbor,
@@ -3494,6 +3664,11 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             source_delimiters::DelimiterDepth::default()
         };
         let builtins = if [
+            MutationOperator::ContextExitOmit,
+            MutationOperator::ZipStrictToggle,
+            MutationOperator::RangeBoundNeighbor,
+            MutationOperator::StructureIndexNeighbor,
+            MutationOperator::StructureSliceNeighbor,
             MutationOperator::StdlibEscapeRemove,
             MutationOperator::CallArgumentSwap,
             MutationOperator::CallResultDefault,
@@ -3534,6 +3709,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         let regex = regex::Regex::build(module, &processing_site, cancelled)?;
         let rounding = rounding::Rounding::build(module, &processing_site, cancelled)?;
         let mut collector = AstCandidateCollector {
+            exit_scope: lifecycle_mutations::ExitScope::Outside,
             call_contracts: &call_contracts,
             collections: &collections,
             regex: &regex,
@@ -3677,6 +3853,22 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         statement: &'a Stmt,
         definition: &'a ruff_python_ast::StmtFunctionDef,
     ) {
+        let exit_operator = MutationOperator::ContextExitResultNegate;
+        let exit_scope = if self.request.operators.contains(exit_operator)
+            && self.needs_validation(definition.start(), exit_operator)
+        {
+            lifecycle_mutations::ExitScope::for_function(
+                definition,
+                self.enclosing_body,
+                self.cancelled,
+            )
+        } else {
+            lifecycle_mutations::ExitScope::Outside
+        };
+        if matches!(exit_scope, lifecycle_mutations::ExitScope::Method) {
+            self.collect_implicit_exit_result(definition);
+        }
+        let previous_exit = std::mem::replace(&mut self.exit_scope, exit_scope);
         let comparison = self.comparison_scope_for(definition);
         let previous_comparison = std::mem::replace(&mut self.comparison_scope, comparison);
         let allowed = self
@@ -3695,6 +3887,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         self.enclosing_body = previous_class;
         self.return_scope = previous;
         self.comparison_scope = previous_comparison;
+        self.exit_scope = previous_exit;
     }
 
     fn walk_class(&mut self, statement: &'a Stmt, name: &'a str) {
@@ -3714,6 +3907,12 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             self.cancelled_observed = true;
         }
         self.cancelled_observed
+    }
+
+    /// Current physical suite depth, with module statements at zero. Source
+    /// rewrites that add a suite use this to respect Python's indentation limit.
+    fn lexical_suite_depth(&self) -> usize {
+        self.match_state.suite_depth
     }
 
     fn visit_exception_type(&mut self, expression: &'a Expr) {
@@ -3780,6 +3979,19 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         scope: TextRange,
         render: impl FnOnce() -> String,
     ) {
+        self.add_deferred_candidate_at(range, operator, scope, range.start(), render);
+    }
+
+    /// Select the candidate on the source occurrence that motivates the edit.
+    /// Its physical span and line metadata still describe the replacement.
+    fn add_deferred_candidate_at(
+        &mut self,
+        range: TextRange,
+        operator: MutationOperator,
+        scope: TextRange,
+        selection_start: TextSize,
+        render: impl FnOnce() -> String,
+    ) {
         if self.check_cancelled() {
             return;
         }
@@ -3791,6 +4003,7 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             self.source,
             self.line_index,
             range,
+            usize::from(selection_start),
             String::new(),
             operator,
             symbol,
@@ -4465,12 +4678,20 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         {
             return;
         }
-        match subscript.slice.as_ref() {
-            Expr::Slice(slice) => {
-                self.collect_slice_neighbors(slice);
-                self.collect_slice_bounds(slice);
-            }
-            expression => self.collect_index_neighbors(expression),
+        let facts = self.facts;
+        let line_index = self.line_index;
+        let selection = self.selection;
+        dynamic_boundaries::subscript(
+            subscript,
+            self.processing_site,
+            |range| selected_source_start(range, line_index, facts, selection),
+            |range, anchor, operator, render| {
+                self.add_deferred_candidate_at(range, operator, anchor, anchor.start(), render);
+                !self.check_cancelled()
+            },
+        );
+        if let Expr::Slice(slice) = subscript.slice.as_ref() {
+            self.collect_slice_bounds(slice);
         }
         if self.candidates.failure.is_some() {
             return;
@@ -4492,79 +4713,6 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 replacement,
                 MutationOperator::StructureMappingGetSubscript,
             );
-        }
-    }
-
-    fn collect_index_neighbors(&mut self, expression: &Expr) {
-        if self.candidates.failure.is_some()
-            || !self
-                .request
-                .operators
-                .contains(MutationOperator::StructureIndexNeighbor)
-            || !self.expression_selected(expression)
-            || !self
-                .processing_site
-                .delimiters
-                .can_enclose(expression.range(), 1)
-        {
-            return;
-        }
-        numeric_literals::emit_index_neighbors(
-            expression,
-            self.source,
-            false,
-            self.cancelled,
-            |range, replacement| {
-                self.add_candidate(range, replacement, MutationOperator::StructureIndexNeighbor);
-                !self.check_cancelled()
-            },
-        );
-    }
-
-    fn collect_slice_neighbors(&mut self, slice: &ExprSlice) {
-        if self.candidates.failure.is_some()
-            || !self
-                .request
-                .operators
-                .contains(MutationOperator::StructureSliceNeighbor)
-        {
-            return;
-        }
-        for (bound, step) in [
-            (slice.lower.as_deref(), false),
-            (slice.upper.as_deref(), false),
-            (slice.step.as_deref(), true),
-        ] {
-            let Some(bound) = bound else {
-                continue;
-            };
-            if !self.expression_selected(bound) {
-                continue;
-            }
-            if !self
-                .processing_site
-                .delimiters
-                .can_enclose(bound.range(), 1)
-            {
-                continue;
-            }
-            numeric_literals::emit_index_neighbors(
-                bound,
-                self.source,
-                step,
-                self.cancelled,
-                |range, replacement| {
-                    self.add_candidate(
-                        range,
-                        replacement,
-                        MutationOperator::StructureSliceNeighbor,
-                    );
-                    !self.check_cancelled()
-                },
-            );
-            if self.check_cancelled() {
-                return;
-            }
         }
     }
 
@@ -5013,6 +5161,14 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        self.collect_assignment_result_statement(statement);
+        if self.check_cancelled() {
+            return;
+        }
+        self.collect_lifecycle_statement(statement);
+        if self.check_cancelled() {
+            return;
+        }
         if matches!(statement, Stmt::Delete(_))
             && self.request.operators.contains(MutationOperator::DelRemove)
             && self.expression_selected(statement)
@@ -5492,12 +5648,19 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             if self.return_scope == ReturnScope::PlainSynchronous
                 && let Stmt::Return(statement_return) = statement
                 && let Some(Expr::Tuple(tuple)) = statement_return.value.as_deref()
-                && let Some(replacement) = return_tuple::replacement(tuple, self.source)
+                && self.expression_selected(tuple)
             {
-                self.add_candidate(
-                    tuple.range(),
-                    replacement,
-                    MutationOperator::ReturnTupleSwap,
+                return_tuple::emit(
+                    tuple,
+                    self.source,
+                    self.facts.tokens.expect("parsed tokens"),
+                    self.processing_site.delimiters,
+                    self.request.max_candidates,
+                    self.cancelled,
+                    |range, operator, render| {
+                        self.add_deferred_candidate(range, operator, range, render);
+                        !self.check_cancelled()
+                    },
                 );
                 if self.candidates.failure.is_some() {
                     return;
@@ -5627,8 +5790,13 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             if self.runtime_role == RuntimeRole::Value
                 && !self.in_pattern
                 && !self.string_exclusions.contains_alias(expression.range())
-                && (!matches!(expression, Expr::Compare(_)) || self.expression_selected(expression))
             {
+                if let Expr::Compare(comparison) = expression {
+                    self.collect_identity_equality_swap(comparison);
+                    if self.check_cancelled() {
+                        return;
+                    }
+                }
                 expression_behavior::expression(
                     expression,
                     self.source,
@@ -5637,6 +5805,10 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     expression_behavior::Options {
                         operators: self.request.operators,
                         max_candidates: self.request.max_candidates,
+                        skip_clause_delete: self
+                            .facts
+                            .direct_if_boolean_tests
+                            .contains(&expression.range()),
                     },
                     self.cancelled,
                     |range, operator, render| {
@@ -5659,6 +5831,17 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     }
                 }
                 if let Expr::Call(call) = expression {
+                    dynamic_boundaries::call(
+                        call,
+                        self.processing_site,
+                        |range, operator, render| {
+                            self.add_deferred_candidate(range, operator, range, render);
+                            !self.check_cancelled()
+                        },
+                    );
+                    if self.check_cancelled() {
+                        return;
+                    }
                     let sorted_builtin = matches!(call.func.as_ref(), Expr::Name(name)
                         if name.id.as_str() == "sorted" && self.facts.name_resolution.resolution(usize::from(name.start()), "sorted") == NameResolution::DefinitelyBuiltin);
                     let calls = self.followup_calls;
@@ -5875,6 +6058,23 @@ fn byte_range(range: TextRange) -> Range<usize> {
 
 fn source_text(source: &str, range: TextRange) -> Option<&str> {
     source.get(byte_range(range))
+}
+
+/// Locate the physical whitespace that sets the indentation of a logical line.
+/// Across explicit continuations the lexer keeps the first nonzero width;
+/// a form feed resets both the tab-expanded and alternate column counts.
+fn effective_indentation(prefix: &str) -> std::ops::Range<usize> {
+    let mut rest = prefix;
+    loop {
+        let start = prefix.len() - rest.len();
+        let Some((indent, after)) = rest.split_once('\\') else {
+            return start..prefix.len();
+        };
+        if !indent.is_empty() && !indent.ends_with('\x0c') {
+            return start..start + indent.len();
+        }
+        rest = after.trim_start_matches(['\r', '\n']);
+    }
 }
 
 fn has_exact_positional_arguments(call: &ExprCall, count: usize) -> bool {
@@ -9310,6 +9510,7 @@ fn type_annotation_candidates(
                     source,
                     line_index,
                     start..end,
+                    start,
                     replacement,
                     operator,
                     symbol.clone(),

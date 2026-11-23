@@ -291,18 +291,27 @@ keywords. An iterable accepted by `sorted` need not support `reversed`.
 
 ### `structure_index_neighbor`
 
-`items[-1]` → `items[0]` or `items[-2]`. Probe neighboring positions. Requires a
-load-context integer index, optionally grouped or signed. Decimal, hexadecimal,
-octal and binary spellings, separators and large integers qualify. Floats,
-repeated signs and computed indices are excluded. Zero without a unary minus
-produces only the positive neighbor.
+`items[-1]` → `items[0]` or `items[-2]`. Probe neighboring positions in a
+load-context subscript. Integer literals retain direct source edits, including
+decimal, hexadecimal, octal and binary spellings, separators and large integers.
+Literal zero without a unary minus produces only the positive neighbor.
+Named and computed indices shift exact integers directly. Other integer-index
+objects use a wrapper that shifts their value when the receiver requests `__index__`;
+values without that protocol pass through. Receiver and index expressions remain in
+their original scope and evaluation order. This requires resolved builtin helpers.
+Annotation, assignment and deletion targets are excluded.
+Line selection uses the index expression's position. Computed edits replace the
+whole subscript, so their reported edit location can precede the selected line.
 
 ### `structure_slice_neighbor`
 
 `items[:-1]` → `items[:0]` or `items[:-2]`. Probe slice boundaries and strides.
-Uses the same numeric restrictions as `structure_index_neighbor`, including
-store/delete and annotation exclusions. A step is never changed to zero:
-`items[::-1]` produces a `-2` step, not a zero step.
+Supports integer literals and computed lower, upper and step expressions, with
+the same context exclusions as `structure_index_neighbor`. Computed positions
+retain Python's deferred `__index__` conversion order; runtime `None` remains an
+omitted bound. A step is never changed
+to zero: `items[::-1]` produces a `-2` step, not a zero step. Custom receivers can
+observe the wrapper object; inspect those candidates against their own contract.
 
 ### `structure_slice_bound_omit`
 
@@ -389,12 +398,13 @@ original test in unreachable syntax to preserve compiler bindings and free reads
 ### `condition_clause_delete`
 
 `if ready and permitted:` → `if permitted:` is one candidate. Probe each clause's
-contribution to a top-level `and`/`or` condition of `if`/`elif` or a conditional
-expression. Removes one operand,
+contribution to an `and`/`or` expression, including `while` conditions and ordinary
+value expressions. Removes one operand,
 preserving the others and their order. Removing a clause can expose previously
-short-circuited effects. Statement conditions use deletion guards for binding and
-suspension constructs. Conditional expressions keep the original condition in a
-dead branch, preserving lexical facts without evaluating the removed clause.
+short-circuited effects. Direct `if`/`elif` conditions use deletion guards for
+binding and suspension constructs and exclude nested Boolean conditions within
+the same short-circuit expression. Other sites keep the original expression in a dead
+branch, preserving lexical facts without evaluating the removed clause.
 
 ### `while_condition_false`
 
@@ -429,12 +439,12 @@ Body effects are intentionally removed along with the original computation.
 ### `return_tuple_swap`
 
 `return key, value` → `return value, key`. Probe positional return contracts.
-Requires two distinct atomic elements: names, supported literals or signed numeric
-literals. Calls, attributes, starred elements and larger tuples are excluded.
-
-Requires a synchronous nongenerator function. Subscripts, nested containers,
-implicitly concatenated strings, bytes and formatted strings are also excluded.
-The swap retains separators and comments but need not preserve element types.
+For larger tuples or effectful operands, exchanges each adjacent pair after
+evaluating both elements in source order. Calls, attributes and nested values
+qualify; pairs containing a starred element are excluded. Other tuple elements
+keep their positions and evaluation order. Requires a synchronous nongenerator
+function. Two distinct literal elements can use a direct source swap; names and
+other evaluated operands retain their original evaluation order.
 
 ### `enum_member_replace`
 
@@ -1178,3 +1188,125 @@ Already-irrefutable and starred subpatterns are excluded.
 `__match_args__`. Exchanges two positional subpatterns, retaining captures and
 keyword patterns. Identical subpattern source text is excluded. Redundant grouping
 moves with its subpattern to preserve the Python delimiter-depth limit.
+
+## Assignment, result and boundary behavior
+
+### `augmented_to_binary`
+
+`items += extra` → `items = items + extra`. Probe the difference between in-place
+and ordinary binary dispatch, including aliases to a mutable value. Attribute and
+subscript targets qualify: the receiver, key, getter and right operand are each
+evaluated once in their original order before the native setter. Complex targets
+use an expression wrapper. An unsupported or excessively nested target is excluded.
+
+### `assignment_target_swap`
+
+`left, right = pair` → `right, left = pair`. Probe unpacking destinations. Swaps
+adjacent targets in tuple/list assignments, including nested, chained and starred
+targets. The right-hand side stays in place; target-side effects move with their
+targets. This operator does not exchange values after assignment.
+
+### `return_value_none`
+
+**Behavior example:** `return compute()` → evaluate `compute()`, then return
+`None`. Probe dependence on a particular return value without removing the return
+expression's effects. Supports synchronous and asynchronous functions and retains
+binding/suspension syntax. Bare returns and explicit `return None` are excluded.
+
+### `identity_equality_swap`
+
+`left is right` → `left == right`, and the reverse; likewise `is not` and `!=`.
+Probe identity versus value equality. Each comparison operator in a chain is an
+independent candidate. Operands and short-circuit evaluation stay in place;
+equality can deliberately invoke user-defined comparison methods.
+
+### `else_suite_remove`
+
+**Behavior example:** a `for`, `while` or `try` statement's `else` suite becomes
+unreachable. Probe behavior on normal completion. The original suite remains in
+unreachable syntax, preserving local variables, closure reads and generator
+classification. `finally` and surrounding control flow remain active.
+
+### `zip_strict_toggle`
+
+`zip(left, right)` → `zip(left, right, strict=True)`. An explicit nonliteral
+`strict=value` is negated after evaluating its value once. Boolean literals stay
+with `boolean_literal`. Probe mismatched iterable lengths
+and deferred iteration errors. Requires a resolved builtin `zip`; an ambiguous
+`**kwargs` source for `strict` is excluded.
+Dynamic-option candidates select the `strict` value's position.
+
+### `range_bound_neighbor`
+
+**Behavior example:** `range(stop)` → a range whose stop is one larger or smaller.
+Explicit start and step arguments also receive neighboring candidates. The
+original call evaluates and converts its arguments once; a wrapper builds the
+mutant from the resulting range's integer fields. Steps never become zero.
+Requires a resolved builtin `range` and supported explicit positional arguments.
+
+### `compare_direction`
+
+`left < right` → `left > right`; likewise `<=` and `>=`. Probe reversed ordering
+without changing equality inclusion. Every ordering operator in a chain can be
+changed independently while its operands retain their evaluation order.
+
+## Regex structure and format options
+
+### `regex_quantifier_neighbor`
+
+`r'a{2,4}'` → a pattern with a neighboring minimum or maximum repeat count.
+Shorthand quantifiers also qualify. Bounds remain ordered and nonnegative;
+lazy/possessive suffixes remain. Lookbehind width and capture-reference constraints
+exclude edits that would invalidate a supported pattern. Uses the same recognized
+regex calls, literal decoding and flag analysis as the existing regex operators.
+
+### `regex_greediness_toggle`
+
+`r'a+'` → `r'a+?'`, and the reverse. Probe which match is preferred when multiple
+lengths qualify. Exact-count and possessive quantifiers are excluded. Escapes,
+character classes and literal question marks are not quantifier suffixes.
+
+### `regex_alternative_delete`
+
+`r'(?:one|two)'` → `r'(?:two)'` or `r'(?:one)'`. Removes one branch and its
+adjacent separator at a time, including nested and empty alternatives. Edits
+that remove referenced captures, rebind numeric references or invalidate a
+lookbehind are excluded. Captures are not renumbered in source to compensate.
+
+### `fstring_format_option_swap`
+
+`f'{number:>10}'` → `f'{number:<10}'` is one candidate. Probe alignment, sign,
+grouping and presentation type in Python's format mini-language. Dynamic width
+and precision fields keep their evaluation order. Known builtin value types and
+option combinations filter invalid alternatives; unknown values and custom
+`__format__` methods can still reject an otherwise valid standard specification.
+
+## Context exits and individual yields
+
+### `context_exit_omit`
+
+**Behavior example:** enter a selected `with` or `async with` manager and run its
+body, but omit that manager's exit callback. Probe cleanup and exit-time exception
+handling. A local proxy binds the original special methods through the class
+hierarchy and retains entry failure, target assignment and other managers'
+unwinding. Requires unambiguous builtin helpers. The analyzer does not import or
+execute the project during discovery. Stack or object introspection can observe
+the generated wrapper.
+
+### `context_exit_result_negate`
+
+**Behavior example:** invert the suppression decision returned by a class's
+`__exit__` or asynchronous `__aexit__`. The returned value is wrapped so that its
+truthiness is inverted when an exceptional `with` exit requests it, after the
+method's cleanup has run. Normal exits do not test the decision. Bare returns
+become `return True`; a fallthrough path gains `return True`. The return expression
+still runs once. Generator methods, nested helper functions and unrelated
+same-named module functions are excluded. Direct callers can observe the wrapper.
+
+### `yield_statement_remove`
+
+**Behavior example:** skip a standalone `yield value` suspension while still
+evaluating `value`. Probe individual yielded elements. An unreachable yield keeps
+the function a generator, including when this is its last yield. Async generators
+qualify. Existing cleanup remains active, while `send` and `throw` reach the next
+remaining suspension. `yield from` and yields whose result is used are excluded.

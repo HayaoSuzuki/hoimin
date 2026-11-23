@@ -417,9 +417,21 @@ impl CallableImports {
         if self.class_lookups.contains(&(start, end)) {
             return None;
         }
+        self.destination_spelling_at(member, anchor.start(), |local| {
+            !(local.starts_with("__") && self.class_ranges.contains(start, end))
+        })
+    }
+
+    /// Resolve an eager alias for a generated load after its caller proves
+    /// that the local spelling is visible at the insertion point.
+    pub(super) fn destination_spelling_at(
+        &self,
+        member: &str,
+        offset: ruff_text_size::TextSize,
+        visible: impl Fn(&str) -> bool,
+    ) -> Option<String> {
         let available = |spelling: &&ImportSpelling| {
-            spelling.available_after <= anchor.start()
-                && !(spelling.name.starts_with("__") && self.class_ranges.contains(start, end))
+            spelling.available_after <= offset && visible(&spelling.name)
         };
         if let Some(alias) = self.preferred_members.get(member).filter(available) {
             Some(alias.name.clone())

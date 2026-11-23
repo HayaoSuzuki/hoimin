@@ -330,7 +330,7 @@ async fn pytest_command_produces_the_expected_mutant_statuses() {
     let pytest = run_fixture(&["-m", "pytest", "-q", "tests"]).await;
 
     assert_eq!(pytest.exit_code, 0);
-    assert_eq!(pytest.statuses, ["killed", "killed", "killed"]);
+    assert_eq!(pytest.statuses, ["killed"; 4]);
     assert_eq!(
         pytest.document["run"]["versions"],
         serde_json::json!({
@@ -783,6 +783,9 @@ async fn focused_collection_and_structure_candidates_remain_eligible_outside_ari
             ("integer_literal_neighbor", 2),
             ("integer_literal_neighbor", 5),
             ("return_tuple_swap", 2),
+            ("return_value_none", 2),
+            ("return_value_none", 6),
+            ("return_value_none", 9),
             ("statement_delete", 5),
         ])
     );
@@ -1604,22 +1607,24 @@ async fn shell_context_construction_performs_no_project_io() {
 async fn sqlite_session_saves_and_resumes_a_determinate_result_without_reexecution() {
     let directory = tempfile::tempdir().unwrap();
     let database = directory.path().join("session.sqlite3");
-    let first = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, false).await;
+    let command = ["-m", "pytest", "-q", "tests"];
+    let operators = ["--operators", "binary_add_sub"];
+    let first = run_fixture_options_extra(&command, Some(&database), false, &operators).await;
     assert_eq!(
         first.exit_code, 0,
         "stderr={} stdout={}",
         first.stderr, first.stdout
     );
-    assert_eq!(first.statuses, ["killed", "killed", "killed"]);
+    assert_eq!(first.statuses, ["killed"]);
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
         .execute("UPDATE runs SET complete=0", [])
         .unwrap();
     drop(connection);
 
-    let resumed = run_fixture_with_session(&["-m", "pytest", "-q", "tests"], &database, true).await;
+    let resumed = run_fixture_options_extra(&command, Some(&database), true, &operators).await;
     assert_eq!(resumed.exit_code, 0);
-    assert_eq!(resumed.statuses, ["killed", "killed", "killed"]);
+    assert_eq!(resumed.statuses, first.statuses);
     let resumed_run_id = resumed.document["run"]["run_id"].as_str().unwrap();
     assert_eq!(
         resumed.document["baseline"]["run_id"].as_str().unwrap(),
@@ -1644,11 +1649,18 @@ async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() 
         &command,
         Some(&database),
         false,
-        &["--jobs", "1", "--max-output", "1KiB"],
+        &[
+            "--operators",
+            "binary_add_sub",
+            "--jobs",
+            "1",
+            "--max-output",
+            "1KiB",
+        ],
     )
     .await;
     assert_eq!(first.exit_code, 0, "{}", first.stderr);
-    assert_eq!(first.statuses, ["killed", "killed", "killed"]);
+    assert_eq!(first.statuses, ["killed"]);
     let first_run_id = first.document["run"]["run_id"].as_str().unwrap().to_owned();
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
@@ -1660,12 +1672,19 @@ async fn sqlite_session_reuses_results_after_jobs_and_output_retention_change() 
         &command,
         Some(&database),
         true,
-        &["--jobs", "2", "--max-output", "2KiB"],
+        &[
+            "--operators",
+            "binary_add_sub",
+            "--jobs",
+            "2",
+            "--max-output",
+            "2KiB",
+        ],
     )
     .await;
 
     assert_eq!(resumed.exit_code, 0, "{}", resumed.stderr);
-    assert_eq!(resumed.statuses, ["killed", "killed", "killed"]);
+    assert_eq!(resumed.statuses, first.statuses);
     assert_eq!(
         resumed.document["run"]["run_id"].as_str().unwrap(),
         first_run_id
@@ -2087,7 +2106,7 @@ async fn focused_profile_is_reported_and_omits_arid_candidates() {
         .iter()
         .map(|mutant| mutant["candidate"]["line"].as_u64().unwrap())
         .collect();
-    assert_eq!(lines, vec![4, 4, 4, 4, 4, 9, 9, 9, 9, 9]);
+    assert_eq!(lines, vec![4, 4, 4, 4, 4, 4, 9, 9, 9, 9, 9]);
 
     let jsonl = run_focused_profile(project.path(), "focused", None, false, 100).await;
     let run_started = jsonl

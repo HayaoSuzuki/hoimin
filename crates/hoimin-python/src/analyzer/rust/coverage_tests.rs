@@ -618,12 +618,12 @@ fn prefix_eviction_preserves_other_replacements_with_the_same_identity_key() {
 
     let actual = prefix
         .identities
-        .get(&(10, MutationOperator::IntegerLiteralNeighbor))
+        .get(&(10, 1, MutationOperator::IntegerLiteralNeighbor))
         .unwrap()
         .contains_key("2");
     let actual_2 = !prefix
         .identities
-        .get(&(10, MutationOperator::IntegerLiteralNeighbor))
+        .get(&(10, 1, MutationOperator::IntegerLiteralNeighbor))
         .unwrap()
         .contains_key("3");
     let actual_3 = prefix.entries.len();
@@ -726,6 +726,7 @@ fn candidate_admission_validates_byte_ends_source_bounds_and_selected_lines(
         max_candidates: 100,
     };
     let selection = CandidateSelection::new(&request, &|| false).unwrap();
+    let selection_start = range.start;
 
     let actual = make_candidate(
         &selection,
@@ -733,6 +734,7 @@ fn candidate_admission_validates_byte_ends_source_bounds_and_selected_lines(
         source,
         &LineIndex::new(source),
         range,
+        selection_start,
         "''".to_owned(),
         MutationOperator::StringLiteralEmpty,
         None,

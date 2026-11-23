@@ -112,17 +112,69 @@ impl LineSelectionIndex {
 
     #[must_use]
     pub fn contains(&self, path: &Utf8Path, line: u32) -> bool {
+        self.covers(
+            path,
+            LineRange {
+                start: line,
+                end: line,
+            },
+        )
+    }
+
+    /// Checks whether every line in the inclusive range is explicitly selected.
+    #[must_use]
+    pub fn covers(&self, path: &Utf8Path, requested: LineRange) -> bool {
+        ranges_cover(self.ranges_at(path), requested)
+    }
+
+    /// Return logical path equality keys for which every resolved target slice
+    /// requires lines completely covered by this explicit selection.
+    #[must_use]
+    pub fn covered_target_paths(&self, targets: &[TargetSlice]) -> HashSet<String> {
+        let mut result = HashSet::new();
         if self.ranges.is_empty() {
-            return false;
+            return result;
+        }
+        let mut excluded = HashSet::new();
+        for target in targets {
+            let path = path_equality_key(&target.path);
+            let Some(selected) = self.ranges.get(path.as_ref()) else {
+                continue;
+            };
+            if excluded.contains(path.as_ref()) {
+                continue;
+            }
+            if target.lines.is_empty()
+                || !target
+                    .lines
+                    .iter()
+                    .all(|&line| ranges_cover(selected, line))
+            {
+                result.remove(path.as_ref());
+                excluded.insert(path.into_owned());
+            } else {
+                result.insert(path.into_owned());
+            }
+        }
+        result
+    }
+
+    fn ranges_at(&self, path: &Utf8Path) -> &[LineRange] {
+        if self.ranges.is_empty() {
+            return &[];
         }
         let path = path_equality_key(path);
-        let Some(ranges) = self.ranges.get(path.as_ref()) else {
-            return false;
-        };
-        let end = ranges.partition_point(|range| range.start <= line);
-        end.checked_sub(1)
-            .is_some_and(|index| line <= ranges[index].end)
+        self.ranges.get(path.as_ref()).map_or(&[], Vec::as_slice)
     }
+}
+
+fn ranges_cover(ranges: &[LineRange], requested: LineRange) -> bool {
+    if requested.start > requested.end {
+        return false;
+    }
+    let end = ranges.partition_point(|range| range.start <= requested.start);
+    end.checked_sub(1)
+        .is_some_and(|index| requested.end <= ranges[index].end)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

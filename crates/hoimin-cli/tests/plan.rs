@@ -20,7 +20,7 @@ use hoimin_cli::{
     analyzer::discover_targets,
     cli::{ParsedCommand, TopSelectionPolicy, VerifySelection, parse_from},
     plan::{
-        PlanManifest, RankedPlanCandidate, create, prepare_verify,
+        PlanManifest, RankedPlanCandidate, RankingReasonCode, create, prepare_verify,
         prepare_verify_preview_selection, prepare_verify_selection,
     },
     shell,
@@ -34,6 +34,114 @@ use hoimin_core::{
 };
 
 const TEST_MIN_FREE_SPACE: &str = "1B";
+
+#[rstest::rstest]
+#[case::newline("\n", "\n")]
+#[case::end_of_file("", ")")]
+#[tokio::test]
+async fn selected_exit_fallthrough_header_keeps_priority_in_a_saved_plan(
+    #[case] ending: &str,
+    #[case] original: &str,
+) {
+    let source = format!(
+        "class C:\n    def __exit__(self, *exc):\n        if exc:\n            work(){ending}"
+    );
+    let project = Project::new_with_source(&source);
+    let selectors = [
+        "--line",
+        "src/calc.py:3",
+        "--operators",
+        "context_exit_result_negate",
+    ];
+    let (path, manifest, _) = write_plan_manifest(&project, &selectors).await;
+    let [candidate] = manifest.candidates.as_slice() else {
+        panic!("expected a fallthrough edit")
+    };
+
+    let checked = prepare_verify(&path, std::slice::from_ref(&candidate.id))
+        .await
+        .unwrap();
+
+    assert_eq!((candidate.line, candidate.original.as_str()), (4, original));
+    assert_eq!(
+        usize::try_from(candidate.span.start).unwrap(),
+        source.len() - original.len()
+    );
+    assert!(
+        candidate
+            .ranking_reasons
+            .iter()
+            .any(|r| r.code == RankingReasonCode::ExplicitLine && r.score == 300)
+    );
+    assert!(
+        checked
+            .selection()
+            .candidate_ids()
+            .unwrap()
+            .contains(&candidate.id)
+    );
+}
+
+#[tokio::test]
+async fn explicitly_selected_multiline_index_ranks_ahead_of_symbol_only_candidates() {
+    let project = Project::new_with_sources(&[
+        ("calc.py", "out = values[\n    compute_index()\n]\n"),
+        (
+            "sibling.py",
+            "def pick(values, key):\n    return values[key]\n",
+        ),
+    ]);
+    let selectors = [
+        "--line",
+        "src/calc.py:2",
+        "--symbol",
+        "sibling:pick",
+        "--operators",
+        "structure_index_neighbor",
+    ];
+
+    let (path, plan, marker) = write_plan_manifest(&project, &selectors).await;
+    let verified = prepare_verify_selection(
+        &path,
+        &VerifySelection::Top {
+            count: std::num::NonZeroUsize::new(2).unwrap(),
+            policy: TopSelectionPolicy::Strict,
+            offset: 0,
+        },
+    )
+    .await
+    .unwrap();
+
+    let projected: Vec<_> = plan
+        .candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.path.as_str(),
+                candidate.line,
+                candidate.score,
+                candidate.ranking_reasons.iter().any(|reason| {
+                    reason.code == RankingReasonCode::ExplicitLine && reason.score == 300
+                }),
+            )
+        })
+        .collect();
+    assert_eq!(
+        projected,
+        [
+            ("src/calc.py", 1, 380, true),
+            ("src/calc.py", 1, 380, true),
+            ("src/sibling.py", 2, 330, false),
+            ("src/sibling.py", 2, 330, false),
+        ]
+    );
+    let expected_ids = [plan.candidates[0].id.clone(), plan.candidates[1].id.clone()];
+    assert_eq!(
+        verified.selection().ordered_ids(),
+        Some(expected_ids.as_slice())
+    );
+    assert!(!marker.exists());
+}
 
 #[tokio::test]
 async fn plan_accepts_elif_not_without_selected_candidates() {
@@ -1754,7 +1862,16 @@ async fn truncated_plan_accepts_a_retained_candidate_from_a_later_file() {
             "def second(left, right):\n    return left == right and left != right\n",
         ),
     ]);
-    let (path, manifest, marker) = write_plan_manifest(&project, &["--max-candidates", "2"]).await;
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &[
+            "--operators",
+            "binary_add_sub,compare_eq_ne",
+            "--max-candidates",
+            "2",
+        ],
+    )
+    .await;
     assert!(manifest.truncated);
     let candidate = manifest
         .candidates
@@ -2056,7 +2173,8 @@ async fn verify_top_diverse_does_not_cross_score_tiers() {
         ),
         ("b.py", "def b1(left, right):\n    return left + right\n"),
     ]);
-    let (path, manifest, marker) = write_plan_manifest(&project, &[]).await;
+    let (path, manifest, marker) =
+        write_plan_manifest(&project, &["--operators", "binary_add_sub,compare_eq_ne"]).await;
     let a2 = manifest
         .candidates
         .iter()
@@ -2126,7 +2244,12 @@ async fn verify_top_real_cli_reports_policy_order_and_preserves_manifest(
     ]);
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("test-command-ran");
-    let (path, manifest) = write_plan_manifest_with_marker(&project, &[], &marker).await;
+    let (path, manifest) = write_plan_manifest_with_marker(
+        &project,
+        &["--operators", "binary_add_sub,compare_eq_ne"],
+        &marker,
+    )
+    .await;
     assert_eq!(manifest.candidates.len(), 6);
     let ranked_ids = manifest
         .candidates
@@ -4577,8 +4700,12 @@ async fn verify_preview_explicit_ids_follow_discovery_not_rank_argument_or_saved
     let project = Project::new();
     let coordinator = tempfile::tempdir().unwrap();
     let marker = coordinator.path().join("marker");
-    let (path, mut manifest) =
-        write_plan_manifest_with_marker(&project, &["--jobs", "1"], &marker).await;
+    let (path, mut manifest) = write_plan_manifest_with_marker(
+        &project,
+        &["--operators", "binary_add_sub,compare_eq_ne", "--jobs", "1"],
+        &marker,
+    )
+    .await;
     assert_eq!(manifest.candidates.len(), 2);
     assert_eq!(manifest.candidates[0].line, 5);
     assert_eq!(manifest.candidates[1].line, 2);
@@ -4739,8 +4866,16 @@ async fn invalid_preview_fixture(invalid: &str) -> (Project, PathBuf, PathBuf, V
     } else {
         Project::new()
     };
-    let (path, manifest, marker) =
-        write_plan_manifest(&project, &["--fingerprint-file", "config.toml"]).await;
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &[
+            "--operators",
+            "binary_add_sub,compare_eq_ne",
+            "--fingerprint-file",
+            "config.toml",
+        ],
+    )
+    .await;
     let mut value = serde_json::to_value(&manifest).unwrap();
     match invalid {
         "schema" => value["schema_version"] = 0.into(),

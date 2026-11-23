@@ -1,14 +1,15 @@
 //! Edit f-string conversion flags and format specifications at their AST field ranges.
 use super::{source_delimiters::DelimiterDepth, source_text};
+#[path = "formatted_conversions/specification.rs"]
+mod specification;
+
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{TokenKind, Tokens};
 use ruff_python_ast::{
-    ConversionFlag, ExprFString, FStringPartRef, InterpolatedElement,
-    InterpolatedStringElement::{Interpolation, Literal},
-    InterpolatedStringFormatSpec, InterpolatedStringLiteralElement, StringFlags,
+    AnyStringFlags, ConversionFlag, ExprFString, FStringPartRef, InterpolatedElement,
+    InterpolatedStringElement::Interpolation, InterpolatedStringFormatSpec, StringFlags,
 };
-use ruff_text_size::{Ranged, TextRange, TextSize};
-use std::ops::Range;
+use ruff_text_size::{Ranged, TextRange};
 
 /// Edit explicit conversions and recognized format fields without evaluating code.
 /// Removed dynamic specifications retain compiler-visible reads in dead syntax.
@@ -25,7 +26,8 @@ pub(super) fn emit_edits(
     let swap = MutationOperator::FStringConversionSwap;
     let remove = MutationOperator::FStringFormatSpecRemove;
     let change_value = MutationOperator::FStringFormatValueNeighbor;
-    if ![swap, remove, change_value]
+    let change_option = MutationOperator::FStringFormatOptionSwap;
+    if ![swap, remove, change_value, change_option]
         .into_iter()
         .any(|op| operators.contains(op))
     {
@@ -78,12 +80,28 @@ pub(super) fn emit_edits(
                 {
                     return;
                 }
-                if operators.contains(change_value)
-                    && !emit_spec_values(spec, source, cancelled, |range, replacement| {
-                        emit(range, replacement, change_value)
-                    })
+                if (operators.contains(change_value) || operators.contains(change_option))
+                    && let Some(format) = specification::Format::parse(
+                        spec,
+                        source,
+                        AnyStringFlags::from(part.flags).is_raw_string(),
+                        cancelled,
+                    )
                 {
-                    return;
+                    if operators.contains(change_value)
+                        && !format.emit_values(cancelled, |range, replacement| {
+                            emit(range, replacement, change_value)
+                        })
+                    {
+                        return;
+                    }
+                    if operators.contains(change_option)
+                        && !format.emit_options(field, cancelled, |range, replacement| {
+                            emit(range, replacement, change_option)
+                        })
+                    {
+                        return;
+                    }
                 }
                 stack.push(spec.elements.iter());
             }
@@ -199,155 +217,6 @@ fn retain_field_reads(
     Some(replacement)
 }
 
-fn emit_spec_values(
-    spec: &InterpolatedStringFormatSpec,
-    source: &str,
-    cancelled: &impl Fn() -> bool,
-    mut emit: impl FnMut(TextRange, String) -> bool,
-) -> bool {
-    let (head, hole, tail) = match &*spec.elements {
-        [Literal(head)] => (Some(head), false, None),
-        [Interpolation(_), Literal(tail)] => (None, true, Some(tail)),
-        [Literal(head), Interpolation(_)] => (Some(head), true, None),
-        [Literal(head), Interpolation(_), Literal(tail)] => (Some(head), true, Some(tail)),
-        _ => return true,
-    };
-    let Some(head_text) = unescaped_text(head, source) else {
-        return true;
-    };
-    let Some(tail_text) = unescaped_text(tail, source) else {
-        return true;
-    };
-    // A single nested numeric field can supply the other dimension. Treat it as
-    // one digit for parsing, and never edit a number that touches that placeholder.
-    let skeleton;
-    let text = if hole {
-        skeleton = format!("{head_text}1{tail_text}");
-        &skeleton
-    } else {
-        head_text
-    };
-    for span in format_value_spans(text, cancelled)
-        .into_iter()
-        .flatten()
-        .flatten()
-    {
-        let range = if let Some(head) = head.filter(|_| span.end <= head_text.len()) {
-            literal_subrange(head.start(), span.clone())
-        } else if let Some(tail) = tail.filter(|_| span.start > head_text.len()) {
-            let offset = head_text.len() + 1;
-            literal_subrange(tail.start(), span.start - offset..span.end - offset)
-        } else {
-            continue;
-        };
-        let digits = &text[span];
-        // Width/precision are Python size values. Avoid parsing arbitrarily
-        // large custom specs or emitting a new integer overflow.
-        if digits.len() > 19 {
-            continue;
-        }
-        let Ok(value) = digits.parse::<isize>() else {
-            continue;
-        };
-        for neighbor in [
-            value.checked_sub(1).filter(|value| *value >= 0),
-            value.checked_add(1),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if cancelled() || !emit(range, neighbor.to_string()) {
-                return false;
-            }
-        }
-    }
-    !cancelled()
-}
-
-fn unescaped_text<'s>(
-    literal: Option<&InterpolatedStringLiteralElement>,
-    source: &'s str,
-) -> Option<&'s str> {
-    let Some(literal) = literal else {
-        return Some("");
-    };
-    let text = source_text(source, literal.range())?;
-    (text == literal.value.as_ref()).then_some(text)
-}
-
-fn literal_subrange(start: TextSize, span: Range<usize>) -> TextRange {
-    // Offsets are within the corresponding AST literal's source range.
-    TextRange::new(
-        start + TextSize::try_from(span.start).expect("literal span"),
-        start + TextSize::try_from(span.end).expect("literal span"),
-    )
-}
-
-fn format_value_spans(
-    text: &str,
-    cancelled: &impl Fn() -> bool,
-) -> Option<[Option<Range<usize>>; 2]> {
-    let mut chars = text.chars();
-    let _ = chars.next();
-    let align = ['<', '>', '=', '^'];
-    let mut rest = if chars.next().is_some_and(|ch| align.contains(&ch)) {
-        chars.as_str()
-    } else {
-        text.strip_prefix(align).unwrap_or(text)
-    };
-    for flag in [&['+', '-', ' '][..], &['z'], &['#'], &['0']] {
-        rest = rest.strip_prefix(flag).unwrap_or(rest);
-    }
-    let width = take_digits(text, &mut rest, cancelled)?;
-    let width = (!width.is_empty()).then_some(width);
-    rest = rest.strip_prefix([',', '_']).unwrap_or(rest);
-    let precision = if let Some(after_dot) = rest.strip_prefix('.') {
-        rest = after_dot;
-        let precision = take_digits(text, &mut rest, cancelled)?;
-        if precision.is_empty() {
-            return None;
-        }
-        rest = rest.strip_prefix([',', '_']).unwrap_or(rest);
-        Some(precision)
-    } else {
-        None
-    };
-    matches!(
-        rest,
-        "" | "b"
-            | "c"
-            | "d"
-            | "e"
-            | "E"
-            | "f"
-            | "F"
-            | "g"
-            | "G"
-            | "n"
-            | "o"
-            | "s"
-            | "x"
-            | "X"
-            | "%"
-    )
-    .then_some([width, precision])
-}
-
-fn take_digits(text: &str, rest: &mut &str, cancelled: &impl Fn() -> bool) -> Option<Range<usize>> {
-    let start = text.len() - rest.len();
-    let mut length = 0;
-    for byte in rest.bytes() {
-        if cancelled() {
-            return None;
-        }
-        if !byte.is_ascii_digit() {
-            break;
-        }
-        length += 1;
-    }
-    *rest = &rest[length..];
-    Some(start..start + length)
-}
 #[cfg(test)]
 mod coverage_tests {
     use super::*;
@@ -523,6 +392,38 @@ mod format_tests {
     #[case::dynamic_precision("f'{x:>8.{precision}f}'", MutationOperator::FStringFormatValueNeighbor,
         &["f'{x:>7.{precision}f}'", "f'{x:>9.{precision}f}'"])]
     #[case::ambiguous_width("f'{x:8{width}f}'", MutationOperator::FStringFormatValueNeighbor, &[])]
+    #[case::escaped_width_preserves_selection(r"f'{x:\x3e4}'", MutationOperator::FStringFormatValueNeighbor, &[])]
+    #[case::multiple_fields_preserve_value_selection("f'{x:{fill()}>{width()}.2f}'", MutationOperator::FStringFormatValueNeighbor, &[])]
+    #[case::alignment("f'{x!s:é>4}'", MutationOperator::FStringFormatOptionSwap, &["f'{x!s:é<4}'", "f'{x!s:é^4}'"])]
+    #[case::sign("f'{x:+{width}}'", MutationOperator::FStringFormatOptionSwap, &["f'{x:-{width}}'", "f'{x: {width}}'"])]
+    #[case::grouping("f'{x:12,.2f}'", MutationOperator::FStringFormatOptionSwap, &[
+        "f'{x:12_.2f}'", "f'{x:12,.2e}'", "f'{x:12,.2E}'", "f'{x:12,.2F}'", "f'{x:12,.2g}'", "f'{x:12,.2G}'", "f'{x:12,.2%}'",
+    ])]
+    #[case::multiple_dynamic_parts("f'{x:{width()}.{precision()}f}'", MutationOperator::FStringFormatOptionSwap, &[
+        "f'{x:{width()}.{precision()}e}'", "f'{x:{width()}.{precision()}E}'", "f'{x:{width()}.{precision()}F}'", "f'{x:{width()}.{precision()}g}'", "f'{x:{width()}.{precision()}G}'", "f'{x:{width()}.{precision()}%}'",
+    ])]
+    #[case::dynamic_fill("f'{x:{fill()}>{width()}}'", MutationOperator::FStringFormatOptionSwap, &[
+        "f'{x:{fill()}<{width()}}'", "f'{x:{fill()}^{width()}}'",
+    ])]
+    #[case::nested_option("f'{x:{width():>2}}'", MutationOperator::FStringFormatOptionSwap, &[
+        "f'{x:{width():<2}}'", "f'{x:{width():^2}}'",
+    ])]
+    #[case::escaped_alignment(r"f'{x!s:\x3e4}'", MutationOperator::FStringFormatOptionSwap, &["f'{x!s:<4}'", "f'{x!s:^4}'"])]
+    #[case::raw_format(r"rf'{x:\>4}'", MutationOperator::FStringFormatOptionSwap, &[r"rf'{x:\<4}'", r"rf'{x:\^4}'"])]
+    #[case::locale_to_default("f'{x:8n}'", MutationOperator::FStringFormatOptionSwap, &["f'{x:8}'"])]
+    #[case::default_fractional_precision("f'{x:.,f}'", MutationOperator::FStringFormatOptionSwap, &[
+        "f'{x:._f}'", "f'{x:.,e}'", "f'{x:.,E}'", "f'{x:.,F}'", "f'{x:.,g}'", "f'{x:.,G}'", "f'{x:.,%}'",
+    ])]
+    #[case::only_string_type("f'{x:4s}'", MutationOperator::FStringFormatOptionSwap, &[])]
+    #[case::incompatible_options("f'{x:+c}'", MutationOperator::FStringFormatOptionSwap, &[])]
+    #[case::complex_presentation("f'{1j:f}'", MutationOperator::FStringFormatOptionSwap, &[
+        "f'{1j:e}'", "f'{1j:E}'", "f'{1j:F}'", "f'{1j:g}'", "f'{1j:G}'", "f'{1j:n}'",
+    ])]
+    #[case::complex_explicit_zero_fill("f'{1j:0>12f}'", MutationOperator::FStringFormatOptionSwap, &[])]
+    #[case::signed_complex_presentation("f'{-1j:g}'", MutationOperator::FStringFormatOptionSwap, &[
+        "f'{-1j:e}'", "f'{-1j:E}'", "f'{-1j:f}'", "f'{-1j:F}'", "f'{-1j:G}'", "f'{-1j:n}'",
+    ])]
+    #[case::multiple_signs_on_complex("f'{+-1j:0>12f}'", MutationOperator::FStringFormatOptionSwap, &[])]
     fn emits_format_edits_in_their_own_fields(
         #[case] source: &str,
         #[case] operator: MutationOperator,
@@ -584,5 +485,42 @@ mod format_tests {
         );
 
         assert_eq!(actual, count);
+    }
+
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+        #[test]
+        fn alignment_edit_keeps_dynamic_fields_and_unicode_fill(
+            fill in proptest::sample::select(vec!['é', 'Ω', '🙂', '3', '>', '_']),
+            width in 1..32u8,
+        ) {
+            // Arrange
+            let source = format!("f'{{value()!s:{fill}>{{width({width})}}}}'");
+            let parsed = ruff_python_parser::parse_expression(&source).unwrap();
+            let operators = serde_json::from_value(serde_json::json!(["fstring_format_option_swap"])).unwrap();
+            let expected = ['<', '^'].map(|alignment| {
+                format!("f'{{value()!s:{fill}{alignment}{{width({width})}}}}'")
+            });
+            let mut actual = Vec::new();
+
+            // Act
+            emit_edits(
+                parsed.syntax().body.as_f_string_expr().unwrap(),
+                parsed.tokens(),
+                &source,
+                &DelimiterDepth::default(),
+                &operators,
+                &|| false,
+                |range, replacement, _| {
+                    let mut mutant = source.clone();
+                    mutant.replace_range(usize::from(range.start())..usize::from(range.end()), &replacement);
+                    actual.push(mutant);
+                    true
+                },
+            );
+
+            // Assert
+            proptest::prop_assert_eq!(actual, expected);
+        }
     }
 }

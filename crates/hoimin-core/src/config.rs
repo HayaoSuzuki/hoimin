@@ -227,6 +227,21 @@ mutation_operators! {
     MatchCaseSwap => "match_case_swap",
     MatchPatternWildcard => "match_pattern_wildcard",
     MatchClassPositionSwap => "match_class_position_swap",
+    AugmentedToBinary => "augmented_to_binary",
+    AssignmentTargetSwap => "assignment_target_swap",
+    ReturnValueNone => "return_value_none",
+    IdentityEqualitySwap => "identity_equality_swap",
+    ElseSuiteRemove => "else_suite_remove",
+    ZipStrictToggle => "zip_strict_toggle",
+    RangeBoundNeighbor => "range_bound_neighbor",
+    CompareDirection => "compare_direction",
+    RegexQuantifierNeighbor => "regex_quantifier_neighbor",
+    RegexGreedinessToggle => "regex_greediness_toggle",
+    RegexAlternativeDelete => "regex_alternative_delete",
+    FStringFormatOptionSwap => "fstring_format_option_swap",
+    ContextExitOmit => "context_exit_omit",
+    ContextExitResultNegate => "context_exit_result_negate",
+    YieldStatementRemove => "yield_statement_remove",
 }
 
 // Family membership is an explicit selection policy, separate from the full
@@ -560,6 +575,21 @@ const DEFAULT_RUNTIME_OPERATORS: &[MutationOperator] = &[
     MutationOperator::MatchCaseSwap,
     MutationOperator::MatchPatternWildcard,
     MutationOperator::MatchClassPositionSwap,
+    MutationOperator::AugmentedToBinary,
+    MutationOperator::AssignmentTargetSwap,
+    MutationOperator::ReturnValueNone,
+    MutationOperator::IdentityEqualitySwap,
+    MutationOperator::ElseSuiteRemove,
+    MutationOperator::ZipStrictToggle,
+    MutationOperator::RangeBoundNeighbor,
+    MutationOperator::CompareDirection,
+    MutationOperator::RegexQuantifierNeighbor,
+    MutationOperator::RegexGreedinessToggle,
+    MutationOperator::RegexAlternativeDelete,
+    MutationOperator::FStringFormatOptionSwap,
+    MutationOperator::ContextExitOmit,
+    MutationOperator::ContextExitResultNegate,
+    MutationOperator::YieldStatementRemove,
 ];
 
 impl Default for MutationOperatorSelection {

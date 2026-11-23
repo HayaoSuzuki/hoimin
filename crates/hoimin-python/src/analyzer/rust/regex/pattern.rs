@@ -1,7 +1,9 @@
 //! Validate the whole Python pattern before publishing any atom. Frames model
 //! branch widths and scoped flags without recursive descent on untrusted text.
 use super::atoms::{self, Escape};
-use std::{collections::HashMap, ops::Range};
+use super::structure::ReferenceIndex;
+use super::width::{Constraints, Interval, Model, Width};
+use std::{cell::RefCell, collections::HashMap, ops::Range};
 
 pub(super) const IGNORE: u16 = 2;
 pub(super) const LOCALE: u16 = 4;
@@ -34,6 +36,16 @@ pub(super) enum Variant {
     Text(&'static str),
     Unicode(&'static str),
     Scope(char),
+    Count(usize),
+    MakeLazy,
+    MakeGreedy,
+    DeleteAlternative,
+}
+#[derive(Clone, Copy, Default)]
+pub(super) struct Behavior {
+    pub counts: bool,
+    pub preferences: bool,
+    pub alternatives: bool,
 }
 pub(super) struct Edit {
     pub span: Range<usize>,
@@ -48,40 +60,20 @@ struct Anchor {
 pub(super) struct Syntax {
     pub sets: Vec<Edit>,
     pub anchors: Vec<Edit>,
+    pub counts: Vec<Edit>,
+    pub preferences: Vec<Edit>,
+    pub alternatives: Vec<Edit>,
     pub sensitive: bool,
     pub global_modes: Vec<usize>,
     pub flags: u16,
+    count_choices: Vec<CountChoice>,
+    widths: RefCell<Constraints>,
 }
 
-#[derive(Clone, Copy, Default)]
-struct Width {
-    min: u64,
-    max: u64,
-}
-impl Width {
-    const ONE: Self = Self { min: 1, max: 1 };
-    fn add(self, w: Self) -> Self {
-        Self {
-            min: self.min.saturating_add(w.min),
-            max: self.max.saturating_add(w.max),
-        }
-    }
-    fn branch(self, w: Self) -> Self {
-        Self {
-            min: self.min.min(w.min),
-            max: self.max.max(w.max),
-        }
-    }
-    fn repeat(self, lo: u32, hi: u32) -> Self {
-        Self {
-            min: self.min.saturating_mul(lo.into()),
-            max: if hi == u32::MAX && self.max != 0 {
-                u64::MAX
-            } else {
-                self.max.saturating_mul(hi.into())
-            },
-        }
-    }
+struct CountChoice {
+    count: Count,
+    before: Width,
+    after: Interval,
 }
 
 #[derive(Clone, Copy)]
@@ -103,9 +95,17 @@ struct Frame {
     repeatable: bool,
     alternatives: Option<Width>,
     count: usize,
+    body_start: usize,
+    bars: Vec<usize>,
 }
 impl Frame {
-    fn new(group: Group, flags: u16, inherits: bool, behind: Option<usize>) -> Self {
+    fn new(
+        group: Group,
+        flags: u16,
+        inherits: bool,
+        behind: Option<usize>,
+        body_start: usize,
+    ) -> Self {
         Self {
             group,
             flags,
@@ -117,28 +117,50 @@ impl Frame {
             repeatable: false,
             alternatives: None,
             count: 0,
+            body_start,
+            bars: Vec::new(),
         }
     }
-    fn push(&mut self, w: Width, repeatable: bool) {
+    fn push(&mut self, w: Width, repeatable: bool, widths: &mut Model) {
         if let Some(last) = self.last.replace(w) {
-            self.previous = self.previous.add(last);
+            self.previous = widths.add(self.previous, last);
         }
         self.repeatable = repeatable;
         self.count += 1;
     }
-    fn width(&self) -> Width {
-        self.previous.add(self.last.unwrap_or_default())
+    fn width(&self, widths: &mut Model) -> Width {
+        widths.add(self.previous, self.last.unwrap_or_default())
     }
-    fn alternate(&mut self) -> Option<()> {
+    fn alternate(&mut self, bar: usize, collect: bool, widths: &mut Model) -> Option<()> {
         if matches!(self.group, Group::Conditional) && self.alternatives.is_some() {
             return None;
         }
-        let w = self.width();
-        self.alternatives = Some(self.alternatives.map_or(w, |a| a.branch(w)));
+        let w = self.width(widths);
+        self.alternatives = Some(self.alternatives.map_or(w, |a| widths.branch(a, w)));
         self.previous = Width::default();
         self.last = None;
         self.repeatable = false;
+        if collect && !matches!(self.group, Group::Conditional) {
+            self.bars.push(bar);
+        }
         Some(())
+    }
+
+    fn alternative_edits(&self, end: usize, edits: &mut Vec<Edit>) {
+        let mut start = self.body_start;
+        for &bar in &self.bars {
+            edits.push(Edit {
+                span: start..bar + 1,
+                variant: Variant::DeleteAlternative,
+            });
+            start = bar + 1;
+        }
+        if let Some(&bar) = self.bars.last() {
+            edits.push(Edit {
+                span: bar..end,
+                variant: Variant::DeleteAlternative,
+            });
+        }
     }
 }
 
@@ -208,7 +230,79 @@ fn flags(
 // whose number overflows CPython's SRE_CODE is an invalid pattern.
 enum Repeat {
     Literal,
-    Bounds(u32, u32),
+    Bounds(Count),
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+enum CountStyle {
+    Shorthand,
+    Exact,
+    Range { implicit_min: bool },
+}
+
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
+pub(super) struct Count {
+    lo: u32,
+    hi: u32,
+    style: CountStyle,
+}
+impl Count {
+    fn shorthand(lo: u32, hi: u32) -> Repeat {
+        Repeat::Bounds(Self {
+            lo,
+            hi,
+            style: CountStyle::Shorthand,
+        })
+    }
+
+    fn neighbors(self) -> impl Iterator<Item = Self> {
+        let bound = |value: u32| value.checked_add(1).filter(|&value| value < u32::MAX);
+        let adjust = |lo, hi| Self { lo, hi, ..self };
+        let exact = self.style == CountStyle::Exact;
+        [
+            self.lo
+                .checked_sub(1)
+                .map(|lo| adjust(lo, if exact { lo } else { self.hi })),
+            bound(self.lo).map(|lo| adjust(lo, if exact { lo } else { self.hi })),
+            (!exact).then_some(self.hi).and_then(|hi| {
+                (hi < u32::MAX)
+                    .then(|| hi.checked_sub(1))
+                    .flatten()
+                    .map(|hi| adjust(self.lo, hi))
+            }),
+            (!exact)
+                .then(|| bound(self.hi))
+                .flatten()
+                .map(|hi| adjust(self.lo, hi)),
+        ]
+        .into_iter()
+        .flatten()
+        .filter(|count| count.lo <= count.hi)
+    }
+
+    pub(super) fn spelling(self) -> String {
+        match (self.style, self.lo, self.hi) {
+            (CountStyle::Shorthand, 0, u32::MAX) => "*".to_owned(),
+            (CountStyle::Shorthand, 1, u32::MAX) => "+".to_owned(),
+            (CountStyle::Shorthand, 0, 1) => "?".to_owned(),
+            (CountStyle::Exact | CountStyle::Shorthand, lo, hi) if lo == hi => {
+                format!("{{{lo}}}")
+            }
+            (style, lo, hi) => {
+                let lo = if lo == 0 && style == (CountStyle::Range { implicit_min: true }) {
+                    String::new()
+                } else {
+                    lo.to_string()
+                };
+                let hi = if hi == u32::MAX {
+                    String::new()
+                } else {
+                    hi.to_string()
+                };
+                format!("{{{lo},{hi}}}")
+            }
+        }
+    }
 }
 const MAX_DECIMAL_DIGITS: usize = 4300;
 fn decimal(digits: impl ExactSizeIterator<Item = char>) -> Option<u32> {
@@ -256,7 +350,17 @@ fn quant(s: &[char], at: &mut usize, cancelled: &dyn Fn() -> bool) -> Option<Rep
         return None;
     }
     *at = end + 1;
-    Some(Repeat::Bounds(lo, hi))
+    Some(Repeat::Bounds(Count {
+        lo,
+        hi,
+        style: if comma {
+            CountStyle::Range {
+                implicit_min: a.is_empty(),
+            }
+        } else {
+            CountStyle::Exact
+        },
+    }))
 }
 fn identifier(s: &str, bytes: bool) -> bool {
     let mut cs = s.chars();
@@ -280,6 +384,9 @@ struct Scanner<'a> {
     first: Option<usize>,
     last: Option<usize>,
     anchors: Vec<Anchor>,
+    behavior: Behavior,
+    references: ReferenceIndex,
+    widths: Model,
     output: Syntax,
 }
 
@@ -289,6 +396,7 @@ impl Syntax {
         bytes: bool,
         external: u16,
         consumer: Consumer,
+        behavior: Behavior,
         cancelled: &dyn Fn() -> bool,
     ) -> Option<Self> {
         #[cfg(test)]
@@ -301,19 +409,27 @@ impl Syntax {
             at: 0,
             bytes,
             cancelled,
-            stack: vec![Frame::new(Group::Root, external, true, None)],
+            stack: vec![Frame::new(Group::Root, external, true, None, 0)],
             captures: vec![None],
             names: HashMap::new(),
             max_condition: 0,
             first: None,
             last: None,
             anchors: vec![],
+            behavior,
+            references: ReferenceIndex::default(),
+            widths: Model::default(),
             output: Self {
                 sets: vec![],
                 anchors: vec![],
+                counts: vec![],
+                preferences: vec![],
+                alternatives: vec![],
                 sensitive: false,
                 global_modes: vec![],
                 flags: external,
+                count_choices: Vec::new(),
+                widths: RefCell::default(),
             },
         };
         while parser.at < source.len() {
@@ -323,6 +439,20 @@ impl Syntax {
             parser.step()?;
         }
         parser.finish(consumer)
+    }
+
+    /// Returns a spelling only when the edit preserves every dependent
+    /// lookbehind's fixed width. The parsed model is shared between edits.
+    pub(super) fn count_replacement(
+        &self,
+        index: usize,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<String> {
+        let choice = &self.count_choices[index];
+        self.widths
+            .borrow_mut()
+            .permits(choice.before, choice.after, cancelled)
+            .then(|| choice.count.spelling())
     }
 }
 
@@ -372,27 +502,63 @@ impl Scanner<'_> {
             }
         }
         match ch {
-            '|' => return self.stack.last_mut()?.alternate(),
+            '|' => {
+                return self.stack.last_mut()?.alternate(
+                    start,
+                    self.behavior.alternatives,
+                    &mut self.widths,
+                );
+            }
             ')' => return self.close(),
             '(' => return self.open(start),
             _ => {}
         }
         let repeat = match ch {
-            '*' => Repeat::Bounds(0, u32::MAX),
-            '+' => Repeat::Bounds(1, u32::MAX),
-            '?' => Repeat::Bounds(0, 1),
+            '*' => Count::shorthand(0, u32::MAX),
+            '+' => Count::shorthand(1, u32::MAX),
+            '?' => Count::shorthand(0, 1),
             '{' => quant(self.source, &mut self.at, self.cancelled)?,
             _ => Repeat::Literal,
         };
-        if let Repeat::Bounds(lo, hi) = repeat {
+        if let Repeat::Bounds(count) = repeat {
             let frame = self.stack.last_mut()?;
             if !frame.repeatable {
                 return None;
             }
-            frame.last = Some(frame.last?.repeat(lo, hi));
+            let atom = frame.last?;
+            let width = self
+                .widths
+                .repeat(atom, count.lo, count.hi, self.behavior.counts);
+            frame.last = Some(width);
             frame.repeatable = false;
-            if matches!(self.source.get(self.at), Some('?' | '+')) {
+            let suffix = self.source.get(self.at).copied();
+            let base = start..self.at;
+            if matches!(suffix, Some('?' | '+')) {
                 self.at += 1;
+            }
+            if self.behavior.counts {
+                for replacement in count.neighbors() {
+                    let index = self.output.count_choices.len();
+                    self.output.count_choices.push(CountChoice {
+                        count: replacement,
+                        before: width,
+                        after: atom.interval.repeat(replacement.lo, replacement.hi),
+                    });
+                    self.output.counts.push(Edit {
+                        span: base.clone(),
+                        variant: Variant::Count(index),
+                    });
+                }
+            }
+            if self.behavior.preferences && count.lo != count.hi {
+                let preference = match suffix {
+                    Some('?') => Some((base.end..self.at, Variant::MakeGreedy)),
+                    Some('+') => None,
+                    _ => Some((base, Variant::MakeLazy)),
+                };
+                if let Some((span, variant)) = preference {
+                    self.output.preferences.push(Edit { span, variant });
+                }
             }
             return Some(());
         }
@@ -423,7 +589,7 @@ impl Scanner<'_> {
                     let name = self.name(')')?;
                     let group = *self.names.get(&name)?;
                     self.note_root_atom(start);
-                    return self.reference(group);
+                    return self.reference(group, start, false);
                 }
                 '=' | '!' => group = Group::Assertion(false),
                 '<' if self.eat('=') || self.eat('!') => {
@@ -432,7 +598,8 @@ impl Scanner<'_> {
                 }
                 '(' => {
                     let id = self.name(')')?;
-                    let n = if !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()) {
+                    let numeric = !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit());
+                    let n = if numeric {
                         usize::try_from(decimal(id.bytes().map(char::from))?).ok()?
                     } else {
                         *self.names.get(&id)?
@@ -445,6 +612,9 @@ impl Scanner<'_> {
                         return None;
                     }
                     self.max_condition = self.max_condition.max(n);
+                    if self.behavior.alternatives {
+                        self.references.record(start, n, numeric);
+                    }
                     group = Group::Conditional;
                 }
                 option if option == '-' || flag(option).is_some() => {
@@ -463,6 +633,7 @@ impl Scanner<'_> {
                         }
                         self.output.flags = frame.flags;
                         self.output.global_modes.extend(positions);
+                        frame.body_start = self.at;
                         return Some(());
                     }
                     if add & MODES != 0 {
@@ -482,6 +653,9 @@ impl Scanner<'_> {
                 return None;
             }
             self.captures.push(None);
+            if self.behavior.alternatives {
+                self.references.capture(start);
+            }
             group = Group::Capture(id);
         }
         self.note_root_atom(start);
@@ -490,7 +664,7 @@ impl Scanner<'_> {
             return None;
         }
         self.stack
-            .push(Frame::new(group, effective, inherited, behind));
+            .push(Frame::new(group, effective, inherited, behind, self.at));
         Some(())
     }
     fn name(&mut self, terminal: char) -> Option<String> {
@@ -511,38 +685,46 @@ impl Scanner<'_> {
             return None;
         }
         let frame = self.stack.pop()?;
-        let mut width = frame.width();
+        if self.behavior.alternatives {
+            frame.alternative_edits(self.at - 1, &mut self.output.alternatives);
+        }
+        let mut width = frame.width(&mut self.widths);
         if let Some(alt) = frame.alternatives {
-            width = width.branch(alt);
+            width = self.widths.branch(width, alt);
         }
         let mut may_fold = frame.may_fold;
         match frame.group {
             Group::Capture(id) => self.captures[id] = Some((width, may_fold)),
             Group::Assertion(behind) => {
-                if behind && (width.min != width.max || width.min > u32::MAX.into()) {
-                    return None;
+                if behind {
+                    self.widths.lookbehind(width)?;
                 }
                 width = Width::default();
                 may_fold = false;
             }
-            Group::Conditional if frame.alternatives.is_none() => width.min = 0,
+            Group::Conditional if frame.alternatives.is_none() => {
+                width = self.widths.branch(width, Width::default());
+            }
             _ => {}
         }
         let parent = self.stack.last_mut()?;
         parent.may_fold |= may_fold;
-        parent.push(width, true);
+        parent.push(width, true, &mut self.widths);
         Some(())
     }
-    fn reference(&mut self, id: usize) -> Option<()> {
+    fn reference(&mut self, id: usize, start: usize, numeric: bool) -> Option<()> {
         let (width, may_fold) = self.captures.get(id).copied().flatten()?;
         let frame = self.stack.last_mut()?;
         if frame.behind.is_some_and(|lo| id >= lo) {
             return None;
         }
-        frame.push(width, true);
+        frame.push(width, true, &mut self.widths);
         frame.may_fold |= may_fold;
         self.output.sensitive |=
             !self.bytes && frame.inherits && frame.flags & IGNORE != 0 && may_fold;
+        if self.behavior.alternatives {
+            self.references.record(start, id, numeric);
+        }
         Some(())
     }
     fn atom(&mut self, start: usize, ch: char) -> Option<()> {
@@ -603,7 +785,7 @@ impl Scanner<'_> {
                 may_fold = atoms::fold_sensitive(code);
                 sensitive = !self.bytes && frame.flags & IGNORE != 0 && may_fold;
             }
-            Some(Escape::Ref(id)) => return self.reference(id),
+            Some(Escape::Ref(id)) => return self.reference(id, start, true),
             _ => {}
         }
         self.output.sensitive |= frame.inherits && sensitive;
@@ -614,13 +796,19 @@ impl Scanner<'_> {
             });
         }
         frame.may_fold |= may_fold;
-        frame.push(width, repeatable);
+        frame.push(width, repeatable, &mut self.widths);
         Some(())
     }
     fn finish(mut self, consumer: Consumer) -> Option<Syntax> {
         if self.stack.len() != 1 || self.max_condition >= self.captures.len() {
             return None;
         }
+        if self.behavior.alternatives {
+            self.stack[0].alternative_edits(self.at, &mut self.output.alternatives);
+            self.references
+                .retain_deletions(&mut self.output.alternatives, self.cancelled)?;
+        }
+        self.output.widths = RefCell::new(self.widths.finish(self.cancelled)?);
         for anchor in self.anchors {
             if (self.cancelled)() {
                 return None;
@@ -672,10 +860,17 @@ mod tests {
             .collect::<Vec<_>>();
         let polls = std::cell::Cell::new(0);
 
-        let result = Syntax::scan(&text, false, 0, Consumer::Search, &|| {
-            polls.set(polls.get() + 1);
-            polls.get() >= 50
-        });
+        let result = Syntax::scan(
+            &text,
+            false,
+            0,
+            Consumer::Search,
+            Behavior::default(),
+            &|| {
+                polls.set(polls.get() + 1);
+                polls.get() >= 50
+            },
+        );
 
         assert!(result.is_none());
         assert_eq!(polls.get(), 50);

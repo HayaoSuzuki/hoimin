@@ -5,6 +5,10 @@ description: docs/superpowers/specs内の全Markdownを先頭見出しと出典�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: python-behavior-mutations
+  resource: ../../work/designs/2026-11-23-python-behavior-mutations.md
+  working_tree: untracked
+  sha256: a0a8a92893331c82c3840f3897a6a9440fe89aa339f77641e7b268501cabb692
 - id: research-2026-11-20-2026-11-20-research-mutations
   resource: ../../work/designs/2026-11-20-research-mutations.md
   revision: e389cce9beb208c53e832277be4970d0969abc43
@@ -1922,3 +1926,11 @@ These records distinguish design decisions, intermediate findings and the final 
 | [2026-11-20-research-mutations.md](../../work/designs/2026-11-20-research-mutations.md) | Research mutation design [^research-2026-11-20-2026-11-20-research-mutations] | Tracked at `e389cce9` |
 
 [^research-2026-11-20-2026-11-20-research-mutations]: [Research mutation design](../../work/designs/2026-11-20-research-mutations.md).
+
+## Python behavioral mutation expansion
+
+| Original | Scope |
+| --- | --- |
+| [Python behavior mutation expansion](../../work/designs/2026-11-23-python-behavior-mutations.md) [^python-behavior-mutations] | Fifteen opt-out IDs and four existing-operator extensions, with operand, protocol, lexical and bounded-discovery contracts |
+
+[^python-behavior-mutations]: [Python behavior mutation expansion](../../work/designs/2026-11-23-python-behavior-mutations.md).
