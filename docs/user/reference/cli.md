@@ -35,22 +35,11 @@ Options:
   -V, --version
           Print version
 
-Run contract:
-  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...
+To select mutation targets, operators and resource limits, run:
+  hoimin run --help
 
-Target selectors:
-  --root --source --file --line --symbol --changed --changed-context --diff-base
-Copy options:
-  --include --exclude
-Mutation options:
-  --operators --exclude-operators --profile
-Safety options:
-  --jobs --max-mutants --max-candidates
-  --baseline-timeout --mutant-timeout --total-timeout --max-memory
-  --max-output --max-copy-size --max-workspace-size --min-free-space
-  --max-processes --allow-best-effort-memory
-Output/session options:
-  --metrics <PATH> --session --resume
+To discover candidates before executing tests, run:
+  hoimin plan --help
 ```
 
 Argument constraints:
@@ -61,487 +50,6 @@ Argument constraints:
   arity: 0
   repeatable: false
 --version
-  required: false
-  arity: 0
-  repeatable: false
-```
-
-## hoimin verify
-
-```text
-Execute one or more candidates using settings from a previously generated plan
-
-Usage: hoimin verify [OPTIONS] <--candidate <ID>|--top <N>|--sample <N>> <PLAN>
-
-Arguments:
-  <PLAN>
-          Path to a manifest saved by hoimin plan
-
-Options:
-      --candidate <ID>
-          Candidate ID to execute; repeat for multiple planned candidates
-
-      --top <N>
-          Execute the N highest-ranked candidates retained in the plan; strict order is the default
-
-      --sample <N>
-          Sample N candidates without replacement from a complete plan
-
-      --seed <SEED>
-          Explicit reproducible sampling seed (unsigned 64-bit integer)
-
-      --offset <K>
-          Skip K candidates in the complete selected-policy ordering before taking --top N
-
-      --selection-policy <POLICY>
-          Select saved-rank order or equal-score file/line diversity for --top.
-
-          Diverse round-robins files; line-diverse round-robins (file, start-line) groups. Both keep higher-score tiers first.
-
-          [possible values: strict, diverse, line-diverse]
-
-      --dry-run
-          Validate and preview selected candidates without executing tests
-
-      --metrics <PATH>
-          Write execution metrics to PATH, relative to the invocation directory
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them.
-```
-
-Argument constraints:
-
-```text
-manifest
-  required: true
-  arity: 1
-  repeatable: false
---candidate
-  required: false
-  arity: 1
-  repeatable: true
---top
-  required: false
-  arity: 1
-  repeatable: false
---sample
-  required: false
-  arity: 1
-  repeatable: false
-  conflicts: --offset, --selection-policy
---seed
-  required: false
-  arity: 1
-  repeatable: false
-  conflicts: --top, --candidate
---offset
-  required: false
-  arity: 1
-  repeatable: false
-  conflicts: --candidate
---selection-policy
-  required: false
-  arity: 1
-  repeatable: false
-  values: strict, diverse, line-diverse
-  conflicts: --candidate
---dry-run
-  required: false
-  arity: 0
-  repeatable: false
-  default: false
-  conflicts: --metrics
---metrics
-  required: false
-  arity: 1
-  repeatable: false
---help
-  required: false
-  arity: 0
-  repeatable: false
-required group selection: --candidate, --top, --sample; multiple: false
-```
-
-## hoimin progress
-
-```text
-Compare chronologically ordered mutation run reports
-
-Usage: hoimin progress [OPTIONS] <REPORT> <REPORT>...
-
-Arguments:
-  <REPORT> <REPORT>...
-          Ordered run report files to compare
-
-Options:
-      --patience <PATIENCE>
-          Consecutive unchanged comparisons before the history is saturated
-
-          [default: 3]
-
-      --details
-          Show identified changes in the final adjacent input pair
-
-      --details-limit <DETAILS_LIMIT>
-          Maximum transition details to show; zero reports only omission counts
-
-          [default: 100]
-
-  -h, --help
-          Print help
-```
-
-Argument constraints:
-
-```text
---patience
-  required: false
-  arity: 1
-  repeatable: false
-  default: 3
---details
-  required: false
-  arity: 0
-  repeatable: false
-  default: false
---details-limit
-  required: false
-  arity: 1
-  repeatable: false
-  default: 100
-reports
-  required: true
-  arity: 2..
-  repeatable: true
---help
-  required: false
-  arity: 0
-  repeatable: false
-```
-
-## hoimin review
-
-```text
-Record and inspect human assessments independently of test outcomes
-
-Usage: hoimin review <COMMAND>
-
-Commands:
-  list    List current candidates and their assessments
-  show    Show one candidate and its review history
-  record  Append a human assessment using an expected revision
-  help    Print this message or the help of the given subcommand(s)
-
-Options:
-  -h, --help
-          Print help
-```
-
-Argument constraints:
-
-```text
---help
-  required: false
-  arity: 0
-  repeatable: false
-```
-
-## hoimin review list
-
-```text
-List current candidates and their assessments
-
-Usage: hoimin review list [OPTIONS] --store <STORE> <PLAN>
-
-Arguments:
-  <PLAN>
-
-
-Options:
-      --store <STORE>
-
-
-      --report <REPORT>
-
-
-      --stale
-          Include stored candidates absent from the current plan in a separate list
-
-  -h, --help
-          Print help
-```
-
-Argument constraints:
-
-```text
-plan
-  required: true
-  arity: 1
-  repeatable: false
---store
-  required: true
-  arity: 1
-  repeatable: false
---report
-  required: false
-  arity: 1
-  repeatable: false
---stale
-  required: false
-  arity: 0
-  repeatable: false
-  default: false
---help
-  required: false
-  arity: 0
-  repeatable: false
-```
-
-## hoimin review show
-
-```text
-Show one candidate and its review history
-
-Usage: hoimin review show [OPTIONS] --store <STORE> --candidate <CANDIDATE> <PLAN>
-
-Arguments:
-  <PLAN>
-
-
-Options:
-      --store <STORE>
-
-
-      --report <REPORT>
-
-
-      --candidate <CANDIDATE>
-
-
-  -h, --help
-          Print help
-```
-
-Argument constraints:
-
-```text
-plan
-  required: true
-  arity: 1
-  repeatable: false
---store
-  required: true
-  arity: 1
-  repeatable: false
---report
-  required: false
-  arity: 1
-  repeatable: false
---candidate
-  required: true
-  arity: 1
-  repeatable: false
---help
-  required: false
-  arity: 0
-  repeatable: false
-```
-
-## hoimin review record
-
-```text
-Append a human assessment using an expected revision
-
-Usage: hoimin review record [OPTIONS] --store <STORE> --candidate <CANDIDATE> --assessment <ASSESSMENT> --reason <REASON> --expected-revision <EXPECTED_REVISION> <PLAN>
-
-Arguments:
-  <PLAN>
-
-
-Options:
-      --store <STORE>
-
-
-      --report <REPORT>
-
-
-      --candidate <CANDIDATE>
-
-
-      --assessment <ASSESSMENT>
-          [possible values: actionable, not_useful, suspected_equivalent, needs_investigation]
-
-      --reason <REASON>
-
-
-      --evidence <EVIDENCE>
-
-
-      --expected-revision <EXPECTED_REVISION>
-
-
-  -h, --help
-          Print help
-```
-
-Argument constraints:
-
-```text
-plan
-  required: true
-  arity: 1
-  repeatable: false
---store
-  required: true
-  arity: 1
-  repeatable: false
---report
-  required: false
-  arity: 1
-  repeatable: false
---candidate
-  required: true
-  arity: 1
-  repeatable: false
---assessment
-  required: true
-  arity: 1
-  repeatable: false
-  values: actionable, not_useful, suspected_equivalent, needs_investigation
---reason
-  required: true
-  arity: 1
-  repeatable: false
---evidence
-  required: false
-  arity: 1
-  repeatable: true
---expected-revision
-  required: true
-  arity: 1
-  repeatable: false
---help
-  required: false
-  arity: 0
-  repeatable: false
-```
-
-## hoimin review help
-
-```text
-Print this message or the help of the given subcommand(s)
-
-Usage: hoimin review help [COMMAND]
-
-Commands:
-  list    List current candidates and their assessments
-  show    Show one candidate and its review history
-  record  Append a human assessment using an expected revision
-  help    Print this message or the help of the given subcommand(s)
-```
-
-## hoimin review help list
-
-```text
-List current candidates and their assessments
-
-Usage: hoimin review help list
-```
-
-## hoimin review help show
-
-```text
-Show one candidate and its review history
-
-Usage: hoimin review help show
-```
-
-## hoimin review help record
-
-```text
-Append a human assessment using an expected revision
-
-Usage: hoimin review help record
-```
-
-## hoimin review help help
-
-```text
-Print this message or the help of the given subcommand(s)
-
-Usage: hoimin review help help
-```
-
-## hoimin reduce
-
-```text
-Search and validate whole-definition test reductions without applying them
-
-Usage: hoimin reduce [OPTIONS] --candidate <CANDIDATE> --test <TEST> --total-timeout <TOTAL_TIMEOUT> --output <OUTPUT> <PLAN>
-
-Arguments:
-  <PLAN>
-
-
-Options:
-      --candidate <CANDIDATE>
-
-
-      --test <TEST>
-          Select root-relative `PATH:QUALNAME_GLOB`; repeat for additional definitions
-
-      --keep <KEEP>
-          Keep definitions using the same `PATH:QUALNAME_GLOB` syntax; keep wins
-
-      --total-timeout <TOTAL_TIMEOUT>
-          Absolute search budget, including original evaluation and final confirmation
-
-      --min-reduction <MIN_REDUCTION>
-          [default: 5]
-
-      --output <OUTPUT>
-          New artifact directory outside the project
-
-  -h, --help
-          Print help
-```
-
-Argument constraints:
-
-```text
-plan
-  required: true
-  arity: 1
-  repeatable: false
---candidate
-  required: true
-  arity: 1
-  repeatable: true
---test
-  required: true
-  arity: 1
-  repeatable: true
---keep
-  required: false
-  arity: 1
-  repeatable: true
---total-timeout
-  required: true
-  arity: 1
-  repeatable: false
---min-reduction
-  required: false
-  arity: 1
-  repeatable: false
-  default: 5
---output
-  required: true
-  arity: 1
-  repeatable: false
---help
   required: false
   arity: 0
   repeatable: false
@@ -1263,6 +771,487 @@ test_argv
   repeatable: false
 ```
 
+## hoimin verify
+
+```text
+Execute one or more candidates using settings from a previously generated plan
+
+Usage: hoimin verify [OPTIONS] <--candidate <ID>|--top <N>|--sample <N>> <PLAN>
+
+Arguments:
+  <PLAN>
+          Path to a manifest saved by hoimin plan
+
+Options:
+      --candidate <ID>
+          Candidate ID to execute; repeat for multiple planned candidates
+
+      --top <N>
+          Execute the N highest-ranked candidates retained in the plan; strict order is the default
+
+      --sample <N>
+          Sample N candidates without replacement from a complete plan
+
+      --seed <SEED>
+          Explicit reproducible sampling seed (unsigned 64-bit integer)
+
+      --offset <K>
+          Skip K candidates in the complete selected-policy ordering before taking --top N
+
+      --selection-policy <POLICY>
+          Select saved-rank order or equal-score file/line diversity for --top.
+
+          Diverse round-robins files; line-diverse round-robins (file, start-line) groups. Both keep higher-score tiers first.
+
+          [possible values: strict, diverse, line-diverse]
+
+      --dry-run
+          Validate and preview selected candidates without executing tests
+
+      --metrics <PATH>
+          Write execution metrics to PATH, relative to the invocation directory
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+Execution and resource settings come from PLAN and cannot be overridden. Disk safety limits --max-workspace-size and --min-free-space are inherited from PLAN. Create a new plan to change them.
+```
+
+Argument constraints:
+
+```text
+manifest
+  required: true
+  arity: 1
+  repeatable: false
+--candidate
+  required: false
+  arity: 1
+  repeatable: true
+--top
+  required: false
+  arity: 1
+  repeatable: false
+--sample
+  required: false
+  arity: 1
+  repeatable: false
+  conflicts: --offset, --selection-policy
+--seed
+  required: false
+  arity: 1
+  repeatable: false
+  conflicts: --top, --candidate
+--offset
+  required: false
+  arity: 1
+  repeatable: false
+  conflicts: --candidate
+--selection-policy
+  required: false
+  arity: 1
+  repeatable: false
+  values: strict, diverse, line-diverse
+  conflicts: --candidate
+--dry-run
+  required: false
+  arity: 0
+  repeatable: false
+  default: false
+  conflicts: --metrics
+--metrics
+  required: false
+  arity: 1
+  repeatable: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+required group selection: --candidate, --top, --sample; multiple: false
+```
+
+## hoimin progress
+
+```text
+Compare chronologically ordered mutation run reports
+
+Usage: hoimin progress [OPTIONS] <REPORT> <REPORT>...
+
+Arguments:
+  <REPORT> <REPORT>...
+          Ordered run report files to compare
+
+Options:
+      --patience <PATIENCE>
+          Consecutive unchanged comparisons before the history is saturated
+
+          [default: 3]
+
+      --details
+          Show identified changes in the final adjacent input pair
+
+      --details-limit <DETAILS_LIMIT>
+          Maximum transition details to show; zero reports only omission counts
+
+          [default: 100]
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+--patience
+  required: false
+  arity: 1
+  repeatable: false
+  default: 3
+--details
+  required: false
+  arity: 0
+  repeatable: false
+  default: false
+--details-limit
+  required: false
+  arity: 1
+  repeatable: false
+  default: 100
+reports
+  required: true
+  arity: 2..
+  repeatable: true
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review
+
+```text
+Record and inspect human assessments independently of test outcomes
+
+Usage: hoimin review <COMMAND>
+
+Commands:
+  list    List current candidates and their assessments
+  show    Show one candidate and its review history
+  record  Append a human assessment using an expected revision
+  help    Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review list
+
+```text
+List current candidates and their assessments
+
+Usage: hoimin review list [OPTIONS] --store <STORE> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --store <STORE>
+
+
+      --report <REPORT>
+
+
+      --stale
+          Include stored candidates absent from the current plan in a separate list
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--store
+  required: true
+  arity: 1
+  repeatable: false
+--report
+  required: false
+  arity: 1
+  repeatable: false
+--stale
+  required: false
+  arity: 0
+  repeatable: false
+  default: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review show
+
+```text
+Show one candidate and its review history
+
+Usage: hoimin review show [OPTIONS] --store <STORE> --candidate <CANDIDATE> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --store <STORE>
+
+
+      --report <REPORT>
+
+
+      --candidate <CANDIDATE>
+
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--store
+  required: true
+  arity: 1
+  repeatable: false
+--report
+  required: false
+  arity: 1
+  repeatable: false
+--candidate
+  required: true
+  arity: 1
+  repeatable: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review record
+
+```text
+Append a human assessment using an expected revision
+
+Usage: hoimin review record [OPTIONS] --store <STORE> --candidate <CANDIDATE> --assessment <ASSESSMENT> --reason <REASON> --expected-revision <EXPECTED_REVISION> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --store <STORE>
+
+
+      --report <REPORT>
+
+
+      --candidate <CANDIDATE>
+
+
+      --assessment <ASSESSMENT>
+          [possible values: actionable, not_useful, suspected_equivalent, needs_investigation]
+
+      --reason <REASON>
+
+
+      --evidence <EVIDENCE>
+
+
+      --expected-revision <EXPECTED_REVISION>
+
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--store
+  required: true
+  arity: 1
+  repeatable: false
+--report
+  required: false
+  arity: 1
+  repeatable: false
+--candidate
+  required: true
+  arity: 1
+  repeatable: false
+--assessment
+  required: true
+  arity: 1
+  repeatable: false
+  values: actionable, not_useful, suspected_equivalent, needs_investigation
+--reason
+  required: true
+  arity: 1
+  repeatable: false
+--evidence
+  required: false
+  arity: 1
+  repeatable: true
+--expected-revision
+  required: true
+  arity: 1
+  repeatable: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
+## hoimin review help
+
+```text
+Print this message or the help of the given subcommand(s)
+
+Usage: hoimin review help [COMMAND]
+
+Commands:
+  list    List current candidates and their assessments
+  show    Show one candidate and its review history
+  record  Append a human assessment using an expected revision
+  help    Print this message or the help of the given subcommand(s)
+```
+
+## hoimin review help list
+
+```text
+List current candidates and their assessments
+
+Usage: hoimin review help list
+```
+
+## hoimin review help show
+
+```text
+Show one candidate and its review history
+
+Usage: hoimin review help show
+```
+
+## hoimin review help record
+
+```text
+Append a human assessment using an expected revision
+
+Usage: hoimin review help record
+```
+
+## hoimin review help help
+
+```text
+Print this message or the help of the given subcommand(s)
+
+Usage: hoimin review help help
+```
+
+## hoimin reduce
+
+```text
+Search and validate whole-definition test reductions without applying them
+
+Usage: hoimin reduce [OPTIONS] --candidate <CANDIDATE> --test <TEST> --total-timeout <TOTAL_TIMEOUT> --output <OUTPUT> <PLAN>
+
+Arguments:
+  <PLAN>
+
+
+Options:
+      --candidate <CANDIDATE>
+
+
+      --test <TEST>
+          Select root-relative `PATH:QUALNAME_GLOB`; repeat for additional definitions
+
+      --keep <KEEP>
+          Keep definitions using the same `PATH:QUALNAME_GLOB` syntax; keep wins
+
+      --total-timeout <TOTAL_TIMEOUT>
+          Absolute search budget, including original evaluation and final confirmation
+
+      --min-reduction <MIN_REDUCTION>
+          [default: 5]
+
+      --output <OUTPUT>
+          New artifact directory outside the project
+
+  -h, --help
+          Print help
+```
+
+Argument constraints:
+
+```text
+plan
+  required: true
+  arity: 1
+  repeatable: false
+--candidate
+  required: true
+  arity: 1
+  repeatable: true
+--test
+  required: true
+  arity: 1
+  repeatable: true
+--keep
+  required: false
+  arity: 1
+  repeatable: true
+--total-timeout
+  required: true
+  arity: 1
+  repeatable: false
+--min-reduction
+  required: false
+  arity: 1
+  repeatable: false
+  default: 5
+--output
+  required: true
+  arity: 1
+  repeatable: false
+--help
+  required: false
+  arity: 0
+  repeatable: false
+```
+
 ## hoimin help
 
 ```text
@@ -1271,13 +1260,29 @@ Print this message or the help of the given subcommand(s)
 Usage: hoimin help [COMMAND]
 
 Commands:
+  run       Run mutation tests for an explicitly selected target
+  plan      Discover mutation candidates without executing tests
   verify    Execute one or more candidates using settings from a previously generated plan
   progress  Compare chronologically ordered mutation run reports
   review    Record and inspect human assessments independently of test outcomes
   reduce    Search and validate whole-definition test reductions without applying them
-  run       Run mutation tests for an explicitly selected target
-  plan      Discover mutation candidates without executing tests
   help      Print this message or the help of the given subcommand(s)
+```
+
+## hoimin help run
+
+```text
+Run mutation tests for an explicitly selected target
+
+Usage: hoimin help run
+```
+
+## hoimin help plan
+
+```text
+Discover mutation candidates without executing tests
+
+Usage: hoimin help plan
 ```
 
 ## hoimin help verify
@@ -1339,22 +1344,6 @@ Usage: hoimin help review record
 Search and validate whole-definition test reductions without applying them
 
 Usage: hoimin help reduce
-```
-
-## hoimin help run
-
-```text
-Run mutation tests for an explicitly selected target
-
-Usage: hoimin help run
-```
-
-## hoimin help plan
-
-```text
-Discover mutation candidates without executing tests
-
-Usage: hoimin help plan
 ```
 
 ## hoimin help help

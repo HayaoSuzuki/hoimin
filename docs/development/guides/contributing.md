@@ -2240,6 +2240,10 @@ index also reuses the selection arguments' reflected long help. Do not write a
 second explanation of an option in the generator or usage guide. Put workflow
 examples in the guide and link to the shared option explanation.
 
+Attach command-specific help to its Clap enum variant or Args definition, so
+renaming a command does not require a separate string-based lookup. Keep the root
+footer as navigation to command help; Clap owns each command's option inventory.
+
 The fragments use LF checkouts and remain inside the CLI crate for source
 distribution builds. Only the navigation fragment's `{version}` and the reference
 introduction's `{regenerate}` are Rust format arguments; no template engine or

@@ -960,10 +960,15 @@ fn mutation_profile_rejects_unknown_value() {
 }
 
 #[test]
-fn root_help_exposes_the_run_contract() {
-    let error = parse_from(["hoimin", "--help"]).unwrap_err();
+fn run_help_exposes_the_run_contract() {
+    // Arrange
+    let argv = ["hoimin", "run", "--help"];
+
+    // Act
+    let error = parse_from(argv).unwrap_err();
     let help = error.to_string();
 
+    // Assert
     for expected in [
         "run",
         "--file",
@@ -985,6 +990,26 @@ fn root_help_exposes_the_run_contract() {
         !help.contains("--python"),
         "obsolete option in help:\n{help}"
     );
+}
+
+#[rstest::rstest]
+#[case::run("hoimin run --help")]
+#[case::plan("hoimin plan --help")]
+fn root_help_routes_to_executable_command_help(#[case] invocation: &str) {
+    // Arrange
+    let help = parse_from(["hoimin", "--help"]).unwrap_err().to_string();
+
+    // Act
+    let advertised = help.lines().any(|line| line.trim() == invocation);
+    let destination = parse_from(invocation.split_whitespace()).unwrap_err();
+
+    // Assert
+    assert!(advertised, "missing help route: {invocation}");
+    assert!(matches!(
+        destination,
+        hoimin_cli::cli::CliError::Clap(error)
+            if error.kind() == clap::error::ErrorKind::DisplayHelp
+    ));
 }
 
 #[rstest::rstest]

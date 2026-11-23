@@ -1,16 +1,5 @@
-Run contract:
-  hoimin run [TARGETS] [SAFETY/OUTPUT/SESSION OPTIONS] -- <TEST_ARGV>...
+To select mutation targets, operators and resource limits, run:
+  hoimin run --help
 
-Target selectors:
-  --root --source --file --line --symbol --changed --changed-context --diff-base
-Copy options:
-  --include --exclude
-Mutation options:
-  --operators --exclude-operators --profile
-Safety options:
-  --jobs --max-mutants --max-candidates
-  --baseline-timeout --mutant-timeout --total-timeout --max-memory
-  --max-output --max-copy-size --max-workspace-size --min-free-space
-  --max-processes --allow-best-effort-memory
-Output/session options:
-  --metrics <PATH> --session --resume
+To discover candidates before executing tests, run:
+  hoimin plan --help

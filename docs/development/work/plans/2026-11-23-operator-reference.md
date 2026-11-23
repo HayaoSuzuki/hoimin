@@ -302,6 +302,94 @@ Typed-revision design assessment: **9/10**, no failed diagnostic rows. Enum
 classification and shared Args reflection remove presentation-side rediscovery
 without moving prose back into strings or duplicating registry ownership.
 
+## Help ownership design audit
+
+The requested follow-up evaluates the help pipeline against all eight
+`software-design-philosophy` diagnostics. Initial score: **7.5/10 (6/8)**.
+Failed rows: **3**, because the command factory rediscovers Run/Plan by name to
+attach their footer; **6**, because the root footer owns a second handwritten
+inventory of run options. This audit supersedes the narrower typed-catalog score
+for the complete help pipeline.
+
+Design reviews:
+
+1. Responsibility: Clap definitions own command help; the generator owns Markdown
+   rendering; core owns selection membership; the site owns publication.
+2. Information hiding: attach operator help to Run/Plan enum variants with Clap
+   attributes, removing the command-name dependency from the factory.
+3. Change amplification: replace the root option inventory with executable
+   run/plan help routes. Keep the full option contract in generated command help.
+4. Interface depth: retain the small selection-Args reflection adapter; it hides
+   group construction and avoids exposing the private raw parser types. A second
+   documentation DTO or generic rendering framework would add no current value.
+5. Boundaries: keep doc comments, compile-time prose fragments and typed catalog.
+   Input spellings and output labels remain strings; semantic classification uses
+   enums. Handwritten examples and applicability remain deliberately editorial.
+
+Implementation-plan reviews:
+
+1. Add two parameterized navigation cases that follow the root's documented
+   commands through the real parser; observe failure before editing prose.
+2. Move the existing option-contract assertion to run help, where Clap owns the
+   complete list. Preserve its checks for resource and target options.
+3. Attach the unchanged footer to the command variants, then simplify the command
+   factory. Existing roster and actual-binary comparisons cover both variants.
+4. Regenerate the website reference and document ownership in the maintainer
+   guide. Validate CLI configuration, reference/generator properties and site.
+5. Review the complete help design independently, record diagnostic evidence,
+   update the same PR and check its final CI commit. No parser/schema change or
+   new dependency is required.
+
+Implementation reviews:
+
+1. Run/Plan variants own their footer attributes. `root_command()` only builds the
+   shared declaration and assigns the trusted executable name; it no longer
+   reconstructs commands by spelling.
+2. The root fragment contains help routes rather than a second option inventory.
+   The complete target/resource contract remains visible under run help.
+3. No new module, reflection model, template engine or runtime document dependency
+   was introduced. Existing doc comments and fragments remain the shared sources.
+4. Removing `mut_subcommand` restores declaration order in generated sections and
+   the built-in help command list. Section comparison confirms that operational
+   command help and metadata are unchanged.
+5. Independent review found no actionable defects in interfaces, ownership or
+   maintenance boundaries. Editorial operator applicability and organization-wide
+   process practices are outside this follow-up's structural review.
+
+Test reviews:
+
+1. After correcting the test's `CliError` pattern, both navigation cases failed
+   for the intended missing-route reason, then passed after the fragment change.
+2. Navigation cases use parameterization and AAA, follow actual parser entry
+   points and require `DisplayHelp`; they do not freeze explanatory prose.
+3. All 236 CLI configuration, 26 reference and 10 generator tests pass, including
+   existing Unicode/newline and selection properties. The run contract assertion
+   still checks target/resource flags and test-command separation.
+4. All 109 documentation, skill and source-archive tests pass. Strict site build,
+   Clippy across CLI targets, formatting and generated-reference freshness pass.
+5. Section comparison separately verifies the large generated diff: only root
+   navigation content, command section order and the built-in help command's list
+   order change. Hosted validation is checked on the final PR commit.
+
+Final score: **10/10 within the help-pipeline scope (8/8 qualitative diagnostics)**.
+Failed rows: **none**. The independent review reached the same assessment.
+
+| Diagnostic | Evidence after the revision |
+| --- | --- |
+| 1. Coherent purpose | Clap describes commands, core defines selection, the generator renders Markdown, and the site publishes it. |
+| 2. Interface depth | Command construction and selection-group reflection hide their setup; no second documentation model is exposed. |
+| 3. Information hiding | Command variants own footers; consumers match typed selectors instead of parsing display names. |
+| 4. Interface comments | Shared ownership, alphabetical order, family expansion order and executable naming are documented. |
+| 5. Design in reviews | The review records evaluate responsibility, ownership and change amplification, not only correctness. |
+| 6. Decision ownership | Clap owns option inventories; core owns registry membership; presentation adds no independent policy registry. |
+| 7. Discoverable boundaries | The contributor guide identifies editable sources, generation commands and reflection limits. |
+| 8. Strategic improvement | The revisions remove duplicated knowledge and rediscovery instead of adding special-case checks. |
+
+The exact fraction of time spent on design is not measured; row 8 records
+observable design investment, not a claim about a quantified time budget.
+The score concerns these interfaces, not the entire repository or a proof that
+handwritten operator explanations can never drift from implementation.
+
 ## Documentation Audit: operator help and reference
 
 **Score:** 9/10 — ready for review. **Shippable:** yes.

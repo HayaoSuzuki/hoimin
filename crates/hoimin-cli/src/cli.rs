@@ -30,8 +30,10 @@ struct RootCli {
 )]
 enum Command {
     /// Run mutation tests for an explicitly selected target.
+    #[command(after_help = operator_help())]
     Run(RunArgs),
     /// Discover mutation candidates without executing tests.
+    #[command(after_help = operator_help())]
     Plan(RawPlanArgs),
     /// Execute one or more candidates using settings from a previously generated plan.
     Verify(RawVerifyArgs),
@@ -606,11 +608,7 @@ impl TryFrom<Command> for ParsedCommand {
 /// Usage/help use the trusted product name even when the executable is renamed.
 #[must_use]
 pub fn root_command() -> clap::Command {
-    let operator_roster = operator_help();
-    RootCli::command()
-        .bin_name("hoimin")
-        .mut_subcommand("run", |command| command.after_help(operator_roster.clone()))
-        .mut_subcommand("plan", |command| command.after_help(operator_roster))
+    RootCli::command().bin_name("hoimin")
 }
 
 fn operator_help() -> String {
