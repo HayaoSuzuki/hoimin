@@ -1725,7 +1725,7 @@ mod tests {
         let root = Utf8PathBuf::from_path_buf(directory.path().to_owned()).unwrap();
         let mut handler = AnalyzerHandler::new(
             root,
-            MutationOperatorSelection::default(),
+            serde_json::from_value(serde_json::json!(["compare_eq_ne"])).unwrap(),
             MutationProfile::Full,
             NonZeroUsize::new(10).unwrap(),
         );

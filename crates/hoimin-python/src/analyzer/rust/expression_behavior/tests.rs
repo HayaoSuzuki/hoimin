@@ -25,6 +25,7 @@ fn edits(source: &str, max_candidates: usize, stop_after_first: bool) -> Vec<Edi
                 Options {
                     operators: self.operators,
                     max_candidates: self.max_candidates,
+                    skip_clause_delete: false,
                 },
                 &|| false,
                 |range, operator, replacement| (self.emit)(range, replacement(), operator),

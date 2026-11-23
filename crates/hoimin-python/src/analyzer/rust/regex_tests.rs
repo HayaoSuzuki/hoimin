@@ -1,6 +1,263 @@
 use super::*;
 use rstest::rstest;
 
+#[rstest]
+#[case::bounded("r'a{2,4}'", MutationOperator::RegexQuantifierNeighbor, &["r'a{1,4}'", "r'a{3,4}'", "r'a{2,3}'", "r'a{2,5}'"])]
+#[case::exact_possessive("rb'a{2}+'", MutationOperator::RegexQuantifierNeighbor, &["rb'a{1}+'", "rb'a{3}+'"])]
+#[case::shorthand("r'a+'", MutationOperator::RegexQuantifierNeighbor, &["r'a*'", "r'a{2,}'"])]
+#[case::open_lower("r'a{,3}?'", MutationOperator::RegexQuantifierNeighbor, &["r'a{1,3}?'", "r'a{,2}?'", "r'a{,4}?'"])]
+#[case::top_bound("r'a{4294967294,}'", MutationOperator::RegexQuantifierNeighbor, &["r'a{4294967293,}'"])]
+#[case::constant_lookbehind("r'(?<=a{2})x'", MutationOperator::RegexQuantifierNeighbor, &["r'(?<=a{1})x'", "r'(?<=a{3})x'"])]
+#[case::unequal_lookbehind("r'(?<=a{2}|bb)x'", MutationOperator::RegexQuantifierNeighbor, &[])]
+#[case::referenced_width(r"r'(a{2})(?<=\1|bb)x'", MutationOperator::RegexQuantifierNeighbor, &[])]
+#[case::transitive_width(r"r'(a{2})(\1)(?<=\2|bb)x'", MutationOperator::RegexQuantifierNeighbor, &[])]
+#[case::greedy("r'''(?x:a{2,3} # ?\n)'''", MutationOperator::RegexGreedinessToggle, &["r'''(?x:a{2,3}? # ?\n)'''"])]
+#[case::lazy(r"'é\x2b\x3f'", MutationOperator::RegexGreedinessToggle, &[r"'é\x2b'"])]
+#[case::possessive("r'a++'", MutationOperator::RegexGreedinessToggle, &[])]
+#[case::escaped_alternative(r"r'(?:one\|two|[|]|three)'", MutationOperator::RegexAlternativeDelete, &[
+    r"r'(?:[|]|three)'", r"r'(?:one\|two|three)'", r"r'(?:one\|two|[|])'",
+])]
+#[case::nested_alternative("r'(?i:a|b)|c'", MutationOperator::RegexAlternativeDelete, &[
+    "r'c'", "r'(?i:b)|c'", "r'(?i:a)|c'", "r'(?i:a|b)'",
+])]
+#[case::empty_alternative("r'(?:|a)'", MutationOperator::RegexAlternativeDelete, &["r'(?:a)'", "r'(?:)'"])]
+#[case::global_flags("r'(?i)a|b'", MutationOperator::RegexAlternativeDelete, &["r'(?i)b'", "r'(?i)a'"])]
+#[case::numeric_reference(r"r'(?:(a)|b|(c))\2'", MutationOperator::RegexAlternativeDelete, &[r"r'(?:(a)|(c))\2'"])]
+#[case::named_reference("r'(?:(a)|b|(?P<target>c))(?P=target)'", MutationOperator::RegexAlternativeDelete, &[
+    "r'(?:b|(?P<target>c))(?P=target)'", "r'(?:(a)|(?P<target>c))(?P=target)'",
+])]
+#[case::lookbehind_alternative("r'(?<=ab|cd)x'", MutationOperator::RegexAlternativeDelete, &["r'(?<=cd)x'", "r'(?<=ab)x'"])]
+#[case::conditional_branches(r"r'(a)?(?(1)b|c)'", MutationOperator::RegexAlternativeDelete, &[])]
+#[case::concatenated(r"r'(?:one' r'|two)'", MutationOperator::RegexAlternativeDelete, &[r"r'(?:' r'two)'", r"r'(?:one' r')'"])]
+#[case::empty_adjacent_token(r"'one''|two'", MutationOperator::RegexAlternativeDelete, &[r"'' 'two'", r"'one'''"])]
+fn regex_behavior_mutations_preserve_grammar(
+    #[case] literal: &str,
+    #[case] operator: MutationOperator,
+    #[case] expected: &[&str],
+) {
+    // Arrange
+    let source = format!("import re\npattern = re.compile({literal})\n");
+
+    // Act
+    let actual = regex_behavior_edits(&source, operator, 256);
+
+    // Assert
+    assert_eq!(actual, expected);
+}
+
+fn regex_behavior_edits(
+    source: &str,
+    operator: MutationOperator,
+    max_candidates: usize,
+) -> Vec<String> {
+    let operators = serde_json::from_value(serde_json::json!([operator.as_str()])).unwrap();
+    let request = AnalyzeRequest {
+        payload: super::super::payload::PayloadBudget::default(),
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates,
+    };
+    analyze_source(&request, source)
+        .candidates
+        .into_iter()
+        .map(|candidate| {
+            assert_eq!(candidate.operator, operator);
+            let mut mutant = source.to_owned();
+            let start = usize::try_from(candidate.span.start).unwrap();
+            let len = usize::try_from(candidate.span.length).unwrap();
+            mutant.replace_range(start..start + len, &candidate.replacement);
+            ruff_python_parser::parse_module(&mutant).unwrap();
+            let arg = mutant
+                .strip_prefix("import re\npattern = re.compile(")
+                .unwrap();
+            arg.strip_suffix(")\n").unwrap().to_owned()
+        })
+        .collect()
+}
+
+#[rstest]
+#[case::small(32, "", "")]
+#[case::many_direct(4096, "", "")]
+#[case::many_nested(4096, "(?:", ")")]
+fn divergent_lookbehind_widths_do_not_rescan_for_each_count(
+    #[case] repeats: usize,
+    #[case] open: &str,
+    #[case] close: &str,
+) {
+    // Arrange
+    let pattern = format!(
+        "(?<={open}{}|b{{{}}}{close})x",
+        "a{2}".repeat(repeats),
+        repeats * 2
+    );
+    let source = format!("import re\npattern = re.compile(r'{pattern}')\n");
+    super::regex::clear_work();
+
+    // Act
+    let actual = regex_behavior_edits(&source, MutationOperator::RegexQuantifierNeighbor, 1);
+
+    // Assert
+    assert_eq!(actual, Vec::<String>::new());
+    assert_eq!(super::regex::pattern_work(), (pattern.len(), pattern.len()));
+}
+
+#[test]
+fn transitive_reference_widths_do_not_rescan_for_each_rejected_count() {
+    // Arrange
+    let pattern = format!(r"({})(?:ab(\1))(?<=(?:\2|b{{66}}))x", "a{2}".repeat(33));
+    let source = format!("import re\npattern = re.compile(r'{pattern}')\n");
+    super::regex::clear_work();
+
+    // Act
+    let actual = regex_behavior_edits(&source, MutationOperator::RegexQuantifierNeighbor, 1);
+
+    // Assert
+    assert_eq!(actual, Vec::<String>::new());
+    assert_eq!(super::regex::pattern_work(), (pattern.len(), pattern.len()));
+}
+
+#[test]
+fn many_shared_capture_paths_reject_counts_within_one_work_budget() {
+    // Arrange
+    let groups = 1024;
+    let captures = (0..groups)
+        .map(|i| format!("(?P<g{i}>a{{1}})"))
+        .collect::<Vec<_>>()
+        .concat();
+    let references = (0..groups)
+        .map(|i| format!("(?P=g{i})(?P=g{i})"))
+        .collect::<Vec<_>>()
+        .concat();
+    let pattern = format!("{captures}(?<=(?:{references}|b{{{}}}))x", 2 * groups);
+    let source = format!("import re\npattern = re.compile(r'{pattern}')\n");
+    let operators =
+        serde_json::from_value(serde_json::json!(["regex_quantifier_neighbor"])).unwrap();
+    let request = AnalyzeRequest {
+        payload: super::super::payload::PayloadBudget::default(),
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let polls = std::cell::Cell::new(0);
+    let budget = source.len() * 12;
+
+    // Act
+    let actual = analyze_source_cancellable(&request, &source, || {
+        polls.set(polls.get() + 1);
+        polls.get() >= budget
+    });
+
+    // Assert
+    assert_eq!(actual.unwrap().candidates, []);
+}
+
+#[rstest]
+#[case::zero_headroom(4_294_967_294, 2, None, "{4294967294}", "{4294967293}")]
+#[case::one_unit_headroom(4_294_967_293, 2, None, "{4294967293}", "{4294967292}")]
+#[case::two_units_headroom(4_294_967_292, 2, None, "{0}", "{1}")]
+#[case::earlier_assertion_limits_growth(4_294_967_293, 2, Some(1), "{4294967293}", "{4294967292}")]
+#[case::later_assertion_limits_growth(4_294_967_293, 1, Some(2), "{4294967293}", "{4294967292}")]
+fn shared_capture_growth_checks_reuse_downstream_width_limits(
+    #[case] tail_count: u32,
+    #[case] first_multiplicity: usize,
+    #[case] second_multiplicity: Option<usize>,
+    #[case] original: &str,
+    #[case] replacement: &str,
+) {
+    // Arrange
+    let groups = 1024;
+    let captures = (0..groups)
+        .map(|i| format!("(?P<c{i}>a{{0}})"))
+        .collect::<Vec<_>>()
+        .concat();
+    let assertion = |multiplicity| {
+        let references = (0..groups)
+            .map(|i| format!("(?P=c{i})").repeat(multiplicity))
+            .collect::<Vec<_>>()
+            .concat();
+        format!("(?<={references}x{{{tail_count}}}z)")
+    };
+    let first = assertion(first_multiplicity);
+    let second = second_multiplicity.map_or_else(String::new, assertion);
+    let pattern = format!("{captures}{first}{second}y");
+    let source = format!("import re\npattern = re.compile(r'{pattern}')\n");
+    let operators =
+        serde_json::from_value(serde_json::json!(["regex_quantifier_neighbor"])).unwrap();
+    let request = AnalyzeRequest {
+        payload: super::super::payload::PayloadBudget::default(),
+        path: Utf8Path::new("subject.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: MutationProfile::Full,
+        max_candidates: 1,
+    };
+    let polls = std::cell::Cell::new(0);
+    let budget = source.len() * 12;
+
+    // Act
+    let actual = analyze_source_cancellable(&request, &source, || {
+        polls.set(polls.get() + 1);
+        polls.get() >= budget
+    });
+
+    // Assert
+    let output = actual.expect("shared width checks should finish within the work budget");
+    assert_eq!(output.candidates.len(), 1);
+    let candidate = &output.candidates[0];
+    assert_eq!(
+        (candidate.original.as_str(), candidate.replacement.as_str()),
+        (original, replacement)
+    );
+}
+
+#[rstest]
+#[case::both_branches(r"r'(a{2})(?<=(?:\1a|\1b))x'", &[r"r'(a{1})(?<=(?:\1a|\1b))x'", r"r'(a{3})(?<=(?:\1a|\1b))x'"])]
+#[case::different_multipliers(r"r'(a{2})(?<=(?:\1\1|\1bb))x'", &[])]
+#[case::masked_by_zero("r'(?<=(?:(?:a{2}){0}|))x'", &["r'(?<=(?:(?:a{1}){0}|))x'", "r'(?<=(?:(?:a{3}){0}|))x'"])]
+fn shared_count_widths_follow_every_reference(#[case] literal: &str, #[case] expected: &[&str]) {
+    // Arrange
+    let source = format!("import re\npattern = re.compile({literal})\n");
+
+    // Act
+    let actual = regex_behavior_edits(&source, MutationOperator::RegexQuantifierNeighbor, 16);
+
+    // Assert
+    assert_eq!(actual, expected);
+}
+
+proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_cases(32))]
+
+    #[test]
+    fn deleting_one_branch_preserves_all_other_branches_and_the_candidate_prefix(
+        branches in 2..12usize,
+        seed in 0..10_000u32,
+        limit in 1..12usize,
+    ) {
+        // Arrange
+        let branches: Vec<_> = (0..branches).map(|i| format!("x{seed}_{i}")).collect();
+        let source = format!("import re\npattern = re.compile(r'(?:{})')\n", branches.join("|"));
+        let expected: Vec<_> = (0..branches.len()).map(|skip| {
+            let mut survivor = branches.clone();
+            survivor.remove(skip);
+            format!("r'(?:{})'", survivor.join("|"))
+        }).collect();
+
+        // Act
+        let actual = regex_behavior_edits(&source, MutationOperator::RegexAlternativeDelete, limit);
+
+        // Assert
+        proptest::prop_assert_eq!(actual.as_slice(), &expected[..limit.min(expected.len())]);
+    }
+}
+
 fn edits(source: &str, op: &str) -> Vec<(String, String)> {
     let ops = MutationOperatorSelection::default();
     let request = AnalyzeRequest {

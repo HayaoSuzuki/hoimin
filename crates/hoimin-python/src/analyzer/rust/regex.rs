@@ -1,5 +1,5 @@
-//! Trusted Python matching calls emit one source edit per method, assertion,
-//! character-set atom or root mode. Pattern syntax and Python quoting remain private.
+//! Trusted Python matching calls emit source edits to the method or regex.
+//! Pattern syntax and Python quoting remain private.
 #[path = "regex/atoms.rs"]
 mod atoms;
 #[path = "regex/characters.rs"]
@@ -8,6 +8,10 @@ mod characters;
 mod literal;
 #[path = "regex/pattern.rs"]
 mod pattern;
+#[path = "regex/structure.rs"]
+mod structure;
+#[path = "regex/width.rs"]
+mod width;
 
 use super::{
     AnalysisCancelled, EditSink,
@@ -29,6 +33,9 @@ use std::{
 const BOUND: MutationOperator = MutationOperator::RegexMatchBoundary;
 const SET: MutationOperator = MutationOperator::RegexCharacterSet;
 const MODE: MutationOperator = MutationOperator::RegexAsciiMode;
+const COUNT: MutationOperator = MutationOperator::RegexQuantifierNeighbor;
+const PREFERENCE: MutationOperator = MutationOperator::RegexGreedinessToggle;
+const ALTERNATIVE: MutationOperator = MutationOperator::RegexAlternativeDelete;
 
 #[derive(Default)]
 pub(super) struct Regex<'a> {
@@ -87,12 +94,23 @@ impl<'a> PatternCache<'a> {
             return known.clone();
         }
         let mapped = self.mapped(expr, shared, site)?;
-        let parsed = Syntax::scan(&mapped.chars, mapped.bytes, flags, context, site.cancelled).map(
-            |syntax| Prepared {
-                literal: mapped,
-                syntax: Rc::new(syntax),
-            },
-        );
+        let behavior = pattern::Behavior {
+            counts: site.supports(COUNT),
+            preferences: site.supports(PREFERENCE),
+            alternatives: site.supports(ALTERNATIVE),
+        };
+        let parsed = Syntax::scan(
+            &mapped.chars,
+            mapped.bytes,
+            flags,
+            context,
+            behavior,
+            site.cancelled,
+        )
+        .map(|syntax| Prepared {
+            literal: mapped,
+            syntax: Rc::new(syntax),
+        });
         if shared && !(site.cancelled)() {
             self.parsed.borrow_mut().insert(key, parsed.clone());
         }
@@ -205,7 +223,10 @@ impl<'a> Regex<'a> {
         site: &Site<'_>,
         cancelled: &impl Fn() -> bool,
     ) -> Result<Self, AnalysisCancelled> {
-        if ![BOUND, SET, MODE].into_iter().any(|op| site.supports(op)) {
+        if ![BOUND, SET, MODE, COUNT, PREFERENCE, ALTERNATIVE]
+            .into_iter()
+            .any(|op| site.supports(op))
+        {
             return Ok(Self::default());
         }
         let imports = CallableImports::build_family(module, cancelled, &["re"])?;
@@ -475,7 +496,13 @@ impl PatternSite<'_> {
         selected: impl Fn(TextRange) -> bool,
         sink: &mut impl EditSink,
     ) {
-        for (op, edits) in [(SET, &self.syntax.sets), (BOUND, &self.syntax.anchors)] {
+        for (op, edits) in [
+            (SET, &self.syntax.sets),
+            (BOUND, &self.syntax.anchors),
+            (COUNT, &self.syntax.counts),
+            (PREFERENCE, &self.syntax.preferences),
+            (ALTERNATIVE, &self.syntax.alternatives),
+        ] {
             if !site.supports(op)
                 || self
                     .reference
@@ -495,13 +522,14 @@ impl PatternSite<'_> {
                 let Some(range) = self.literal.range_for(&edit.span) else {
                     continue;
                 };
-                if !selected(self.reference.unwrap_or(range)) {
+                let admission = self.reference.unwrap_or(range);
+                if !selected(admission) || !sink.needs_validation(admission.start(), op) {
                     continue;
                 }
                 if self.reference.is_some() && !seen.insert((edit.span.clone(), edit.variant)) {
                     continue;
                 }
-                if let Some((range, text)) = self.materialize(edit) {
+                if let Some((range, text)) = self.materialize(edit, site.cancelled) {
                     variants += 1;
                     if !sink.emit(self.reference.unwrap_or(range), op, || {
                         self.project(range, text)
@@ -564,7 +592,11 @@ impl PatternSite<'_> {
         }
     }
 
-    fn materialize(&self, edit: &pattern::Edit) -> Option<(TextRange, String)> {
+    fn materialize(
+        &self,
+        edit: &pattern::Edit,
+        cancelled: &dyn Fn() -> bool,
+    ) -> Option<(TextRange, String)> {
         let span = edit.span.clone();
         match edit.variant {
             Variant::Text(text) => self.literal.edit(span, Change::Replace(text)),
@@ -578,6 +610,20 @@ impl PatternSite<'_> {
                     suffix: ")",
                 },
             ),
+            Variant::Count(index) => {
+                let spelling = self.syntax.count_replacement(index, cancelled)?;
+                self.literal.edit(span, Change::Replace(&spelling))
+            }
+            Variant::MakeLazy => self.literal.edit(
+                span,
+                Change::Surround {
+                    prefix: "",
+                    suffix: "?",
+                },
+            ),
+            Variant::MakeGreedy | Variant::DeleteAlternative => {
+                self.literal.edit(span, Change::Replace(""))
+            }
         }
     }
 

@@ -342,6 +342,45 @@ const OPERATORS: &[(MutationOperator, &str)] = &[
         MutationOperator::MatchClassPositionSwap,
         "match_class_position_swap",
     ),
+    (MutationOperator::AugmentedToBinary, "augmented_to_binary"),
+    (
+        MutationOperator::AssignmentTargetSwap,
+        "assignment_target_swap",
+    ),
+    (MutationOperator::ReturnValueNone, "return_value_none"),
+    (
+        MutationOperator::IdentityEqualitySwap,
+        "identity_equality_swap",
+    ),
+    (MutationOperator::ElseSuiteRemove, "else_suite_remove"),
+    (MutationOperator::ZipStrictToggle, "zip_strict_toggle"),
+    (MutationOperator::RangeBoundNeighbor, "range_bound_neighbor"),
+    (MutationOperator::CompareDirection, "compare_direction"),
+    (
+        MutationOperator::RegexQuantifierNeighbor,
+        "regex_quantifier_neighbor",
+    ),
+    (
+        MutationOperator::RegexGreedinessToggle,
+        "regex_greediness_toggle",
+    ),
+    (
+        MutationOperator::RegexAlternativeDelete,
+        "regex_alternative_delete",
+    ),
+    (
+        MutationOperator::FStringFormatOptionSwap,
+        "fstring_format_option_swap",
+    ),
+    (MutationOperator::ContextExitOmit, "context_exit_omit"),
+    (
+        MutationOperator::ContextExitResultNegate,
+        "context_exit_result_negate",
+    ),
+    (
+        MutationOperator::YieldStatementRemove,
+        "yield_statement_remove",
+    ),
 ];
 
 const FAMILIES: [&str; 12] = [
@@ -500,6 +539,21 @@ const FAMILIES: [&str; 12] = [
 #[case::match_case_swap(137)]
 #[case::match_pattern_wildcard(138)]
 #[case::match_class_position_swap(139)]
+#[case::augmented_to_binary(140)]
+#[case::assignment_target_swap(141)]
+#[case::return_value_none(142)]
+#[case::identity_equality_swap(143)]
+#[case::else_suite_remove(144)]
+#[case::zip_strict_toggle(145)]
+#[case::range_bound_neighbor(146)]
+#[case::compare_direction(147)]
+#[case::regex_quantifier_neighbor(148)]
+#[case::regex_greediness_toggle(149)]
+#[case::regex_alternative_delete(150)]
+#[case::fstring_format_option_swap(151)]
+#[case::context_exit_omit(152)]
+#[case::context_exit_result_negate(153)]
+#[case::yield_statement_remove(154)]
 fn canonical_names_preserve_wire_encoding_and_exact_lookup(#[case] case_index: usize) {
     let &(operator, name) = &OPERATORS[case_index];
 

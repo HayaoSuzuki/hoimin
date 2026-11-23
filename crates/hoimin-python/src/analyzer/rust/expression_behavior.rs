@@ -2,13 +2,17 @@
 use super::source_delimiters::DelimiterDepth;
 use super::{MutationOperator, MutationOperatorSelection, source_text};
 use ruff_python_ast::token::{TokenKind, Tokens};
-use ruff_python_ast::{BoolOp, Expr, ExprDict, ExprIf, Stmt, StmtDelete};
+use ruff_python_ast::{
+    BoolOp, CmpOp, Expr, ExprBoolOp, ExprCompare, ExprDict, ExprIf, Stmt, StmtDelete,
+};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
 #[derive(Clone, Copy)]
 pub(super) struct Options<'a> {
     pub(super) operators: &'a MutationOperatorSelection,
     pub(super) max_candidates: usize,
+    /// The statement collector retains the original direct if/elif behavior.
+    pub(super) skip_clause_delete: bool,
 }
 
 /// Emit the changes to this expression only, stopping when the emitting collector asks.
@@ -36,6 +40,22 @@ pub(super) fn expression(
                 cancelled,
                 &mut emit,
             );
+        }
+        Expr::BoolOp(boolean)
+            if operators.contains(MutationOperator::ConditionClauseDelete)
+                && !options.skip_clause_delete =>
+        {
+            boolean_edits(
+                boolean,
+                source,
+                delimiters,
+                options.max_candidates,
+                cancelled,
+                &mut emit,
+            );
+        }
+        Expr::Compare(comparison) if operators.contains(MutationOperator::CompareDirection) => {
+            comparison_edits(comparison, tokens, cancelled, &mut emit);
         }
         Expr::Await(awaited)
             if operators.contains(MutationOperator::AwaitRemove)
@@ -114,50 +134,104 @@ fn conditional_edits(
             }
         }
     }
-    if operators.contains(MutationOperator::ConditionClauseDelete)
-        && let Expr::BoolOp(boolean) = conditional.test.as_ref()
-        && boolean.values.len() >= 2
-    {
-        let separator = match boolean.op {
-            BoolOp::And => " and ",
-            BoolOp::Or => " or ",
-        };
-        let mut previous = None;
-        let mut emitted = 0;
-        for (removed, operand) in boolean.values.iter().enumerate() {
-            if cancelled() || emitted > options.max_candidates {
-                return;
+}
+
+fn boolean_edits(
+    boolean: &ExprBoolOp,
+    source: &str,
+    delimiters: &DelimiterDepth,
+    max_candidates: usize,
+    cancelled: &impl Fn() -> bool,
+    emit: &mut impl FnMut(TextRange, MutationOperator, &dyn Fn() -> String) -> bool,
+) {
+    let range = boolean.range();
+    if boolean.values.len() < 2 || !delimiters.can_enclose(range, 2) {
+        return;
+    }
+    let Some(original) = source_text(source, range) else {
+        return;
+    };
+    let separator = match boolean.op {
+        BoolOp::And => " and ",
+        BoolOp::Or => " or ",
+    };
+    let mut previous = None;
+    let mut emitted = 0;
+    for (removed, operand) in boolean.values.iter().enumerate() {
+        if cancelled() || emitted > max_candidates {
+            return;
+        }
+        let text = source_text(source, operand.range());
+        if previous == text {
+            continue;
+        }
+        previous = text;
+        emitted += 1;
+        if !emit(range, MutationOperator::ConditionClauseDelete, &|| {
+            let mut replacement = String::from("(");
+            let mut first = true;
+            for (index, operand) in boolean.values.iter().enumerate() {
+                if cancelled() {
+                    return String::new();
+                }
+                if index == removed {
+                    continue;
+                }
+                if !first {
+                    replacement.push_str(separator);
+                }
+                first = false;
+                replacement.push('(');
+                replacement.push_str(source_text(source, operand.range()).expect("parsed operand"));
+                replacement.push(')');
             }
-            let text = source_text(source, operand.range());
-            if previous == text {
+            // The original branch contributes bindings, free reads and yield
+            // classification without evaluating any of the removed operand.
+            replacement.push_str(" if True else (");
+            replacement.push_str(original);
+            replacement.push_str("))");
+            replacement
+        }) {
+            return;
+        }
+    }
+}
+
+fn comparison_edits(
+    comparison: &ExprCompare,
+    tokens: &Tokens,
+    cancelled: &impl Fn() -> bool,
+    emit: &mut impl FnMut(TextRange, MutationOperator, &dyn Fn() -> String) -> bool,
+) {
+    let mut left = comparison.first_operand().end();
+    for (operator, right) in comparison.ops.iter().zip(comparison.comparators()) {
+        if cancelled() {
+            return;
+        }
+        let gap = TextRange::new(left, right.start());
+        left = right.end();
+        let (kind, replacement) = match operator {
+            CmpOp::Lt => (TokenKind::Less, ">"),
+            CmpOp::LtE => (TokenKind::LessEqual, ">="),
+            CmpOp::Gt => (TokenKind::Greater, "<"),
+            CmpOp::GtE => (TokenKind::GreaterEqual, "<="),
+            CmpOp::Eq | CmpOp::NotEq | CmpOp::Is | CmpOp::IsNot | CmpOp::In | CmpOp::NotIn => {
                 continue;
             }
-            previous = text;
-            emitted += 1;
-            if !emit(test_range, MutationOperator::ConditionClauseDelete, &|| {
-                let mut replacement = String::from("(");
-                let mut retained = boolean
-                    .values
-                    .iter()
-                    .enumerate()
-                    .filter(|(index, _)| *index != removed)
-                    .peekable();
-                while let Some((_, operand)) = retained.next() {
-                    replacement.push('(');
-                    replacement
-                        .push_str(source_text(source, operand.range()).expect("parsed operand"));
-                    replacement.push(')');
-                    if retained.peek().is_some() {
-                        replacement.push_str(separator);
-                    }
-                }
-                replacement.push_str(" if True else (");
-                replacement.push_str(original_test);
-                replacement.push_str("))");
-                replacement
-            }) {
-                return;
-            }
+        };
+        let token = tokens
+            .in_range(gap)
+            .iter()
+            .find(|token| cancelled() || token.kind() == kind);
+        if cancelled() {
+            return;
+        }
+        if let Some(token) = token
+            && !emit(token.range(), MutationOperator::CompareDirection, &|| {
+                replacement.to_owned()
+            })
+        {
+            return;
         }
     }
 }

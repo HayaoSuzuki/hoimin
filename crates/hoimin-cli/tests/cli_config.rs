@@ -67,7 +67,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 121] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 136] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -189,6 +189,21 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 121] = [
     "match_case_swap",
     "match_pattern_wildcard",
     "match_class_position_swap",
+    "augmented_to_binary",
+    "assignment_target_swap",
+    "return_value_none",
+    "identity_equality_swap",
+    "else_suite_remove",
+    "zip_strict_toggle",
+    "range_bound_neighbor",
+    "compare_direction",
+    "regex_quantifier_neighbor",
+    "regex_greediness_toggle",
+    "regex_alternative_delete",
+    "fstring_format_option_swap",
+    "context_exit_omit",
+    "context_exit_result_negate",
+    "yield_statement_remove",
 ];
 
 #[rstest::rstest]

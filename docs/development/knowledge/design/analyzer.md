@@ -5,6 +5,10 @@ description: 構文・名前解決・変更するバイト範囲・候補保持�
 status: draft
 catalog_revision: a7daea0b557cd435c1e55b540392fbdd116348e1
 sources:
+- id: python-behavior-mutations
+  resource: ../../work/designs/2026-11-23-python-behavior-mutations.md
+  working_tree: untracked
+  sha256: a0a8a92893331c82c3840f3897a6a9440fe89aa339f77641e7b268501cabb692
 - id: research-final-fixes
   resource: ../../work/reports/research-mutations/final-fixes.md
   revision: e389cce9beb208c53e832277be4970d0969abc43
@@ -1866,3 +1870,31 @@ Issues #1190–#1192 and #1195–#1200 add 22 operators for cleanup, match dispa
 The regex domain models Python ASCII/Unicode distinctions, including root and scoped modes. Coordinated inline/external root flags use one covering edit. The collector rejects provably losing replacements before rendering large referenced literals, while later better-ranked candidates remain eligible. Cancellation reaches the name-index preprocessing walks. The report records executable witnesses and measured work bounds; it does not establish general regex equivalence or arbitrary dynamic-Python proofs.[^research-final-fixes]
 
 [^research-final-fixes]: [Implementation and verification record](../../work/reports/research-mutations/final-fixes.md).
+
+## Python behavioral mutation coverage
+
+Fifteen further runtime IDs cover assignment dispatch and destinations, per-return
+results, comparisons, else suites, zip strictness, range bounds, regex structure,
+format options, context exits and individual yields. Existing index/slice,
+tuple-return and Boolean-clause operators cover additional expressions. The
+design keeps discovery static and gives source construction to private domain
+modules; the collector owns selection, bounded admission and cancellation.
+[^python-behavior-mutations]
+
+Generated helper loads use the lexical scope and source-order snapshot of their
+insertion site, including qualified import roots. Ordinary syntax alone cannot
+establish arbitrary runtime receiver protocols. Runtime adapters retain original
+operand evaluation and delay integer-index conversion until its consumer asks
+for it; custom code can still observe a wrapper through introspection. The
+[operator reference](../../../user/reference/operators.md) records these limits.
+[^python-behavior-mutations]
+
+Candidate deduplication includes start, length, operator and replacement. Two
+deletions with equal starts and replacement text can have different source spans
+and must remain distinct. CPython witnesses and bounded properties validate the
+implemented cases; the expansion does not add a formal proof of Python runtime
+semantics. The [implementation plan](../../work/plans/2026-11-23-python-behavior-mutations.md)
+records this change's reviews and verification separately from historical audits.
+[^python-behavior-mutations]
+
+[^python-behavior-mutations]: [Python behavior mutation expansion](../../work/designs/2026-11-23-python-behavior-mutations.md).

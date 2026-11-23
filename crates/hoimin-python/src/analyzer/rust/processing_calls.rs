@@ -1,7 +1,7 @@
 //! Shared source and callable checks for collection and precision edits.
 
 use super::{
-    AnalysisCancelled, AstFacts, NameResolution, callable_imports::CallableImports,
+    AnalysisCancelled, AstFacts, HelperSite, NameResolution, callable_imports::CallableImports,
     source_delimiters::DelimiterDepth, source_text,
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
@@ -87,6 +87,35 @@ impl Builtins {
             Some(name.to_owned())
         } else {
             self.0.destination_spelling(name, anchor)
+        }
+    }
+
+    /// Resolve a helper evaluated before the original context-manager operand.
+    pub(super) fn destination_before_operand(
+        &self,
+        name: &str,
+        offset: TextSize,
+        site: &Site<'_>,
+    ) -> Option<String> {
+        self.generated_destination(name, HelperSite::BeforeOperand(offset), site)
+    }
+
+    pub(super) fn generated_destination(
+        &self,
+        name: &str,
+        position: HelperSite,
+        site: &Site<'_>,
+    ) -> Option<String> {
+        let resolution = &site.facts.name_resolution;
+        if self.0.namespace_stable()
+            && resolution.helper_resolution(position, name) == NameResolution::DefinitelyBuiltin
+        {
+            Some(name.to_owned())
+        } else {
+            self.0
+                .destination_spelling_at(name, position.offset(), |local| {
+                    resolution.allows_injected_import(position, local)
+                })
         }
     }
 

@@ -5,6 +5,7 @@ use std::ops::Deref;
 use camino::Utf8Path;
 use hoimin_core::{
     LineSelectionIndex, MutationCandidate, MutationOperator, Selection, TargetSlice,
+    logical_path_equality_key,
 };
 use serde::{Deserialize, Serialize};
 
@@ -77,12 +78,15 @@ pub(crate) fn rank_candidates(
 
 struct RankingContext<'a> {
     explicit_lines: LineSelectionIndex,
+    explicit_target_paths: HashSet<String>,
     selected_symbols: HashMap<&'a Utf8Path, HashSet<&'a str>>,
     changed: bool,
 }
 
 impl<'a> RankingContext<'a> {
     fn new(selection: &Selection, targets: &'a [TargetSlice]) -> Self {
+        let explicit_lines = LineSelectionIndex::new(&selection.root, &selection.lines);
+        let explicit_target_paths = explicit_lines.covered_target_paths(targets);
         let selected_symbols = targets
             .iter()
             .filter(|target| !target.symbols.is_empty())
@@ -97,7 +101,8 @@ impl<'a> RankingContext<'a> {
                 },
             );
         Self {
-            explicit_lines: LineSelectionIndex::new(&selection.root, &selection.lines),
+            explicit_lines,
+            explicit_target_paths,
             selected_symbols,
             changed: selection.changed.is_some(),
         }
@@ -105,10 +110,7 @@ impl<'a> RankingContext<'a> {
 
     fn reasons(&self, candidate: &MutationCandidate) -> Vec<RankingReason> {
         let mut reasons = Vec::new();
-        if self
-            .explicit_lines
-            .contains(&candidate.path, candidate.line)
-        {
+        if self.is_explicit_line(candidate) {
             reasons.push(reason(RankingReasonCode::ExplicitLine));
         }
         if self
@@ -130,6 +132,23 @@ impl<'a> RankingContext<'a> {
             reasons.push(reason(code));
         }
         reasons
+    }
+
+    fn is_explicit_line(&self, candidate: &MutationCandidate) -> bool {
+        if self
+            .explicit_lines
+            .contains(&candidate.path, candidate.line)
+        {
+            return true;
+        }
+        // Discovery checks the anchor against the target's lines AND symbols.
+        // Every admission on a covered path therefore required an explicit
+        // line, even if the edit replaces a newline outside the selected suite
+        // header. Saved-plan verification resolves targets and rediscovers IDs.
+        !self.explicit_target_paths.is_empty()
+            && self
+                .explicit_target_paths
+                .contains(logical_path_equality_key(&candidate.path).as_ref())
     }
 }
 
@@ -249,6 +268,10 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     let operator = MutationOperator::from_name(operator)?;
     Some(match operator {
         MutationOperator::LambdaCaptureLate
+        | MutationOperator::IdentityEqualitySwap
+        | MutationOperator::CompareDirection
+        | MutationOperator::ElseSuiteRemove
+        | MutationOperator::YieldStatementRemove
         | MutationOperator::ConditionalBranchSwap
         | MutationOperator::AwaitRemove
         | MutationOperator::MatchCaseSwap
@@ -280,6 +303,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::BooleanLiteral
         | MutationOperator::BreakContinue => RankingReasonCode::HighValueControl,
         MutationOperator::ExceptionCauseRemove
+        | MutationOperator::ContextExitOmit
+        | MutationOperator::ContextExitResultNegate
         | MutationOperator::ExceptionCauseOmit
         | MutationOperator::ExceptionHandlerSwap
         | MutationOperator::FinallyUnwrap
@@ -292,6 +317,15 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
         MutationOperator::BaseOrderShuffle
+        | MutationOperator::AugmentedToBinary
+        | MutationOperator::AssignmentTargetSwap
+        | MutationOperator::ReturnValueNone
+        | MutationOperator::ZipStrictToggle
+        | MutationOperator::RangeBoundNeighbor
+        | MutationOperator::RegexQuantifierNeighbor
+        | MutationOperator::RegexGreedinessToggle
+        | MutationOperator::RegexAlternativeDelete
+        | MutationOperator::FStringFormatOptionSwap
         | MutationOperator::BytesLiteralEmpty
         | MutationOperator::FStringFormatSpecRemove
         | MutationOperator::FStringFormatValueNeighbor

@@ -19,6 +19,20 @@ past decisions; their minor-version increases and preservation guidance are
 not requirements for future work. Repository test and release CI continues to
 validate the current implementation.
 
+## Behavioral mutation coverage
+
+Fresh runs and plans select 136 runtime operators from 155 catalog IDs. Fifteen
+new IDs cover augmented assignment, unpacking targets, return values, comparison
+directions, `else` suites, `zip` strictness, `range` bounds, regex quantifiers and
+alternatives, format options, context exits and individual yields. Each is enabled
+by default and can be disabled with `--exclude-operators ID`.
+
+Existing index/slice neighbors, tuple return swaps and Boolean clause deletion
+also cover more sites. Discovery deduplication now distinguishes different edit
+lengths at the same position, so distinct alternative deletions are retained. Create a
+fresh plan to discover these candidates; saved plans retain their recorded sets.
+See the [operator reference](operators.md) for applicability and effects.
+
 ## Language-reference mutation coverage
 
 Fresh runs and plans select 121 runtime operators from 140 catalog IDs.

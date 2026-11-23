@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use hoimin_cli::analyzer::{AnalyzerHandler, CandidateCursor, CandidateStore};
-use hoimin_core::{AnalyzeFile, EffectId, MutationOperatorSelection, MutationProfile, TargetSlice};
+use hoimin_core::{AnalyzeFile, EffectId, MutationProfile, TargetSlice};
 use serde::Deserialize;
 
 #[cfg(windows)]
@@ -267,7 +267,7 @@ async fn assert_ordered_target_spool(case_id: &str) {
     let limit = usize::try_from(item.limit).expect("target limit fits usize");
     let mut handler = AnalyzerHandler::new(
         root,
-        MutationOperatorSelection::default(),
+        serde_json::from_value(serde_json::json!(["compare_eq_ne"])).unwrap(),
         MutationProfile::Full,
         NonZeroUsize::new(limit).expect("ordered target cases require a positive limit"),
     );
@@ -409,6 +409,8 @@ fn plan_args(fixture: &Fixture, limit: u64) -> Vec<OsString> {
         "src/alpha.py".into(),
         "--file".into(),
         "src/beta.py".into(),
+        "--operators".into(),
+        "compare_eq_ne".into(),
         "--max-candidates".into(),
         limit.to_string().into(),
         "--jobs".into(),

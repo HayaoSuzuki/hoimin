@@ -54,10 +54,6 @@ fn handler_body(module: &ModModule) -> &ruff_python_ast::ExceptHandlerExceptHand
     handler
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "one exhaustive dispatch table exercises each directly callable producer with the same prefailed sink"
-)]
 fn invoke<'ast>(
     collector: &mut AstCandidateCollector<'ast, &dyn Fn() -> bool>,
     module: &'ast ModModule,
@@ -122,21 +118,8 @@ fn invoke<'ast>(
         Attempt::StructuralMethod => {
             collector.collect_structural_method_call(call(module), "get");
         }
-        Attempt::Subscript => {
+        Attempt::Subscript | Attempt::Index | Attempt::Slice => {
             collector.collect_subscript(expression(module).as_subscript_expr().unwrap());
-        }
-        Attempt::Index => {
-            collector.collect_index_neighbors(expression(module));
-        }
-        Attempt::Slice => {
-            collector.collect_slice_neighbors(
-                expression(module)
-                    .as_subscript_expr()
-                    .unwrap()
-                    .slice
-                    .as_slice_expr()
-                    .unwrap(),
-            );
         }
         Attempt::List => {
             collector.collect_list_literal(expression(module).as_list_expr().unwrap());
@@ -281,6 +264,7 @@ fn observe_attempt(
         conversion_imports: stdlib_conversions::ConversionImports::build(module, &cancelled)
             .unwrap(),
         return_scope: ReturnScope::Excluded,
+        exit_scope: lifecycle_mutations::ExitScope::Outside,
         enclosing_body: EnclosingBody::Module,
         comparison_scope: ComparisonReturnScope::Excluded,
         integer_suppressed: matches!(state, State::SuppressedInteger),
@@ -330,7 +314,7 @@ fn observe_attempt(
 #[case::method("items.append(item)", Attempt::Method)]
 #[case::structuralmethod("items.get(key)", Attempt::StructuralMethod)]
 #[case::subscript("items[index]", Attempt::Subscript)]
-#[case::index("1", Attempt::Index)]
+#[case::index("items[1]", Attempt::Index)]
 #[case::slice("items[1:2:3]", Attempt::Slice)]
 #[case::list("[first, second]", Attempt::List)]
 #[case::tuple("(first, second)", Attempt::Tuple)]

@@ -698,5 +698,80 @@
     "operator": "match_class_position_swap",
     "status": "deferred",
     "reason": "Positional matching and delimiter boundaries are checked by parser tests and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "augmented_to_binary",
+    "status": "deferred",
+    "reason": "Augmented assignment evaluation, aliases and descriptors are covered by assignment result CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "assignment_target_swap",
+    "status": "deferred",
+    "reason": "Unpacking evaluation and target order are covered by assignment result CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "return_value_none",
+    "status": "deferred",
+    "reason": "Per-return effects and lexical facts are covered by assignment result CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "identity_equality_swap",
+    "status": "deferred",
+    "reason": "Identity and equality chain semantics are covered by assignment result CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "else_suite_remove",
+    "status": "deferred",
+    "reason": "Else suite control flow and lexical retention are covered by assignment result CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "zip_strict_toggle",
+    "status": "deferred",
+    "reason": "Zip strictness and argument evaluation are covered by dynamic boundary CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "range_bound_neighbor",
+    "status": "deferred",
+    "reason": "Range conversion order and neighboring bounds are covered by dynamic boundary CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "compare_direction",
+    "status": "deferred",
+    "reason": "Comparison chains and evaluation counts are covered by dynamic boundary CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_quantifier_neighbor",
+    "status": "deferred",
+    "reason": "Regex quantifier legality and behavior are covered by regex format properties and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_greediness_toggle",
+    "status": "deferred",
+    "reason": "Regex greediness and possessiveness are covered by regex format properties and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "regex_alternative_delete",
+    "status": "deferred",
+    "reason": "Regex alternatives and references are covered by regex format properties and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "fstring_format_option_swap",
+    "status": "deferred",
+    "reason": "Format options and dynamic fields are covered by regex format properties and CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "context_exit_omit",
+    "status": "deferred",
+    "reason": "Sync and async context entry, exit and unwinding are covered by lifecycle CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "context_exit_result_negate",
+    "status": "deferred",
+    "reason": "Exit suppression and cleanup are covered by lifecycle CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "yield_statement_remove",
+    "status": "deferred",
+    "reason": "Generator classification, effects and suspension are covered by lifecycle CPython witnesses outside the initial Lean corpus"
   }
 ]
