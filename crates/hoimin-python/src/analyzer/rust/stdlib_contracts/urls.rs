@@ -15,7 +15,7 @@ enum Api {
 }
 
 pub(super) fn emit(
-    id: ResolvedCallable<'_>,
+    id: &ResolvedCallable<'_>,
     imports: &CallableImports,
     call: &ExprCall,
     site: &Site<'_>,

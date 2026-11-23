@@ -505,6 +505,76 @@
     "reason": "Dedicated guarded identity, scope, source grouping, caps/selection/cancellation and public CPython behavior/opt-out checks; this producer is not modeled by the initial Lean cross-producer corpus"
   },
   {
+    "operator": "unicode_digit_predicate_swap",
+    "status": "deferred",
+    "reason": "Superscript and fraction predicate differences are covered by stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "unicode_digit_ascii",
+    "status": "deferred",
+    "reason": "Fullwidth digit rejection, ASCII invariance and receiver evaluation are covered by stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "unicode_normalization_form",
+    "status": "deferred",
+    "reason": "Composition and compatibility form differences are covered by stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "unicode_normalization_remove",
+    "status": "deferred",
+    "reason": "Removing normalization while preserving argument effects and assignment binding is checked by stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "string_casefold_lower",
+    "status": "deferred",
+    "reason": "The sharp s casefold and lowercase difference is covered by stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "string_affix_strip",
+    "status": "deferred",
+    "reason": "Literal prefix removal and character-set stripping differ on repeated affixes in stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "encoding_errors_replace",
+    "status": "deferred",
+    "reason": "Malformed UTF-8 replacement and codec argument evaluation order are covered by stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "map_strict_toggle",
+    "status": "deferred",
+    "reason": "Unequal iterable lengths and strict option truth testing are covered by stdlib_option_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "batched_strict_toggle",
+    "status": "deferred",
+    "reason": "Incomplete final batches and strict option truth testing are covered by stdlib_option_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "url_quote_swap",
+    "status": "deferred",
+    "reason": "Space, slash and plus handling and unreserved ASCII invariance are covered by stdlib_option_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "url_query_policy",
+    "status": "deferred",
+    "reason": "Sequence encoding, blank query values and truth conversion effects are covered by stdlib_option_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "base64_validate_toggle",
+    "status": "deferred",
+    "reason": "Invalid character rejection and the CPython 3.15 ignorechars interaction are covered by stdlib_option_witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "json_allow_nan_toggle",
+    "status": "deferred",
+    "reason": "NaN serialization and dynamic allow_nan truth testing are covered by stdlib_option_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "encoding_errors_strict",
+    "status": "deferred",
+    "reason": "Restoring strict failure on malformed UTF-8 is covered by stdlib_text_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
     "operator": "base_order_shuffle",
     "status": "deferred",
     "reason": "Dedicated source-preserving permutation, default/opt-out, selector, cancellation and CPython saved-plan checks; not modeled by the initial Lean cross-producer corpus"
@@ -773,5 +843,25 @@
     "operator": "yield_statement_remove",
     "status": "deferred",
     "reason": "Generator classification, effects and suspension are covered by lifecycle CPython witnesses outside the initial Lean corpus"
+  },
+  {
+    "operator": "math_isclose_tolerance",
+    "status": "deferred",
+    "reason": "Absolute and relative tolerance boundaries, keyword effects and finite equality are covered by stdlib_numeric_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "math_precision_loss",
+    "status": "deferred",
+    "reason": "Precision near zero, awaited arguments and normalized aliases are covered by stdlib_numeric_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "statistics_sample_population",
+    "status": "deferred",
+    "reason": "Sample and population denominators and center keyword evaluation order are covered by stdlib_numeric_witnesses on CPython outside the initial Lean corpus"
+  },
+  {
+    "operator": "heap_pushpop_replace",
+    "status": "deferred",
+    "reason": "Returned and retained heap values, including empty heaps, are covered by stdlib_numeric_witnesses on CPython outside the initial Lean corpus"
   }
 ]

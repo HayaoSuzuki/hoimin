@@ -688,6 +688,24 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "dataclass_factory_share",
     "sort_key_swap",
     "encoding_errors_ignore",
+    "unicode_digit_predicate_swap",
+    "unicode_digit_ascii",
+    "unicode_normalization_form",
+    "unicode_normalization_remove",
+    "string_casefold_lower",
+    "string_affix_strip",
+    "encoding_errors_replace",
+    "map_strict_toggle",
+    "batched_strict_toggle",
+    "url_quote_swap",
+    "url_query_policy",
+    "base64_validate_toggle",
+    "json_allow_nan_toggle",
+    "encoding_errors_strict",
+    "math_isclose_tolerance",
+    "math_precision_loss",
+    "statistics_sample_population",
+    "heap_pushpop_replace",
     "itertools_take_drop_swap",
     "fstring_conversion_swap",
     "mutable_default_share",
@@ -780,7 +798,7 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(tested.len(), 155);
+    assert_eq!(tested.len(), 173);
     assert_eq!(tested, canonical);
 }
 
@@ -905,6 +923,36 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
 #[case::dataclass_factory_share("dataclass_factory_share", RankingReasonCode::Behavioral, 80)]
 #[case::sort_key_swap("sort_key_swap", RankingReasonCode::Behavioral, 80)]
 #[case::encoding_errors_ignore("encoding_errors_ignore", RankingReasonCode::Behavioral, 80)]
+#[case::unicode_digit_predicate_swap(
+    "unicode_digit_predicate_swap",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::unicode_digit_ascii("unicode_digit_ascii", RankingReasonCode::Behavioral, 80)]
+#[case::unicode_normalization_form("unicode_normalization_form", RankingReasonCode::Behavioral, 80)]
+#[case::unicode_normalization_remove(
+    "unicode_normalization_remove",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::string_casefold_lower("string_casefold_lower", RankingReasonCode::Behavioral, 80)]
+#[case::string_affix_strip("string_affix_strip", RankingReasonCode::Behavioral, 80)]
+#[case::encoding_errors_replace("encoding_errors_replace", RankingReasonCode::Behavioral, 80)]
+#[case::map_strict_toggle("map_strict_toggle", RankingReasonCode::Behavioral, 80)]
+#[case::batched_strict_toggle("batched_strict_toggle", RankingReasonCode::Behavioral, 80)]
+#[case::url_quote_swap("url_quote_swap", RankingReasonCode::Behavioral, 80)]
+#[case::url_query_policy("url_query_policy", RankingReasonCode::Behavioral, 80)]
+#[case::base64_validate_toggle("base64_validate_toggle", RankingReasonCode::Behavioral, 80)]
+#[case::json_allow_nan_toggle("json_allow_nan_toggle", RankingReasonCode::Behavioral, 80)]
+#[case::encoding_errors_strict("encoding_errors_strict", RankingReasonCode::Behavioral, 80)]
+#[case::math_isclose_tolerance("math_isclose_tolerance", RankingReasonCode::Behavioral, 80)]
+#[case::math_precision_loss("math_precision_loss", RankingReasonCode::Behavioral, 80)]
+#[case::statistics_sample_population(
+    "statistics_sample_population",
+    RankingReasonCode::Behavioral,
+    80
+)]
+#[case::heap_pushpop_replace("heap_pushpop_replace", RankingReasonCode::Behavioral, 80)]
 #[case::itertools_take_drop_swap("itertools_take_drop_swap", RankingReasonCode::Behavioral, 80)]
 #[case::fstring_conversion_swap("fstring_conversion_swap", RankingReasonCode::Behavioral, 80)]
 #[case::mutable_default_share("mutable_default_share", RankingReasonCode::Behavioral, 80)]

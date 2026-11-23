@@ -119,7 +119,12 @@ fn uncertain_or_incompatible_call_is_skipped(#[case] id: &str, #[case] source: &
     // Act
     let output = analyze(source, id, &lines, 10);
     // Assert
-    assert!(output.candidates.is_empty(), "{:?}", output.candidates);
+    assert_eq!(
+        output.candidates.len(),
+        0,
+        "{id}: {source}\n{:?}",
+        output.candidates
+    );
 }
 
 #[rstest::rstest]
@@ -208,15 +213,11 @@ fn normalization_form_keeps_comments_between_literal_parts() {
 #[rstest::rstest]
 #[case::decoded_form(
     "unicode_normalization_form",
-    r#"import unicodedata as u
-u.normalize('N' '' '\x46' 'KC', text)"#,
+    r"import unicodedata as u
+u.normalize('N' '' '\x46' 'KC', text)",
     2
 )]
-#[case::decoded_policy(
-    "encoding_errors_ignore",
-    r#"s.decode(errors='ig' '' '\x6e' 'ore')"#,
-    0
-)]
+#[case::decoded_policy("encoding_errors_ignore", r"s.decode(errors='ig' '' '\x6e' 'ore')", 0)]
 #[case::form_prefix_only(
     "unicode_normalization_form",
     "import unicodedata as u\nu.normalize('NF' '', text)",

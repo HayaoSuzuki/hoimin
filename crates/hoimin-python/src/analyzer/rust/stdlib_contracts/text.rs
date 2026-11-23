@@ -151,6 +151,15 @@ pub(super) fn emit(
         }
         return true;
     }
+    emit_normalization(imports, call, site, emit)
+}
+
+fn emit_normalization(
+    imports: &CallableImports,
+    call: &ExprCall,
+    site: &Site<'_>,
+    emit: &mut impl FnMut(TextRange, MutationOperator, &dyn Fn() -> String) -> bool,
+) -> bool {
     if !(site.supports(UnicodeNormalizationForm) || site.supports(UnicodeNormalizationRemove)) {
         return true;
     }

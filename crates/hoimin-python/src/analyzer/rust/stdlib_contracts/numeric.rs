@@ -96,8 +96,8 @@ impl Imports {
                 let arg = implicit_generator_interior(call)
                     .unwrap_or_else(|| site.argument_range(&call.arguments.args[0], call));
                 if site.delimiters.can_enclose(arg, 1) {
-                    let edit = TextRange::new(range.start(), arg.end());
-                    return emit(edit, range.start(), op, &|| {
+                    let replacement_span = TextRange::new(range.start(), arg.end());
+                    return emit(replacement_span, range.start(), op, &|| {
                         let between = site.text(TextRange::new(range.end(), arg.start())).unwrap();
                         let value = site.text(arg).unwrap();
                         format!("{dest}{between}1 + ({value})")
@@ -106,8 +106,8 @@ impl Imports {
             }
             _ => {
                 if let Some((kw, name)) = center {
-                    let edit = TextRange::new(range.start(), kw.end());
-                    return emit(edit, range.start(), op, &|| {
+                    let replacement_span = TextRange::new(range.start(), kw.end());
+                    return emit(replacement_span, range.start(), op, &|| {
                         let between = site.text(TextRange::new(range.end(), kw.start())).unwrap();
                         format!("{dest}{between}{name}")
                     });
@@ -260,7 +260,7 @@ fn isclose(
             Expr::NumberLiteral(literal) => match &literal.value {
                 Number::Int(integer) => Some(integer.as_u64() == Some(0)),
                 Number::Float(float) => Some(*float == 0.0),
-                _ => None,
+                Number::Complex { .. } => None,
             },
             _ => None,
         };

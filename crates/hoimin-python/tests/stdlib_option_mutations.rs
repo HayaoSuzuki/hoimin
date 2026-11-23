@@ -89,7 +89,7 @@ fn rejects_call(#[case] id: &str, #[case] source: &str) {
     // Act
     let out = analyze(source, id, &[], cap);
     // Assert
-    assert!(out.candidates.is_empty());
+    assert_eq!(out.candidates.len(), 0, "{id}: {source}");
 }
 
 proptest::proptest! {
@@ -100,7 +100,7 @@ proptest::proptest! {
         // Act
         let out=analyze(&source,"url_query_policy",&[],10);
         // Assert
-        proptest::prop_assert!(out.candidates.is_empty());
+        proptest::prop_assert_eq!(out.candidates.len(), 0, "{}", source);
     }
 
     #[test]
@@ -164,5 +164,5 @@ fn sibling_package_hazard(#[case] hazard: &str) {
     // Act
     let out = analyze(&source, "url_quote_swap", &[], 10);
     // Assert
-    assert!(out.candidates.is_empty());
+    assert_eq!(out.candidates.len(), 0, "{hazard}");
 }

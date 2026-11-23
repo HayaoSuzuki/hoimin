@@ -228,7 +228,7 @@ fn parser_limit_excludes_deeper_edit(
     // Act
     let output = analyze(&source, id, &[], 10);
     // Assert
-    assert!(output.candidates.is_empty());
+    assert_eq!(output.candidates.len(), 0, "{id}: {expression}");
 }
 
 #[rstest::rstest]
@@ -309,5 +309,5 @@ fn unsafe_normalized_destination_without_fallback(#[case] imports: &str) {
     // Act
     let out = analyze(&source, "math_precision_loss", &[], 10);
     // Assert
-    assert!(out.candidates.is_empty());
+    assert_eq!(out.candidates.len(), 0, "{imports}");
 }

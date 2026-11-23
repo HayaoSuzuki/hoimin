@@ -11,6 +11,11 @@ pub(super) struct Imports {
     codec_module_names: HashSet<String>,
 }
 
+enum ErrorsArgument<'a> {
+    Omitted,
+    Explicit(&'a Expr),
+}
+
 impl Imports {
     pub(super) fn build(
         module: &ModModule,
@@ -51,7 +56,11 @@ impl Imports {
         })
     }
 
-    fn policy<'a>(&self, call: &'a ExprCall, site: &Site<'_>) -> Option<Option<&'a Expr>> {
+    fn errors_argument<'a>(
+        &self,
+        call: &'a ExprCall,
+        site: &Site<'_>,
+    ) -> Option<ErrorsArgument<'a>> {
         let trusted = self.codecs.as_ref().is_some_and(|imports| {
             imports.resolve(&call.func).is_some_and(|identity| {
                 identity.module == "codecs" && matches!(identity.member, "encode" | "decode")
@@ -76,11 +85,15 @@ impl Imports {
                 return None;
             }
         }
-        if trusted {
-            Some(bind(call, ["obj", "encoding", "errors"], 0, 3, 1)?[2])
+        let errors = if trusted {
+            bind(call, ["obj", "encoding", "errors"], 0, 3, 1)?[2]
         } else {
-            Some(bind(call, ["encoding", "errors"], 0, 2, 0)?[1])
-        }
+            bind(call, ["encoding", "errors"], 0, 2, 0)?[1]
+        };
+        Some(match errors {
+            Some(expr) => ErrorsArgument::Explicit(expr),
+            None => ErrorsArgument::Omitted,
+        })
     }
 }
 // CallableImports deliberately drops all evidence on namespace uncertainty.
@@ -189,10 +202,13 @@ impl Imports {
         if !POLICIES.iter().any(|p| site.supports(p.operator())) {
             return;
         }
-        let Some(policy) = self.policy(call, site) else {
+        let Some(errors) = self.errors_argument(call, site) else {
             return;
         };
-        let literal = policy.and_then(Expr::as_string_literal_expr);
+        let literal = match errors {
+            ErrorsArgument::Explicit(expr) => expr.as_string_literal_expr(),
+            ErrorsArgument::Omitted => None,
+        };
         let Ok(original) =
             super::decoded_choice(literal, POLICIES.map(|p| (p.name(), p)), site.cancelled)
         else {
@@ -207,7 +223,7 @@ impl Imports {
             if !site.supports(op) || original == Some(destination) {
                 continue;
             }
-            if let Some(expr) = policy {
+            if let ErrorsArgument::Explicit(expr) = errors {
                 if literal.is_some_and(|lit| !lit.value.is_implicit_concatenated()) {
                     if !emit(expr.range(), op, &|| format!("'{name}'")) {
                         return;

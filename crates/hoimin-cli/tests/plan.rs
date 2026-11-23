@@ -446,6 +446,81 @@ async fn plans_for_new_operator_families_pass_verify(#[case] selector: &str, #[c
     assert!(!marker.exists());
 }
 
+#[rstest::rstest]
+#[case::unicode_digit_predicate_swap("unicode_digit_predicate_swap", "text.isdigit()\n")]
+#[case::unicode_digit_ascii("unicode_digit_ascii", "text.isnumeric()\n")]
+#[case::unicode_normalization_form(
+    "unicode_normalization_form",
+    "import unicodedata as u\nu.is_normalized('NFC', text)\n"
+)]
+#[case::unicode_normalization_remove(
+    "unicode_normalization_remove",
+    "from unicodedata import normalize\nnormalize('NFC', text)\n"
+)]
+#[case::string_casefold_lower("string_casefold_lower", "text.casefold()\n")]
+#[case::string_affix_strip("string_affix_strip", "text.removesuffix('.txt')\n")]
+#[case::encoding_errors_replace("encoding_errors_replace", "data.decode()\n")]
+#[case::map_strict_toggle("map_strict_toggle", "map(combine, left, right)\n")]
+#[case::batched_strict_toggle(
+    "batched_strict_toggle",
+    "from itertools import batched\nbatched(items, 2)\n"
+)]
+#[case::url_quote_swap("url_quote_swap", "import urllib.parse as u\nu.quote(text)\n")]
+#[case::url_query_policy(
+    "url_query_policy",
+    "from urllib.parse import parse_qs\nparse_qs(query)\n"
+)]
+#[case::base64_validate_toggle("base64_validate_toggle", "import base64\nbase64.b64decode(data)\n")]
+#[case::json_allow_nan_toggle("json_allow_nan_toggle", "import json\njson.dumps(value)\n")]
+#[case::encoding_errors_strict("encoding_errors_strict", "text.encode(errors='replace')\n")]
+#[case::math_isclose_tolerance("math_isclose_tolerance", "import math\nmath.isclose(a, b)\n")]
+#[case::math_precision_loss("math_precision_loss", "from math import log1p\nlog1p(value)\n")]
+#[case::statistics_sample_population(
+    "statistics_sample_population",
+    "import statistics\nstatistics.variance(data, xbar=center)\n"
+)]
+#[case::heap_pushpop_replace(
+    "heap_pushpop_replace",
+    "import heapq\nheapq.heappushpop(heap, item)\n"
+)]
+#[tokio::test]
+async fn saved_plan_rediscovers_stdlib_contract_operator(
+    #[case] operator: &str,
+    #[case] source: &str,
+) {
+    // Arrange
+    let project = Project::new_with_source(source);
+    let (path, manifest, marker) = write_plan_manifest(
+        &project,
+        &["--file", "src/calc.py", "--operators", operator],
+    )
+    .await;
+    let ids: Vec<_> = manifest
+        .candidates
+        .iter()
+        .map(|candidate| candidate.id.clone())
+        .collect();
+
+    // Act
+    let verified = prepare_verify(&path, &ids).await;
+
+    // Assert
+    assert!(!ids.is_empty(), "{operator} did not produce a candidate");
+    assert!(
+        manifest
+            .candidates
+            .iter()
+            .all(|candidate| candidate.operator == operator)
+    );
+    let verified =
+        verified.unwrap_or_else(|error| panic!("{operator} plan failed verification: {error}"));
+    assert_eq!(
+        verified.selection().candidate_ids(),
+        Some(&ids.into_iter().collect())
+    );
+    assert!(!marker.exists());
+}
+
 #[tokio::test]
 async fn exception_family_plan_preserves_candidate_descriptor() {
     let project =

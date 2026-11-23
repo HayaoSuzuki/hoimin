@@ -60,7 +60,7 @@ impl Imports {
         if (site.supports(Op::UrlQuoteSwap) || site.supports(Op::UrlQueryPolicy))
             && let Some(id) = self.url.resolve(&call.func)
         {
-            return urls::emit(id, &self.url, call, site, emit);
+            return urls::emit(&id, &self.url, call, site, emit);
         }
         true
     }
@@ -135,50 +135,47 @@ impl Api {
                 )
             }
             Self::Dump | Self::Dumps => {
-                let (policy, cls) = match self {
-                    Self::Dump => {
-                        let slots = bind(
-                            call,
-                            [
-                                "obj",
-                                "fp",
-                                "allow_nan",
-                                "cls",
-                                "skipkeys",
-                                "ensure_ascii",
-                                "check_circular",
-                                "indent",
-                                "separators",
-                                "default",
-                                "sort_keys",
-                            ],
-                            0,
-                            2,
-                            2,
-                        )?;
-                        (slots[2], slots[3])
-                    }
-                    _ => {
-                        let slots = bind(
-                            call,
-                            [
-                                "obj",
-                                "allow_nan",
-                                "cls",
-                                "skipkeys",
-                                "ensure_ascii",
-                                "check_circular",
-                                "indent",
-                                "separators",
-                                "default",
-                                "sort_keys",
-                            ],
-                            0,
-                            1,
-                            1,
-                        )?;
-                        (slots[1], slots[2])
-                    }
+                let (policy, cls) = if matches!(self, Self::Dump) {
+                    let slots = bind(
+                        call,
+                        [
+                            "obj",
+                            "fp",
+                            "allow_nan",
+                            "cls",
+                            "skipkeys",
+                            "ensure_ascii",
+                            "check_circular",
+                            "indent",
+                            "separators",
+                            "default",
+                            "sort_keys",
+                        ],
+                        0,
+                        2,
+                        2,
+                    )?;
+                    (slots[2], slots[3])
+                } else {
+                    let slots = bind(
+                        call,
+                        [
+                            "obj",
+                            "allow_nan",
+                            "cls",
+                            "skipkeys",
+                            "ensure_ascii",
+                            "check_circular",
+                            "indent",
+                            "separators",
+                            "default",
+                            "sort_keys",
+                        ],
+                        0,
+                        1,
+                        1,
+                    )?;
+                    (slots[1], slots[2])
                 };
                 if cls.is_some_and(|value| !value.is_none_literal_expr()) {
                     return None;
