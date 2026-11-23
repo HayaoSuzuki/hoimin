@@ -3222,6 +3222,7 @@ async fn run_loop_context(
         let mut in_flight = 0_usize;
         let mut io_in_flight = 0_usize;
         let mut stop_signalled = false;
+        let mut disk_stop_drain_pending = false;
         let mut priority_event = None;
 
         while state.phase() != RunPhase::Finished {
@@ -3290,6 +3291,30 @@ async fn run_loop_context(
                 if !state.is_effect_pending(effect.id()) {
                     cancel_queued_effect(&effect, &mut metrics, &mut metrics_warnings);
                     continue;
+                }
+                // Disk cancellation is already signalled. Deliver the machine's ordered
+                // stop diagnostic before drain can consume the shutdown grace. No further
+                // filesystem/process effect may run until the outstanding owners are drained.
+                if disk_stop_drain_pending && !matches!(effect, RunEffect::EmitOutput(_)) {
+                    let budget = shutdown_budget
+                        .as_ref()
+                        .expect("disk stop establishes a shutdown budget");
+                    drain_processes(
+                        &mut process_tasks,
+                        &mut io_tasks,
+                        &mut completion_rx,
+                        &mut in_flight,
+                        budget,
+                        &mut shutdown_expiry_reported,
+                        &mut metrics,
+                        &mut metrics_warnings,
+                        |completion| {
+                            let _ = accept_blocking_completion(&mut context, completion);
+                        },
+                    )
+                    .await?;
+                    io_in_flight = 0;
+                    disk_stop_drain_pending = false;
                 }
                 if matches!(effect, RunEffect::Cleanup(_)) && !finalization.safety_proven() {
                     let monitor = disk_monitor
@@ -4516,6 +4541,9 @@ async fn run_loop_context(
                     | RunEvent::DiskStopRequested(_)
             );
             let deadline_stop = matches!(event, RunEvent::DeadlineReached);
+            if matches!(event, RunEvent::DiskStopRequested(_)) {
+                disk_stop_drain_pending = true;
+            }
             let failed = matches!(event, RunEvent::EffectFailed(_));
             let failed_primary = failed_event_primary(&event);
             if !external_stop
@@ -4623,6 +4651,8 @@ async fn run_loop_context(
                     &mut metrics,
                     &mut metrics_warnings,
                 );
+            }
+            if failed || (external_stop && !disk_stop_drain_pending) {
                 let candidate_budget = if deadline_stop {
                     ShutdownBudget::for_total_timeout_with_grace(deadline, shutdown_grace)
                 } else {
@@ -4655,7 +4685,8 @@ async fn run_loop_context(
                 .await;
                 finish_failed_event_drain(failed_primary, drain_result)?;
                 io_in_flight = 0;
-            } else if matches!(source, CompletionSource::Process(..)) {
+                disk_stop_drain_pending = false;
+            } else if !external_stop && matches!(source, CompletionSource::Process(..)) {
                 let process_failure = match process_tasks.join_next().await {
                     Some(Ok(())) => None,
                     Some(Err(error)) => Some(format!("process task failed: {error}")),
@@ -4688,7 +4719,7 @@ async fn run_loop_context(
                     .err();
                     return Err(combine_shutdown_errors(process_failure, drain_failure));
                 }
-            } else if matches!(source, CompletionSource::Blocking) {
+            } else if !external_stop && matches!(source, CompletionSource::Blocking) {
                 let io_failure = match io_tasks.join_next().await {
                     Some(Ok(())) => None,
                     Some(Err(error)) => Some(format!("blocking I/O task failed: {error}")),
@@ -11881,4 +11912,5 @@ mod tests {
     }
     include!("shell_coverage_tests.rs");
     include!("shell_runtime_coverage_tests.rs");
+    include!("shell_disk_stop_tests.rs");
 }
