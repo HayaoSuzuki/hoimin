@@ -249,6 +249,11 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
     let operator = MutationOperator::from_name(operator)?;
     Some(match operator {
         MutationOperator::LambdaCaptureLate
+        | MutationOperator::ConditionalBranchSwap
+        | MutationOperator::AwaitRemove
+        | MutationOperator::MatchCaseSwap
+        | MutationOperator::MatchPatternWildcard
+        | MutationOperator::MatchClassPositionSwap
         | MutationOperator::ContinueRemove
         | MutationOperator::MatchOrAlternativeDelete
         | MutationOperator::MatchGuardConstant
@@ -275,6 +280,8 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::BooleanLiteral
         | MutationOperator::BreakContinue => RankingReasonCode::HighValueControl,
         MutationOperator::ExceptionCauseRemove
+        | MutationOperator::ExceptionCauseOmit
+        | MutationOperator::ExceptionHandlerSwap
         | MutationOperator::FinallyUnwrap
         | MutationOperator::GatherReturnExceptions
         | MutationOperator::ExceptionTypePair
@@ -285,6 +292,12 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::ExceptionTupleAddPair
         | MutationOperator::ExceptionTupleRemoveMember => RankingReasonCode::ExceptionHandling,
         MutationOperator::BaseOrderShuffle
+        | MutationOperator::BytesLiteralEmpty
+        | MutationOperator::FStringFormatSpecRemove
+        | MutationOperator::FStringFormatValueNeighbor
+        | MutationOperator::DictUnpackOrderSwap
+        | MutationOperator::DictUnpackDelete
+        | MutationOperator::DelRemove
         | MutationOperator::OverrideMethodDelete
         | MutationOperator::SuperCallMove
         | MutationOperator::StatementOrderSwap
@@ -347,6 +360,7 @@ fn operator_reason(operator: &str) -> Option<RankingReasonCode> {
         | MutationOperator::StructureSliceBoundOmit
         | MutationOperator::StructureSliceBoundMove => RankingReasonCode::Behavioral,
         MutationOperator::AugmentedToAssignment
+        | MutationOperator::FloatLiteralNeighbor
         | MutationOperator::IntegerLiteralNeighbor
         | MutationOperator::BinaryAddSub
         | MutationOperator::AugmentedAddSub

@@ -199,32 +199,36 @@ fn website_publishes_the_actual_command_help(#[case] subcommand: Option<&str>) {
 #[case::slice(
     "structure_slice_bound_move",
     "result = items[:n]\n",
-    Some("result = items[n:]\n")
+    &["result = items[n:]\n"]
 )]
 #[case::cause(
     "exception_cause_remove",
     "raise Error() from cause\n",
-    Some("raise Error() from None\n")
+    &["raise Error() from None\n"]
 )]
-#[case::conversion_statement("conversion_call_remove", "int(value)\n", Some("(value)\n"))]
-#[case::ascii_conversion_excluded("fstring_conversion_swap", "result = f'{value!a}'\n", None)]
-#[case::set_deletion_excluded("container_element_delete", "result = {1, 2}\n", None)]
-#[case::ternary_excluded("condition_constant", "result = left if ready else right\n", None)]
-#[case::valued_return_excluded("function_body_erase", "def f():\n    return 1\n", None)]
+#[case::conversion_statement("conversion_call_remove", "int(value)\n", &["(value)\n"])]
+#[case::implicit_conversion_excluded("fstring_conversion_swap", "result = f'{value=}'\n", &[])]
+#[case::set_deletion_excluded("container_element_delete", "result = {1, 2}\n", &[])]
+#[case::ternary(
+    "condition_constant",
+    "result = left if ready else right\n",
+    &["result = left if (True or (ready)) else right\n", "result = left if (False and (ready)) else right\n"]
+)]
+#[case::valued_return_excluded("function_body_erase", "def f():\n    return 1\n", &[])]
 #[case::explicit_gather_option_excluded(
     "gather_return_exceptions",
     "import asyncio\nasyncio.gather(task, return_exceptions=False)\n",
-    None
+    &[]
 )]
 #[case::strict_encoding_excluded(
     "encoding_errors_ignore",
     "text.encode('ascii', errors='strict')\n",
-    None
+    &[]
 )]
 fn reference_example_has_the_documented_candidate(
     #[case] id: &str,
     #[case] source: &str,
-    #[case] expected: Option<&str>,
+    #[case] expected: &[&str],
 ) {
     // Arrange
     let operators: MutationOperatorSelection =
@@ -256,10 +260,7 @@ fn reference_example_has_the_documented_candidate(
     // Assert
     assert_eq!(output.diagnostics, []);
     assert!(!output.truncated);
-    assert_eq!(
-        actual,
-        expected.into_iter().map(str::to_owned).collect::<Vec<_>>()
-    );
+    assert_eq!(actual, expected);
 }
 
 fn documented_members(reference: &str, selector: &str) -> BTreeSet<String> {

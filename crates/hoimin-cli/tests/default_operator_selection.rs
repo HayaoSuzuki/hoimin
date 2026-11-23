@@ -167,7 +167,7 @@ async fn current_default_candidates_are_individually_excludable_case(#[case] ope
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
 
-    assert_eq!(manifest.normalized_config.operators.names().len(), 107);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 121);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(
@@ -256,7 +256,7 @@ async fn current_default_candidates_are_individually_excludable() {
     std::fs::write(root.path().join("subject.py"), &source).unwrap();
     let default = plan(root.path(), &[]).await;
     let manifest: PlanManifest = serde_json::from_value(default.clone()).unwrap();
-    assert_eq!(manifest.normalized_config.operators.names().len(), 107);
+    assert_eq!(manifest.normalized_config.operators.names().len(), 121);
     let candidates = default["candidates"].as_array().unwrap();
     for original in ["Decimal(x)", "Decimal.from_float(x)", "HTTPStatus(x)"] {
         assert!(

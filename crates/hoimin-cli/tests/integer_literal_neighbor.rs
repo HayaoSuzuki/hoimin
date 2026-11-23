@@ -9,6 +9,52 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+#[rstest::rstest]
+#[case::integer("integer_literal_neighbor", "", "9", "", 0)]
+#[case::float("float_literal_neighbor", "", "1.0", "", 0)]
+#[case::index("structure_index_neighbor", "items[", "9", "]", 1)]
+#[case::slice("structure_slice_neighbor", "items[:", "9", "]", 1)]
+#[tokio::test]
+async fn numeric_candidates_respect_python_delimiter_limit(
+    #[case] operator: &str,
+    #[case] prefix: &str,
+    #[case] number: &str,
+    #[case] suffix: &str,
+    #[case] existing: usize,
+    #[values(199, 200)] depth: usize,
+) {
+    // Arrange
+    let source = format!(
+        "value = {prefix}{}{number}{}{suffix}\n",
+        "(".repeat(depth - existing),
+        ")".repeat(depth - existing)
+    );
+    let operators = serde_json::from_value(serde_json::json!([operator])).unwrap();
+    let request = hoimin_python::AnalyzeRequest {
+        payload: hoimin_python::payload::PayloadBudget::default(),
+        path: camino::Utf8Path::new("numeric_depth.py"),
+        lines: &[],
+        symbols: &[],
+        operators: &operators,
+        profile: hoimin_core::MutationProfile::Full,
+        max_candidates: 10,
+    };
+    compile(&source).await;
+
+    // Act
+    let output = hoimin_python::analyze_source_cancellable(&request, &source, || false).unwrap();
+
+    // Assert
+    assert_eq!(output.candidates.is_empty(), depth == 200);
+    for candidate in output.candidates {
+        let start = usize::try_from(candidate.span.start).unwrap();
+        let length = usize::try_from(candidate.span.length).unwrap();
+        let mut mutant = source.clone();
+        mutant.replace_range(start..start + length, &candidate.replacement);
+        compile(&mutant).await;
+    }
+}
+
 fn python() -> PathBuf {
     std::env::var_os("HOIMIN_OPERATOR_TEST_PYTHON").map_or_else(
         || {
@@ -102,8 +148,8 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
 #[case::x_range_3_5("x = range(3)\n", vec!["(2)", "(4)"])]
 #[case::x_0_y_6("x = 0 ** y\n", vec!["(-1)", "(1)"])]
 #[case::x_0_real_7("x = (0).real\n", vec!["(-1)", "(1)"])]
-#[case::x_18446744073709551615_8("x = 18446744073709551615\n", vec!["(18446744073709551614)"])]
-#[case::x_18446744073709551615_9("x = -18446744073709551615\n", vec!["(-18446744073709551614)"])]
+#[case::x_18446744073709551615_8("x = 18446744073709551615\n", vec!["(18446744073709551614)", "(18446744073709551616)"])]
+#[case::x_18446744073709551615_9("x = -18446744073709551615\n", vec!["(-18446744073709551614)", "(-18446744073709551616)"])]
 #[tokio::test]
 async fn integer_neighbors_preserve_signed_values_precedence_and_bounds(
     #[case] source: &str,
@@ -146,9 +192,7 @@ async fn integer_neighbors_preserve_signed_values_precedence_and_bounds(
 #[case::input_3_x_4_0_8("(3).x = 4.0\n")]
 #[case::del_3_x_9("del (3).x\n")]
 #[case::x_a_f_3_g_4_10("x = a[f(3)][g(4):]\n")]
-#[case::x_0x10_y_1_000_z_3j_11("x = 0x10\ny = 1_000\nz = 3j\n")]
-#[case::x_18446744073709551616_12("x = 18446744073709551616\n")]
-#[case::x_18446744073709551616_13("x = -18446744073709551616\n")]
+#[case::x_0x10_y_1_000_z_3j_11("z = 3j\n")]
 #[tokio::test]
 async fn integer_neighbors_exclude_nonruntime_and_structural_slices(#[case] source: &str) {
     let root = tempfile::tempdir().unwrap();
@@ -194,4 +238,31 @@ async fn integer_neighbors_saved_plan_distinguishes_observed_constant(
     assert_eq!(report["baseline"]["termination"]["Exit"], 0);
     assert_eq!(report["summary"]["counts"]["killed"], killed);
     assert_eq!(report["summary"]["counts"]["survived"], survived);
+}
+#[rstest::rstest]
+#[case::hex("x = 0x_FF\n", vec!["(0xfe)", "(0x100)"])]
+#[case::signed_binary("x = -0b1_000\n", vec!["(-0b1001)", "(-0b111)"])]
+#[case::unsigned_octal("x = +0o_10\n", vec!["(0o7)", "(0o11)"])]
+#[case::decimal("x = 999_999_999_999_999_999_999_999_999_999\n", vec![
+    "(999999999999999999999999999998)", "(1000000000000000000000000000000)",
+])]
+#[tokio::test]
+async fn integer_neighbors_accept_nondefault_spelling(
+    #[case] source: &str,
+    #[case] mut expected: Vec<&str>,
+) {
+    let root = tempfile::tempdir().unwrap();
+    std::fs::write(root.path().join("subject.py"), source).unwrap();
+
+    let doc = plan(root.path(), "integer_literal_neighbor", "pass").await;
+    let mut actual: Vec<_> = doc["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|candidate| candidate["replacement"].as_str().unwrap())
+        .collect();
+    actual.sort_unstable();
+    expected.sort_unstable();
+
+    assert_eq!(actual, expected);
 }

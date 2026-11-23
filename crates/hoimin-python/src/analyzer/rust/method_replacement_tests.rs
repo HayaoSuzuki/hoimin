@@ -422,28 +422,6 @@ fn literal_rewrites_require_complete_matching_delimiters(
     assert_eq!(actual.as_deref(), expected);
 }
 
-#[rstest::rstest]
-#[case("1", Some((1, false)))]
-#[case("-1", Some((-1, true)))]
-#[case("-0", Some((0, true)))]
-#[case("-(1)", Some((-1, true)))]
-#[case("0x1", None)]
-#[case("1_0", None)]
-#[case("+1", None)]
-#[case("1.0", None)]
-#[case("18446744073709551616", None)]
-#[case("'1'", None)]
-fn integer_neighbors_accept_only_supported_decimal_spelling_and_magnitude(
-    #[case] source: &str,
-    #[case] expected: Option<(i128, bool)>,
-) {
-    let parsed = ruff_python_parser::parse_expression(source).unwrap();
-
-    let actual = decimal_literal_value(source, &parsed.syntax().body);
-
-    assert_eq!(actual, expected);
-}
-
 fn boundary_rename_ordering(source: &str, call: &ExprCall, _: &AstFacts) -> Option<String> {
     renamed_method_call_replacement(source, call, "reverse")
 }
@@ -516,18 +494,6 @@ fn subscript_edit_requires_bracket_metadata_and_available_key_source(
     let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
 
     let actual = boundary_subscript_to_get(&source[..available_len], expression, &facts);
-
-    assert_eq!(actual, None);
-}
-
-#[rstest::rstest]
-#[case("1")]
-#[case("-1")]
-fn decimal_literal_decoder_rejects_unavailable_operand_source(#[case] source: &str) {
-    let parsed = parse_module(source).unwrap();
-    let expression = &parsed.syntax().body[0].as_expr_stmt().unwrap().value;
-
-    let actual = decimal_literal_value("", expression);
 
     assert_eq!(actual, None);
 }

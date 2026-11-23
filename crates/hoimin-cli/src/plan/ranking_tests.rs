@@ -536,6 +536,11 @@ fn ranking_compares_explicit_line_paths_with_windows_case_rules() {
 }
 
 const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
+    "conditional_branch_swap",
+    "await_remove",
+    "match_case_swap",
+    "match_pattern_wildcard",
+    "match_class_position_swap",
     "lambda_capture_late",
     "continue_remove",
     "comparison_not_implemented",
@@ -564,6 +569,8 @@ const HIGH_VALUE_CONTROL_OPERATORS: &[&str] = &[
     "yield_from_to_yield",
 ];
 const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
+    "exception_handler_swap",
+    "exception_cause_omit",
     "exception_cause_remove",
     "finally_unwrap",
     "gather_return_exceptions",
@@ -576,6 +583,12 @@ const EXCEPTION_HANDLING_OPERATORS: &[&str] = &[
     "exception_tuple_remove_member",
 ];
 const BEHAVIORAL_OPERATORS: &[&str] = &[
+    "bytes_literal_empty",
+    "fstring_format_spec_remove",
+    "fstring_format_value_neighbor",
+    "dict_unpack_order_swap",
+    "dict_unpack_delete",
+    "del_remove",
     "base_order_shuffle",
     "override_method_delete",
     "super_call_move",
@@ -640,6 +653,7 @@ const BEHAVIORAL_OPERATORS: &[&str] = &[
     "structure_slice_bound_move",
 ];
 const ARITHMETIC_OPERATORS: &[&str] = &[
+    "float_literal_neighbor",
     "integer_literal_neighbor",
     "augmented_to_assignment",
     "binary_add_sub",
@@ -691,7 +705,7 @@ fn ranking_category_inventory_covers_every_canonical_operator() {
         .filter_map(MutationOperator::from_name)
         .collect::<BTreeSet<_>>();
 
-    assert_eq!(tested.len(), 126);
+    assert_eq!(tested.len(), 140);
     assert_eq!(tested, canonical);
 }
 

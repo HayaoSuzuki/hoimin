@@ -67,7 +67,7 @@ fn native_mutation_config(
     }
 }
 
-const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 107] = [
+const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 121] = [
     "compare_eq_ne",
     "compare_order",
     "membership",
@@ -175,6 +175,20 @@ const RUNTIME_DEFAULT_OPERATOR_IDS: [&str; 107] = [
     "regex_match_boundary",
     "regex_character_set",
     "regex_ascii_mode",
+    "float_literal_neighbor",
+    "bytes_literal_empty",
+    "fstring_format_spec_remove",
+    "fstring_format_value_neighbor",
+    "conditional_branch_swap",
+    "await_remove",
+    "dict_unpack_order_swap",
+    "dict_unpack_delete",
+    "del_remove",
+    "exception_handler_swap",
+    "exception_cause_omit",
+    "match_case_swap",
+    "match_pattern_wildcard",
+    "match_class_position_swap",
 ];
 
 #[rstest::rstest]

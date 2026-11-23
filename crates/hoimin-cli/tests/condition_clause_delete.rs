@@ -99,6 +99,7 @@ async fn plan(root: &Path, operators: &str, test: &str) -> serde_json::Value {
 #[case::if_a_or_b_or_c_pass_2("if a or b or c: pass\n", 3)]
 #[case::if_a_and_b_or_c_pass_3("if a and (b or c): pass\n", 2)]
 #[case::if_a_and_a_pass_4("if a and a: pass\n", 1)]
+#[case::conditional_expression("result = 1 if a and b else 0\n", 2)]
 #[case::if_a_pass_elif_b_and_c_pass_5("if a: pass\nelif b and c: pass\n", 2)]
 #[case::input_1_if_a_and_comment_b_and_c_pass_6(
     "é = 1\r\nif (a and # comment\r\n b and c): pass\r\n",
@@ -129,7 +130,7 @@ async fn clauses_preserve_nested_structure_and_compile(#[case] source: &str, #[c
 
 #[rstest::rstest]
 #[case::while_a_and_b_break_assert_a_and_b_x_a_and_b_y_1_if_a_a_1(
-    "while a and b: break\nassert a and b\nx = a and b\ny = 1 if a and b else 0\n"
+    "while a and b: break\nassert a and b\nx = a and b\n"
 )]
 #[case::if_a_b_c_pass_2("if a < b < c: pass\n")]
 #[case::if_a_and_b_f_pass_3("if a and (b := f()): pass\n")]

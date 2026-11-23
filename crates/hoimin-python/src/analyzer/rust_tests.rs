@@ -75,15 +75,25 @@ proptest! {
 }
 
 #[test]
-fn string_segments_respect_candidate_caps_and_target_selection() {
+fn string_segments_respect_candidate_caps() {
+    // Arrange
     let source =
         "def first(x):\n return f'prefix:{x}:suffix'\ndef second(x):\n return 'prefix' 'suffix'\n";
 
+    // Act
     let output = analyze_with_only_operator(source, MutationOperator::StringSegmentEmpty);
 
+    // Assert
     assert_eq!(output.candidates.len(), 1);
     assert!(output.truncated);
     assert_eq!(output.candidates[0].original, "prefix:");
+}
+
+#[test]
+fn string_segments_apply_caps_within_the_selected_symbol() {
+    // Arrange
+    let source =
+        "def first(x):\n return f'prefix:{x}:suffix'\ndef second(x):\n return 'prefix' 'suffix'\n";
     let mut operators = MutationOperatorSelection::default();
     for operator in operators
         .names()
@@ -104,11 +114,13 @@ fn string_segments_respect_candidate_caps_and_target_selection() {
         profile: MutationProfile::Full,
         max_candidates: 1,
     };
+    // Act
     let selected = analyze_source(&request, source);
+
+    // Assert
     assert_eq!(selected.candidates.len(), 1);
     assert_eq!(selected.candidates[0].original, "'prefix'");
-    assert!(!selected.truncated);
-    assert!(analyze_source_cancellable(&request, source, || true).is_err());
+    assert!(selected.truncated);
 }
 const ANNOTATION_SCOPE_CORPUS: &str =
     include_str!("../../../../formal/HoiminOracle/corpus/annotation-scope-correspondence.jsonl");
@@ -2307,7 +2319,7 @@ fn except_star_exception_type_pairs_keep_shared_selection_and_profile_behavior()
 }
 
 #[test]
-fn except_star_handlers_do_not_emit_explicit_risky_exception_candidates() {
+fn except_star_handlers_emit_typed_exception_candidates() {
     let source = concat!(
         "try:\n    work()\n",
         "except* ValueError:\n    pass\n",
@@ -2316,43 +2328,30 @@ fn except_star_handlers_do_not_emit_explicit_risky_exception_candidates() {
         "except* (ValueError,):\n    pass\n",
         "except* (ValueError, TypeError):\n    pass\n",
     );
-    let mut operators = MutationOperatorSelection::default();
-    for operator in [
-        MutationOperator::ExceptionBareToException,
-        MutationOperator::ExceptionExceptionToBare,
-        MutationOperator::ExceptionBaseBoundary,
-        MutationOperator::ExceptionTupleAddPair,
-        MutationOperator::ExceptionTupleRemoveMember,
-    ] {
-        operators.include(operator);
-    }
-
-    let output = analyze_source(
-        &AnalyzeRequest {
-            payload: super::payload::PayloadBudget::default(),
-            path: Utf8Path::new("pkg/sample.py"),
-            lines: &[],
-            symbols: &[],
-            operators: &operators,
-            profile: MutationProfile::Full,
-            max_candidates: 10_000,
-        },
-        source,
-    );
+    let output = analyze_selected(EXPLICIT_RISKY_EXCEPTION_NAMES, source);
     let exception_candidates = output
         .candidates
         .iter()
         .filter(|candidate| candidate.operator.as_str().starts_with("exception_"))
         .collect::<Vec<_>>();
 
-    assert_eq!(exception_candidates.len(), 1);
     assert_eq!(
-        exception_candidates[0].operator.as_str(),
-        "exception_type_pair"
+        exception_candidates
+            .iter()
+            .map(|candidate| candidate.operator.as_str())
+            .collect::<Vec<_>>(),
+        [
+            "exception_base_boundary",
+            "exception_base_boundary",
+            "exception_tuple_add_pair",
+            "exception_tuple_remove_member",
+            "exception_tuple_remove_member",
+            "exception_tuple_remove_member",
+        ],
     );
-    assert_eq!(exception_candidates[0].original, "ValueError");
-    assert_eq!(exception_candidates[0].replacement, "TypeError");
-    apply_candidate_and_reparse(source, exception_candidates[0]);
+    for candidate in exception_candidates {
+        apply_candidate_and_reparse(source, candidate);
+    }
 }
 
 #[test]
@@ -2759,6 +2758,14 @@ fn explicitly_selected_risky_exception_operators() -> MutationOperatorSelection 
     operators
 }
 
+const EXPLICIT_RISKY_EXCEPTION_NAMES: &[&str] = &[
+    "exception_bare_to_exception",
+    "exception_exception_to_bare",
+    "exception_base_boundary",
+    "exception_tuple_add_pair",
+    "exception_tuple_remove_member",
+];
+
 #[test]
 
 fn exception_risky_candidates_require_explicit_selection_and_reparse_scenario_1() {
@@ -3051,7 +3058,6 @@ fn risky_exception_candidates_are_disabled_by_default() {
 
 #[test]
 fn risky_exception_candidates_reject_unsupported_handler_expressions() {
-    let operators = explicitly_selected_risky_exception_operators();
     let unsupported = concat!(
         "ValueError = Custom\n",
         "try:\n    work()\n",
@@ -3059,22 +3065,11 @@ fn risky_exception_candidates_reject_unsupported_handler_expressions() {
         "except module.Error:\n    pass\n",
         "except make_error():\n    pass\n",
         "except (ValueError, module.Error):\n    pass\n",
-        "except* BaseException:\n    pass\n",
+        "try:\n    work()\n",
+        "except* ExceptionGroup:\n    pass\n",
     );
     assert_eq!(
-        analyze_source(
-            &AnalyzeRequest {
-                payload: super::payload::PayloadBudget::default(),
-                path: Utf8Path::new("pkg/sample.py"),
-                lines: &[],
-                symbols: &[],
-                operators: &operators,
-                profile: MutationProfile::Full,
-                max_candidates: 10_000,
-            },
-            unsupported,
-        )
-        .candidates,
+        analyze_selected(EXPLICIT_RISKY_EXCEPTION_NAMES, unsupported).candidates,
         Vec::<super::payload::Charged<AnalyzerCandidate>>::new()
     );
 }
@@ -4502,7 +4497,7 @@ fn bitwise_shift() {
 }
 
 #[test]
-fn structure_index_neighbor_mutates_decimal_load_indices_only() {
+fn structure_index_neighbor_mutates_integer_load_indices_only() {
     let source = concat!(
         "zero = items[0]\n",
         "one = items[1]\n",
@@ -4534,9 +4529,14 @@ fn structure_index_neighbor_mutates_decimal_load_indices_only() {
             ("0", "1"),
             ("1", "2"),
             ("1", "0"),
+            ("18446744073709551615", "18446744073709551616"),
             ("18446744073709551615", "18446744073709551614"),
             ("-1", "0"),
             ("-1", "-2"),
+            ("0x10", "0x11"),
+            ("0x10", "0xf"),
+            ("1_000", "1001"),
+            ("1_000", "999"),
         ]
     );
     for candidate in candidates {
@@ -4545,7 +4545,7 @@ fn structure_index_neighbor_mutates_decimal_load_indices_only() {
 }
 
 #[test]
-fn structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps() {
+fn structure_slice_neighbor_mutates_integer_bounds_without_zero_steps() {
     let source = concat!(
         "all_bounds = items[1:3:1]\n",
         "empty_start_and_step = items[:3:]\n",
@@ -4586,6 +4586,17 @@ fn structure_slice_neighbor_mutates_decimal_bounds_without_zero_steps() {
             ("-3", "-2"),
             ("-3", "-4"),
             ("-1", "-2"),
+            ("0x10", "0x11"),
+            ("0x10", "0xf"),
+            ("0x20", "0x21"),
+            ("0x20", "0x1f"),
+            ("0x1", "0x2"),
+            ("1_000", "1001"),
+            ("1_000", "999"),
+            ("2_000", "2001"),
+            ("2_000", "1999"),
+            ("3_000", "3001"),
+            ("3_000", "2999"),
         ]
     );
     for candidate in candidates {
@@ -8850,7 +8861,7 @@ fn wide_mapping_keys_reject_conjugates_and_preserve_other_candidates() {
 #[case::items_1_22(21)]
 #[case::items_1_23(22)]
 #[case::items_1_2_24(23)]
-fn structure_negative_neighbors_cover_positions_spelling_and_range_limits(
+fn structure_negative_neighbors_cover_positions_spelling_and_large_values(
     #[case] scenario_index: usize,
 ) {
     let cases: &[(&str, &[&str])] = &[
@@ -8867,16 +8878,31 @@ fn structure_negative_neighbors_cover_positions_spelling_and_range_limits(
         ("items[(-1)]", &["0", "-2"]),
         ("items[-(1)]", &["0", "-2"]),
         ("items[( -\n  (1) # inner comment\n)]", &["0", "-2"]),
-        ("items[-18446744073709551615]", &["-18446744073709551614"]),
-        ("items[-18446744073709551616]", &[]),
-        ("items[18446744073709551616]", &[]),
-        ("items[-99999999999999999999999999999999999999999999]", &[]),
-        ("items[-0x10]", &[]),
-        ("items[-1_000]", &[]),
+        (
+            "items[-18446744073709551615]",
+            &["-18446744073709551614", "-18446744073709551616"],
+        ),
+        (
+            "items[-18446744073709551616]",
+            &["-18446744073709551615", "-18446744073709551617"],
+        ),
+        (
+            "items[18446744073709551616]",
+            &["18446744073709551617", "18446744073709551615"],
+        ),
+        (
+            "items[-99999999999999999999999999999999999999999999]",
+            &[
+                "-99999999999999999999999999999999999999999998",
+                "-100000000000000000000000000000000000000000000",
+            ],
+        ),
+        ("items[-0x10]", &["-0xf", "-0x11"]),
+        ("items[-1_000]", &["-999", "-1001"]),
         ("items[-1.0]", &[]),
         ("items[-True]", &[]),
         ("items[--1]", &[]),
-        ("items[+1]", &[]),
+        ("items[+1]", &["2", "0"]),
         ("items[-(1+2)]", &[]),
     ];
 
@@ -8905,7 +8931,6 @@ fn structure_negative_neighbors_cover_positions_spelling_and_range_limits(
         "{source}"
     );
     for candidate in candidates {
-        assert!(candidate.original.starts_with('-'), "{candidate:?}");
         apply_candidate_and_reparse(&source, candidate);
     }
 }

@@ -74,6 +74,8 @@ mod statement_order;
 
 #[path = "rust/deletion.rs"]
 mod deletion;
+#[path = "rust/expression_behavior.rs"]
+mod expression_behavior;
 
 #[path = "rust/call_contracts.rs"]
 mod call_contracts;
@@ -108,6 +110,8 @@ use finally_work::FinallyTransfer;
 mod lazy_imports;
 #[path = "rust/mapping_keys.rs"]
 mod mapping_keys;
+#[path = "rust/numeric_literals.rs"]
+mod numeric_literals;
 #[path = "rust/operator_functions.rs"]
 mod operator_functions;
 #[path = "rust/stdlib_conversions.rs"]
@@ -1828,9 +1832,25 @@ fn exposes_module_namespace(name: &str) -> bool {
     matches!(name, "globals" | "__globals__")
 }
 
+// Wildcard invalidation and explicit-name tracking must recognize the same
+// builtin universe. Keep shared names once so binding events stay bounded.
+fn tracked_builtin_names() -> impl Iterator<Item = &'static &'static str> {
+    MUTABLE_BUILTINS
+        .iter()
+        .chain(EXCEPTION_NAMES)
+        .chain(
+            exception_hierarchy::ORDINARY_BUILTINS
+                .iter()
+                .filter(|name| !EXCEPTION_NAMES.contains(name)),
+        )
+        .chain(CONTROL_BUILTINS)
+        .chain(CALL_CONTRACT_BUILTINS)
+}
+
 fn tracked_resolution_name(name: &str) -> bool {
     MUTABLE_BUILTINS.contains(&name)
         || EXCEPTION_NAMES.contains(&name)
+        || exception_hierarchy::ordinary_builtin(name)
         || CONTROL_BUILTINS.contains(&name)
         || CALL_CONTRACT_BUILTINS.contains(&name)
 }
@@ -2277,22 +2297,12 @@ impl<'a> NameResolutionBuilder<'a> {
         );
         if local == "*" {
             let event = self.next_event();
-            for name in MUTABLE_BUILTINS
-                .iter()
-                .chain(EXCEPTION_NAMES)
-                .chain(CONTROL_BUILTINS)
-                .chain(CALL_CONTRACT_BUILTINS)
-            {
+            for name in tracked_builtin_names() {
                 self.record_loop_back_edge_binding(self.current, name);
             }
             let scope = &mut self.index.scopes[self.current.0];
             scope.wildcard = true;
-            for name in MUTABLE_BUILTINS
-                .iter()
-                .chain(EXCEPTION_NAMES)
-                .chain(CONTROL_BUILTINS)
-                .chain(CALL_CONTRACT_BUILTINS)
-            {
+            for name in tracked_builtin_names() {
                 scope.possible_bindings.insert((*name).to_owned());
                 if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
                     scope
@@ -2316,22 +2326,12 @@ impl<'a> NameResolutionBuilder<'a> {
 
     fn record_scope_wildcard(&mut self, scope_id: ScopeId) {
         let event = self.next_event();
-        for name in MUTABLE_BUILTINS
-            .iter()
-            .chain(EXCEPTION_NAMES)
-            .chain(CONTROL_BUILTINS)
-            .chain(CALL_CONTRACT_BUILTINS)
-        {
+        for name in tracked_builtin_names() {
             self.record_loop_back_edge_binding(scope_id, name);
         }
         let scope = &mut self.index.scopes[scope_id.0];
         scope.wildcard = true;
-        for name in MUTABLE_BUILTINS
-            .iter()
-            .chain(EXCEPTION_NAMES)
-            .chain(CONTROL_BUILTINS)
-            .chain(CALL_CONTRACT_BUILTINS)
-        {
+        for name in tracked_builtin_names() {
             scope.possible_bindings.insert((*name).to_owned());
             if matches!(scope.kind, NameScopeKind::Module | NameScopeKind::Class) {
                 scope
@@ -3460,6 +3460,18 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             optional_keywords::FunctionIndex::default()
         };
         let delimiters = if [
+            MutationOperator::IntegerLiteralNeighbor,
+            MutationOperator::FloatLiteralNeighbor,
+            MutationOperator::StructureIndexNeighbor,
+            MutationOperator::StructureSliceNeighbor,
+            MutationOperator::FStringFormatSpecRemove,
+            MutationOperator::ConditionalBranchSwap,
+            MutationOperator::ConditionConstant,
+            MutationOperator::ConditionClauseDelete,
+            MutationOperator::AwaitRemove,
+            MutationOperator::DictUnpackOrderSwap,
+            MutationOperator::DictUnpackDelete,
+            MutationOperator::DelRemove,
             MutationOperator::CallArgumentSwap,
             MutationOperator::CallResultDefault,
             MutationOperator::ComprehensionFilterInvert,
@@ -3721,20 +3733,32 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         if self.candidates.failure.is_some() {
             return;
         }
-        if self
-            .request
-            .operators
-            .contains(MutationOperator::StringSegmentEmpty)
+        if self.runtime_role == RuntimeRole::Value
             && !self.in_pattern
+            && matches!(
+                expression,
+                Expr::StringLiteral(_) | Expr::FString(_) | Expr::BytesLiteral(_)
+            )
+            && (self
+                .request
+                .operators
+                .contains(MutationOperator::StringSegmentEmpty)
+                || self
+                    .request
+                    .operators
+                    .contains(MutationOperator::BytesLiteralEmpty))
             && !self.string_exclusions.excludes_segment(expression.range())
-            && let Some((range, replacement)) =
-                string_segments::replacement(expression, self.source, self.cancelled)
+            && self.expression_selected(expression)
         {
-            self.add_candidate_in_scope(
-                range,
-                replacement,
-                MutationOperator::StringSegmentEmpty,
-                expression.range(),
+            string_segments::emit(
+                expression,
+                self.source,
+                self.request.operators,
+                self.cancelled,
+                |range, replacement, operator| {
+                    self.add_candidate_in_scope(range, replacement, operator, expression.range());
+                    !self.check_cancelled()
+                },
             );
         }
     }
@@ -3778,36 +3802,42 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
     }
 
-    // Returns true for signed literals, including out-of-range spellings, so
-    // their positive operand cannot become a separate generic candidate.
-    fn collect_integer_literal(&mut self, expression: &Expr) -> bool {
-        let signed = matches!(expression, Expr::UnaryOp(unary)
-            if unary.op == UnaryOp::USub && matches!(unary.operand.as_ref(), Expr::NumberLiteral(_)));
+    // A signed numeric leaf is handled once at the unary expression. Its operand
+    // must not produce a second set of candidates with the opposite sign.
+    fn collect_numeric_literal(&mut self, expression: &Expr) -> bool {
+        let signed = numeric_literals::is_signed(expression);
         if self.candidates.failure.is_some()
-            || self.integer_suppressed
+            || self.runtime_role != RuntimeRole::Value
             || self.in_pattern
-            || !self
+            || !(signed || expression.is_number_literal_expr())
+            || !(self
                 .request
                 .operators
                 .contains(MutationOperator::IntegerLiteralNeighbor)
+                || self
+                    .request
+                    .operators
+                    .contains(MutationOperator::FloatLiteralNeighbor))
+            || self.string_exclusions.contains_alias(expression.range())
+            || !self.expression_selected(expression)
+            || !self
+                .processing_site
+                .delimiters
+                .can_enclose(expression.range(), 1)
         {
             return signed;
         }
-        if let Some((value, _)) = decimal_literal_value(self.source, expression) {
-            let limit = i128::from(u64::MAX);
-            for neighbor in [value - 1, value + 1] {
-                if (-limit..=limit).contains(&neighbor) {
-                    self.add_candidate(
-                        expression.range(),
-                        format!("({neighbor})"),
-                        MutationOperator::IntegerLiteralNeighbor,
-                    );
-                    if self.candidates.failure.is_some() {
-                        return signed;
-                    }
-                }
-            }
-        }
+        numeric_literals::emit(
+            expression,
+            self.source,
+            self.request.operators,
+            !self.integer_suppressed,
+            self.cancelled,
+            |range, replacement, operator| {
+                self.add_candidate(range, replacement, operator);
+                !self.check_cancelled()
+            },
+        );
         signed
     }
 
@@ -3830,6 +3860,10 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         };
         if boolean.values.len() < 2
             || !self.expression_selected(condition)
+            || !self
+                .processing_site
+                .delimiters
+                .can_enclose(condition.range(), 2)
             || !deletion::can_remove(condition, self.cancelled)
         {
             return;
@@ -3897,6 +3931,10 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             return;
         }
         if !matches!(condition, Expr::BooleanLiteral(_))
+            && self
+                .processing_site
+                .delimiters
+                .can_enclose(condition.range(), 1)
             && deletion::can_remove(condition, self.cancelled)
             && !self.check_cancelled()
         {
@@ -4458,23 +4496,38 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
     }
 
     fn collect_index_neighbors(&mut self, expression: &Expr) {
-        if self.candidates.failure.is_some() {
+        if self.candidates.failure.is_some()
+            || !self
+                .request
+                .operators
+                .contains(MutationOperator::StructureIndexNeighbor)
+            || !self.expression_selected(expression)
+            || !self
+                .processing_site
+                .delimiters
+                .can_enclose(expression.range(), 1)
+        {
             return;
         }
-        for replacement in decimal_literal_neighbors(self.source, expression, false) {
-            self.add_candidate(
-                expression.range(),
-                replacement,
-                MutationOperator::StructureIndexNeighbor,
-            );
-            if self.candidates.failure.is_some() {
-                return;
-            }
-        }
+        numeric_literals::emit_index_neighbors(
+            expression,
+            self.source,
+            false,
+            self.cancelled,
+            |range, replacement| {
+                self.add_candidate(range, replacement, MutationOperator::StructureIndexNeighbor);
+                !self.check_cancelled()
+            },
+        );
     }
 
     fn collect_slice_neighbors(&mut self, slice: &ExprSlice) {
-        if self.candidates.failure.is_some() {
+        if self.candidates.failure.is_some()
+            || !self
+                .request
+                .operators
+                .contains(MutationOperator::StructureSliceNeighbor)
+        {
             return;
         }
         for (bound, step) in [
@@ -4485,15 +4538,32 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
             let Some(bound) = bound else {
                 continue;
             };
-            for replacement in decimal_literal_neighbors(self.source, bound, step) {
-                self.add_candidate(
-                    bound.range(),
-                    replacement,
-                    MutationOperator::StructureSliceNeighbor,
-                );
-                if self.candidates.failure.is_some() {
-                    return;
-                }
+            if !self.expression_selected(bound) {
+                continue;
+            }
+            if !self
+                .processing_site
+                .delimiters
+                .can_enclose(bound.range(), 1)
+            {
+                continue;
+            }
+            numeric_literals::emit_index_neighbors(
+                bound,
+                self.source,
+                step,
+                self.cancelled,
+                |range, replacement| {
+                    self.add_candidate(
+                        range,
+                        replacement,
+                        MutationOperator::StructureSliceNeighbor,
+                    );
+                    !self.check_cancelled()
+                },
+            );
+            if self.check_cancelled() {
+                return;
             }
         }
     }
@@ -4943,7 +5013,30 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         reason = "statement operator gates stop between builders on the first admission failure"
     )]
     fn collect_statement_mutations(&mut self, statement: &Stmt) {
+        if matches!(statement, Stmt::Delete(_))
+            && self.request.operators.contains(MutationOperator::DelRemove)
+            && self.expression_selected(statement)
+        {
+            expression_behavior::statement(
+                statement,
+                self.source,
+                self.processing_site.delimiters,
+                self.request.operators,
+                self.cancelled,
+                |range, replacement, operator| {
+                    self.add_candidate(range, replacement, operator);
+                    !self.check_cancelled()
+                },
+            );
+            if self.check_cancelled() {
+                return;
+            }
+        }
         if let Stmt::Try(node) = statement {
+            self.collect_handler_swaps(node);
+            if self.check_cancelled() {
+                return;
+            }
             self.collect_unwrap(node);
             if self.candidates.failure.is_some() {
                 return;
@@ -5200,6 +5293,9 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
         }
         if let Stmt::Raise(statement_raise) = statement {
             self.collect_raised_exception(statement_raise);
+            if !self.check_cancelled() {
+                self.collect_exception_cause(statement_raise);
+            }
         }
     }
 
@@ -5233,6 +5329,46 @@ impl<'a, F: Fn() -> bool> AstCandidateCollector<'a, F> {
                 return;
             }
         }
+    }
+
+    // Exception-group handlers cannot become bare handlers. Ordinary handlers
+    // additionally carry final-clause state for the existing widening operators.
+    fn walk_try(&mut self, try_statement: &'a ruff_python_ast::StmtTry) {
+        if try_statement.is_star {
+            self.visit_body(&try_statement.body);
+            for except_handler in &try_statement.handlers {
+                let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
+                if self.check_cancelled() {
+                    return;
+                }
+                self.collect_exception_type_pair(handler);
+                if !self.check_cancelled() {
+                    self.collect_star_exception_handler(handler);
+                }
+                if self.candidates.failure.is_some() {
+                    return;
+                }
+                if let Some(type_) = &handler.type_ {
+                    self.visit_exception_type(type_);
+                }
+                self.visit_body(&handler.body);
+            }
+            self.visit_body(&try_statement.orelse);
+            self.visit_body(&try_statement.finalbody);
+            return;
+        }
+        self.visit_body(&try_statement.body);
+        for (index, except_handler) in try_statement.handlers.iter().enumerate() {
+            if self.check_cancelled() {
+                return;
+            }
+            self.exception_handler_finality
+                .push(index + 1 == try_statement.handlers.len());
+            self.visit_except_handler(except_handler);
+            self.exception_handler_finality.pop();
+        }
+        self.visit_body(&try_statement.orelse);
+        self.visit_body(&try_statement.finalbody);
     }
 
     fn collect_tuple_exception_handler(&mut self, tuple: &ExprTuple) {
@@ -5371,6 +5507,12 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 && self.match_enabled()
             {
                 let valid = self.valid_cases(node);
+                if valid {
+                    self.collect_case_swaps(node);
+                    if self.check_cancelled() {
+                        return;
+                    }
+                }
                 let previous = std::mem::replace(&mut self.match_state.eligible, valid);
                 visitor::walk_stmt(self, statement);
                 self.match_state.eligible = previous;
@@ -5380,38 +5522,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 visitor::walk_stmt(self, statement);
                 return;
             };
-            if try_statement.is_star {
-                self.visit_body(&try_statement.body);
-                for except_handler in &try_statement.handlers {
-                    let ruff_python_ast::ExceptHandler::ExceptHandler(handler) = except_handler;
-                    if self.check_cancelled() {
-                        return;
-                    }
-                    self.collect_exception_type_pair(handler);
-                    if self.candidates.failure.is_some() {
-                        return;
-                    }
-                    if let Some(type_) = &handler.type_ {
-                        self.visit_exception_type(type_);
-                    }
-                    self.visit_body(&handler.body);
-                }
-                self.visit_body(&try_statement.orelse);
-                self.visit_body(&try_statement.finalbody);
-                return;
-            }
-            self.visit_body(&try_statement.body);
-            for (index, except_handler) in try_statement.handlers.iter().enumerate() {
-                if self.check_cancelled() {
-                    return;
-                }
-                self.exception_handler_finality
-                    .push(index + 1 == try_statement.handlers.len());
-                self.visit_except_handler(except_handler);
-                self.exception_handler_finality.pop();
-            }
-            self.visit_body(&try_statement.orelse);
-            self.visit_body(&try_statement.finalbody);
+            self.walk_try(try_statement);
         }
     }
 
@@ -5515,8 +5626,27 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
             }
             if self.runtime_role == RuntimeRole::Value
                 && !self.in_pattern
+                && !self.string_exclusions.contains_alias(expression.range())
                 && (!matches!(expression, Expr::Compare(_)) || self.expression_selected(expression))
             {
+                expression_behavior::expression(
+                    expression,
+                    self.source,
+                    self.facts.tokens.expect("parser tokens are set"),
+                    self.processing_site.delimiters,
+                    expression_behavior::Options {
+                        operators: self.request.operators,
+                        max_candidates: self.request.max_candidates,
+                    },
+                    self.cancelled,
+                    |range, operator, render| {
+                        self.add_deferred_candidate(range, operator, range, render);
+                        !self.check_cancelled()
+                    },
+                );
+                if self.check_cancelled() {
+                    return;
+                }
                 if let Some((range, replacement, operator)) = self.behavior_imports.replacement(
                     expression,
                     self.request.operators,
@@ -5556,6 +5686,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     expression,
                     self.source,
                     self.facts.tokens.expect("parser tokens are set"),
+                    self.processing_site.delimiters,
                     self.request.operators,
                     self.cancelled,
                     |range, replacement, operator| {
@@ -5567,7 +5698,7 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                     return;
                 }
             }
-            let signed_literal = self.collect_integer_literal(expression);
+            let signed_literal = self.collect_numeric_literal(expression);
             if self.candidates.failure.is_some() {
                 return;
             }
@@ -5658,7 +5789,9 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
                 {
                     self.direct_await = Some((call.range(), node.range()));
                 }
-                visitor::walk_expr(self, expression);
+                if !signed_literal {
+                    visitor::walk_expr(self, expression);
+                }
                 self.direct_await = previous_await;
                 self.discarded_results = previous_discarded;
             }
@@ -5692,6 +5825,12 @@ impl<'ast, F: Fn() -> bool> Visitor<'ast> for AstCandidateCollector<'ast, F> {
         }
         if self.check_cancelled() {
             return;
+        }
+        if self.match_state.eligible {
+            self.collect_pattern_constraints(pattern);
+            if self.check_cancelled() {
+                return;
+            }
         }
         if self.match_state.eligible
             && self
@@ -5777,44 +5916,6 @@ fn has_supported_split_rsplit_arguments(call: &ExprCall) -> bool {
 
 fn is_zero_literal(expression: &Expr) -> bool {
     matches!(expression, Expr::NumberLiteral(number) if matches!(&number.value, Number::Int(value) if value.as_usize() == Some(0)))
-}
-
-fn decimal_literal_neighbors(
-    source: &str,
-    expression: &Expr,
-    excludes_zero: bool,
-) -> impl Iterator<Item = String> + use<> {
-    // Keep only numeric values until the consumer requests its next replacement.
-    decimal_literal_value(source, expression)
-        .into_iter()
-        .flat_map(move |(value, negative_spelling)| {
-            let maximum = i128::from(u64::MAX);
-            // Preserve unsigned zero's historical single neighbor. A unary-minus
-            // spelling, including -0, may have negative neighbors.
-            let minimum = if negative_spelling { -maximum } else { 0 };
-            // Values come from u64 magnitudes, so adding/subtracting one fits i128.
-            [value + 1, value - 1]
-                .into_iter()
-                .filter(move |neighbor| (minimum..=maximum).contains(neighbor))
-                .filter(move |neighbor| !excludes_zero || *neighbor != 0)
-                .map(|neighbor| neighbor.to_string())
-        })
-}
-
-fn decimal_literal_value(source: &str, expression: &Expr) -> Option<(i128, bool)> {
-    let (operand, negative) = match expression {
-        Expr::UnaryOp(unary) if unary.op == UnaryOp::USub => (unary.operand.as_ref(), true),
-        expression => (expression, false),
-    };
-    if !matches!(operand, Expr::NumberLiteral(_)) {
-        return None;
-    }
-    let literal = source_text(source, operand.range())?;
-    if !literal.bytes().all(|byte| byte.is_ascii_digit()) {
-        return None;
-    }
-    let magnitude = i128::from(literal.parse::<u64>().ok()?);
-    Some((if negative { -magnitude } else { magnitude }, negative))
 }
 
 fn append_to_insert_replacement(

@@ -494,19 +494,19 @@ fn effective_python_iterator_prefix_swap_uses_import_proof_table_2(#[case] sourc
     );
 }
 #[rstest::rstest]
-#[case::x_f_value_r("x=f'{value!r}'\n", 1)]
-#[case::x_f_value_s_10("x=f'{value!s:>10}'\n", 1)]
-#[case::x_f_value_r_3("x=f'{value=!r}'\n", 1)]
-#[case::x_f_value_r_width_s("x=f'{value!r:{width!s}}'\n", 2)]
-#[case::x_f_value_r_f_other_s("x=f'{value!r}' f'{other!s}'\n", 2)]
-#[case::x_f_f_value_r_s("x=f\"{f'{value!r}'!s}\"\n", 2)]
-#[case::x_t_f_value_r_s("x=t\"{f'{value!r}'!s}\"\n", 1)]
-#[case::x_f_value_s_keep_r("x=f'''{(value # !s keep\n)!r}'''\n", 1)]
+#[case::x_f_value_r("x=f'{value!r}'\n", 2)]
+#[case::x_f_value_s_10("x=f'{value!s:>10}'\n", 2)]
+#[case::x_f_value_r_3("x=f'{value=!r}'\n", 2)]
+#[case::x_f_value_r_width_s("x=f'{value!r:{width!s}}'\n", 4)]
+#[case::x_f_value_r_f_other_s("x=f'{value!r}' f'{other!s}'\n", 4)]
+#[case::x_f_f_value_r_s("x=f\"{f'{value!r}'!s}\"\n", 4)]
+#[case::x_t_f_value_r_s("x=t\"{f'{value!r}'!s}\"\n", 2)]
+#[case::x_f_value_s_keep_r("x=f'''{(value # !s keep\n)!r}'''\n", 2)]
 #[case::x_f_value("x=f'{value}'\n", 0)]
 #[case::x_f_value_r_10("x=f'{{value!r}}'\n", 0)]
 #[case::x_f_value_r_11("x: f'{value!r}'\n", 0)]
 #[case::x_f_value_12("x=f'{value=}'\n", 0)]
-#[case::x_f_value_a("x=f'{value!a}'\n", 0)]
+#[case::x_f_value_a("x=f'{value!a}'\n", 2)]
 #[case::x_t_value_r("x=t'{value!r}'\n", 0)]
 #[case::x_literal_r("x='literal !r'\n", 0)]
 #[case::x_f_literal_r("x=f\"{'literal !r'}\"\n", 0)]
@@ -520,7 +520,7 @@ fn effective_python_fstring_swaps_only_explicit_conversions(
     for candidate in &out.candidates {
         assert!(matches!(
             (candidate.original.as_str(), candidate.replacement.as_str()),
-            ("r", "s") | ("s", "r")
+            ("r", "s" | "a") | ("s", "r" | "a") | ("a", "r" | "s")
         ));
         apply(source, candidate);
     }
@@ -536,12 +536,12 @@ fn effective_python_third_wave_selection_and_admission() {
     let source = "import asyncio\nimport itertools\ndef f(task,xs,value):\n    a=asyncio.gather(\n        task,\n    )\n    b=itertools.\\\n        takewhile(lambda x:x<3,xs)\n    c=f'''{value\n        !r}'''\n    return a,b,c\n";
     let all = analyze_selected(&ops, source);
 
-    assert_eq!(all.candidates.len(), 3);
+    assert_eq!(all.candidates.len(), 4);
     for cap in 0..=4 {
         let out =
             analyze_selected_with(&ops, Utf8Path::new("pkg/sample.py"), &[], &[], cap, source);
-        assert_eq!(out.candidates, all.candidates[..cap.min(3)]);
-        assert_eq!(out.truncated, cap < 3);
+        assert_eq!(out.candidates, all.candidates[..cap.min(4)]);
+        assert_eq!(out.truncated, cap < 4);
     }
     for (op, line) in ops.into_iter().zip([6, 8, 10]) {
         for source in [
@@ -560,8 +560,15 @@ fn effective_python_third_wave_selection_and_admission() {
                 10,
                 &source,
             );
-            assert_eq!(out.candidates.len(), 1, "{source}");
-            apply(&source, &out.candidates[0]);
+            let expected = if op == "fstring_conversion_swap" {
+                2
+            } else {
+                1
+            };
+            assert_eq!(out.candidates.len(), expected, "{source}");
+            for candidate in out.candidates {
+                apply(&source, &candidate);
+            }
         }
         let excluded = analyze_selected_with(
             &[op],
@@ -587,8 +594,8 @@ fn effective_python_third_wave_selection_and_admission() {
     assert!(analyze_source_cancellable(&request, source, || false).is_err());
     let source = "x=f\"{f'{value!r}'!s:{width!r}}\"\n";
     let all = analyze_selected(&ops, source);
-    assert_eq!(all.candidates.len(), 3);
-    for cap in 0..=3 {
+    assert_eq!(all.candidates.len(), 6);
+    for cap in 0..=6 {
         let out =
             analyze_selected_with(&ops, Utf8Path::new("pkg/sample.py"), &[], &[], cap, source);
         assert_eq!(out.candidates, all.candidates[..cap]);
