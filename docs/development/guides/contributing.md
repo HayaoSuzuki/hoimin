@@ -2253,6 +2253,10 @@ changes limited to `docs/user/reference/cli.md`.
 
 The same generator projects canonical operator IDs, default selection and family
 expansion from `hoimin-core` into the CLI reference's linked operator index.
+Consumers match the typed `MutationSelector` catalog rather than converting
+advertised names back into operator identities. The shared `OperatorSelectionArgs`
+definition supplies selection argument metadata directly to documentation; avoid
+searching commands or fields by string IDs to rediscover that group.
 After adding an operator or changing selection policy, regenerate that index and
 update the handwritten [operator reference](../../user/reference/operators.md).
 Each canonical ID must have exactly one `###` heading containing its backticked

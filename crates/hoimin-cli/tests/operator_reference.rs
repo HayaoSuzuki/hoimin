@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use hoimin_core::{MutationOperator, MutationOperatorSelection};
+use hoimin_core::{MutationOperatorSelection, MutationSelector};
 use rstest::rstest;
 
 fn advertised_section(help: &str, heading: &str) -> BTreeSet<String> {
@@ -31,16 +31,22 @@ fn help_separates_defaults_opt_in_ids_and_selector_families(#[case] name: &str) 
         .names()
         .into_iter()
         .collect();
-    let names = MutationOperatorSelection::valid_names();
-    let explicit: BTreeSet<_> = names
+    let selectors = MutationOperatorSelection::selectors();
+    let explicit: BTreeSet<_> = selectors
         .iter()
-        .filter(|name| MutationOperator::from_name(name).is_some() && !defaults.contains(**name))
-        .map(|name| (*name).to_owned())
+        .filter_map(|selector| match selector {
+            MutationSelector::Operator(operator) if !defaults.contains(operator.as_str()) => {
+                Some(operator.as_str().to_owned())
+            }
+            MutationSelector::Operator(_) | MutationSelector::Family { .. } => None,
+        })
         .collect();
-    let families: BTreeSet<_> = names
+    let families: BTreeSet<_> = selectors
         .iter()
-        .filter(|name| MutationOperator::from_name(name).is_none())
-        .map(|name| (*name).to_owned())
+        .filter_map(|selector| match selector {
+            MutationSelector::Family { name, .. } => Some((*name).to_owned()),
+            MutationSelector::Operator(_) => None,
+        })
         .collect();
 
     // Act
@@ -82,10 +88,12 @@ fn reference_has_exactly_one_entry_for_every_public_operator() {
     // Arrange
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../docs/user/reference/operators.md");
-    let expected: BTreeSet<_> = MutationOperatorSelection::valid_names()
+    let expected: BTreeSet<_> = MutationOperatorSelection::selectors()
         .into_iter()
-        .filter(|name| MutationOperator::from_name(name).is_some())
-        .map(str::to_owned)
+        .filter_map(|selector| match selector {
+            MutationSelector::Operator(operator) => Some(operator.as_str().to_owned()),
+            MutationSelector::Family { .. } => None,
+        })
         .collect();
 
     // Act
@@ -274,10 +282,16 @@ fn documented_members(reference: &str, selector: &str) -> BTreeSet<String> {
     )
 }
 
+#[derive(Clone, Copy, Debug)]
+enum MutationCommand {
+    Run,
+    Plan,
+}
+
 proptest::proptest! {
     #[test]
     fn documented_selection_rules_match_cli_for_arbitrary_selector_combinations(
-        command in proptest::sample::select(vec!["run", "plan"]),
+        command in proptest::sample::select(vec![MutationCommand::Run, MutationCommand::Plan]),
         windows_newlines in proptest::bool::ANY,
         use_defaults in proptest::bool::ANY,
         included in proptest::collection::vec(proptest::sample::select(MutationOperatorSelection::valid_names()), 1..8),
@@ -297,7 +311,11 @@ proptest::proptest! {
         for id in excluded.iter().flat_map(|name| documented_members(&reference, name)) {
             expected.remove(&id);
         }
-        let mut argv = vec!["hoimin".to_owned(), command.to_owned(), "--source".to_owned(), "src".to_owned()];
+        let command_name = match command {
+            MutationCommand::Run => "run",
+            MutationCommand::Plan => "plan",
+        };
+        let mut argv = vec!["hoimin".to_owned(), command_name.to_owned(), "--source".to_owned(), "src".to_owned()];
         if !use_defaults {
             argv.extend(["--operators".to_owned(), included.join(",")]);
         }
@@ -307,13 +325,12 @@ proptest::proptest! {
         argv.extend(["--".to_owned(), "python".to_owned()]);
 
         // Act
-        let actual = if command == "run" {
-            hoimin_cli::cli::parse_config_from(argv).map(|config| config.operators.names())
-        } else {
-            match hoimin_cli::cli::parse_from(argv).unwrap() {
+        let actual = match command {
+            MutationCommand::Run => hoimin_cli::cli::parse_config_from(argv).map(|config| config.operators.names()),
+            MutationCommand::Plan => match hoimin_cli::cli::parse_from(argv).unwrap() {
                 hoimin_cli::cli::ParsedCommand::Plan(plan) => plan.into_configs().map(|(config, _)| config.operators.names()),
                 _ => unreachable!(),
-            }
+            },
         };
 
         // Assert

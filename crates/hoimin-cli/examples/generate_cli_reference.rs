@@ -1,9 +1,17 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use clap::{Arg, ArgAction, Command};
+use clap::{Arg, ArgAction, Command, Parser};
 
 const REGENERATE: &str = "cargo run --locked -p hoimin-cli --example generate_cli_reference";
+
+#[derive(Parser)]
+#[command(name = "generate_cli_reference")]
+struct GenerateArgs {
+    /// Verify the checked-in reference without writing it.
+    #[arg(long)]
+    check: bool,
+}
 
 fn visible(arg: &Arg) -> bool {
     !arg.is_hide_set() && !arg.is_hide_long_help_set()
@@ -178,62 +186,45 @@ fn update(path: &Path, text: &str, check: bool) -> Result<(), String> {
 }
 
 fn main() -> Result<(), String> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
-    let check = match args.as_slice() {
-        [] => false,
-        [flag] if flag == "--check" => true,
-        _ => return Err(format!("Usage: {REGENERATE} [-- --check]")),
-    };
+    let args = GenerateArgs::parse();
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/user/reference/cli.md");
-    update(&path, &render_reference(), check)
+    update(&path, &render_reference(), args.check)
 }
 
 fn render_reference() -> String {
-    let command = hoimin_cli::cli::root_command();
-    let mut reference = render(command.clone());
-    render_operator_index(&command, &mut reference);
+    let mut reference = render(hoimin_cli::cli::root_command());
+    render_operator_index(&mut reference);
     reference
 }
 
-fn render_operator_index(command: &Command, output: &mut String) {
-    use hoimin_core::{MutationOperator, MutationOperatorSelection};
+fn render_operator_index(output: &mut String) {
+    use hoimin_core::{MutationOperatorSelection, MutationSelector};
 
     let defaults = MutationOperatorSelection::default();
-    let names = MutationOperatorSelection::valid_names();
-    let families: Vec<_> = names
-        .iter()
-        .copied()
-        .filter(|name| MutationOperator::from_name(name).is_none())
-        .map(|name| {
-            (
-                name,
-                MutationOperatorSelection::parse_selector(name).unwrap(),
-            )
-        })
-        .collect();
+    let mut operators = Vec::new();
+    let mut families = Vec::new();
+    for selector in MutationOperatorSelection::selectors() {
+        match selector {
+            MutationSelector::Operator(operator) => operators.push(operator),
+            MutationSelector::Family { name, members } => families.push((name, members)),
+        }
+    }
     writeln!(
         output,
         "\n{}",
         include_str!("../docs/operator-selection.md")
     )
     .unwrap();
-    let run = command.find_subcommand("run").expect("public run command");
-    for id in ["operators", "exclude_operators"] {
-        let arg = run
-            .get_arguments()
-            .find(|arg| arg.get_id() == id)
-            .expect("selection argument");
+    for arg in hoimin_cli::cli::operator_selection_arguments() {
         let description = arg
             .get_long_help()
             .or_else(|| arg.get_help())
             .expect("selection help");
-        writeln!(output, "### `{}`\n\n{description}\n", spelling(arg)).unwrap();
+        writeln!(output, "### `{}`\n\n{description}\n", spelling(&arg)).unwrap();
     }
     output.push_str("### Operator IDs\n\n| Operator ID | Default runtime selection | Selector families |\n| --- | --- | --- |\n");
-    for name in names {
-        let Some(operator) = MutationOperator::from_name(name) else {
-            continue;
-        };
+    for operator in operators {
+        let name = operator.as_str();
         let selected = if defaults.contains(operator) {
             "yes"
         } else {
@@ -325,14 +316,15 @@ mod tests {
     fn operator_index_links_each_id_with_its_actual_default_status() {
         // Arrange
         let defaults = hoimin_core::MutationOperatorSelection::default();
-        let names = hoimin_core::MutationOperatorSelection::valid_names();
+        let selectors = hoimin_core::MutationOperatorSelection::selectors();
 
         // Act
         let reference = super::render_reference();
 
         // Assert: registry changes must reach the generated, linked selection index.
-        for name in names {
-            if let Some(operator) = hoimin_core::MutationOperator::from_name(name) {
+        for selector in selectors {
+            if let hoimin_core::MutationSelector::Operator(operator) = selector {
+                let name = operator.as_str();
                 let selected = if defaults.contains(operator) {
                     "yes"
                 } else {
@@ -350,16 +342,19 @@ mod tests {
     #[test]
     fn operator_index_expands_every_advertised_family() {
         // Arrange
-        let families: Vec<_> = hoimin_core::MutationOperatorSelection::valid_names()
+        let families: Vec<_> = hoimin_core::MutationOperatorSelection::selectors()
             .into_iter()
-            .filter(|name| hoimin_core::MutationOperator::from_name(name).is_none())
+            .filter_map(|selector| match selector {
+                hoimin_core::MutationSelector::Family { name, members } => Some((name, members)),
+                hoimin_core::MutationSelector::Operator(_) => None,
+            })
             .collect();
 
         // Act
         let reference = super::render_reference();
 
         // Assert
-        for family in families {
+        for (family, members) in families {
             let heading = format!("### `{family}`\n");
             let section = reference
                 .split_once(&heading)
@@ -375,9 +370,9 @@ mod tests {
                         .and_then(|link| link.split_once("`](").map(|(id, _)| id))
                 })
                 .collect();
-            let expected: Vec<_> = hoimin_core::MutationOperatorSelection::parse_selector(family)
-                .unwrap()
-                .into_iter()
+            let expected: Vec<_> = members
+                .iter()
+                .copied()
                 .map(hoimin_core::MutationOperator::as_str)
                 .collect();
             assert_eq!(actual, expected, "incorrect family expansion for {family}");

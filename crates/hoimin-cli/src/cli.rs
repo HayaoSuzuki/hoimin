@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use camino::Utf8PathBuf;
 use clap::{ArgGroup, Args, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum};
 use hoimin_core::{
-    CommandArg, ConfigError, LineRange, LineSelection, MutationOperator, MutationOperatorSelection,
-    MutationProfile, OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
+    CommandArg, ConfigError, LineRange, LineSelection, MutationOperatorSelection, MutationProfile,
+    MutationSelector, OutputConfig, RawRunConfig, RawRunLimits, RunConfig, SessionConfig,
     SymbolSelection,
 };
 
@@ -118,6 +118,34 @@ impl From<ProfileArg> for MutationProfile {
 }
 
 #[derive(Debug, Args)]
+struct OperatorSelectionArgs {
+    /// Select mutation operator IDs or selector families; repeatable or comma-delimited.
+    ///
+    /// Omit --operators to use the default runtime set. An explicit selection
+    /// replaces that set. Selecting a family includes all its listed members,
+    /// including opt-in IDs. --exclude-operators is applied afterward.
+    #[arg(long, value_delimiter = ',')]
+    operators: Vec<String>,
+
+    /// Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+    ///
+    /// Remove the named IDs or every member of the named families after the default
+    /// or explicit --operators selection. At least one operator must remain selected.
+    #[arg(long, value_delimiter = ',')]
+    exclude_operators: Vec<String>,
+}
+
+/// Reflects the selection argument group used by both mutation commands.
+/// Documentation consumes these definitions without finding fields by string IDs.
+#[must_use]
+pub fn operator_selection_arguments() -> Vec<clap::Arg> {
+    OperatorSelectionArgs::augment_args(clap::Command::new("selection"))
+        .get_arguments()
+        .cloned()
+        .collect()
+}
+
+#[derive(Debug, Args)]
 struct RawMutationArgs {
     /// Project root used to resolve relative paths.
     #[arg(long, default_value = ".", value_name = "DIR")]
@@ -175,24 +203,12 @@ struct RawMutationArgs {
     #[arg(long, value_name = "GLOB")]
     exclude: Vec<String>,
 
-    /// Select mutation operator IDs or selector families; repeatable or comma-delimited.
-    ///
-    /// Omit --operators to use the default runtime set. An explicit selection
-    /// replaces that set. Selecting a family includes all its listed members,
-    /// including opt-in IDs. --exclude-operators is applied afterward.
-    #[arg(long, value_delimiter = ',')]
-    operators: Vec<String>,
+    #[command(flatten)]
+    operator_selection: OperatorSelectionArgs,
 
     /// Candidate-selection profile.
     #[arg(long, value_enum, default_value_t = ProfileArg::Full)]
     profile: ProfileArg,
-
-    /// Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
-    ///
-    /// Remove the named IDs or every member of the named families after the default
-    /// or explicit --operators selection. At least one operator must remain selected.
-    #[arg(long, value_delimiter = ',')]
-    exclude_operators: Vec<String>,
 
     /// Maximum concurrently active workers.
     #[arg(long, default_value_t = 1)]
@@ -599,21 +615,28 @@ pub fn root_command() -> clap::Command {
 
 fn operator_help() -> String {
     let defaults = MutationOperatorSelection::default();
-    let mut groups = [Vec::new(), Vec::new(), Vec::new()];
-    for name in MutationOperatorSelection::valid_names() {
-        let group = MutationOperator::from_name(name)
-            .map_or(2, |operator| usize::from(!defaults.contains(operator)));
-        groups[group].push(name);
+    let mut default_ids = Vec::new();
+    let mut opt_in_ids = Vec::new();
+    let mut families = Vec::new();
+    for selector in MutationOperatorSelection::selectors() {
+        match selector {
+            MutationSelector::Operator(operator) if defaults.contains(operator) => {
+                default_ids.push(operator.as_str());
+            }
+            MutationSelector::Operator(operator) => opt_in_ids.push(operator.as_str()),
+            MutationSelector::Family { name, .. } => families.push(name),
+        }
     }
     let mut help = format!(
         include_str!("../docs/operator-help.txt"),
         version = env!("CARGO_PKG_VERSION")
     );
     help.push('\n');
-    for (heading, names) in ["Default runtime IDs", "Opt-in IDs", "Selector families"]
-        .into_iter()
-        .zip(groups)
-    {
+    for (heading, names) in [
+        ("Default runtime IDs", default_ids),
+        ("Opt-in IDs", opt_in_ids),
+        ("Selector families", families),
+    ] {
         let rows = names
             .chunks(4)
             .map(|row| row.join(", "))
@@ -749,8 +772,8 @@ fn raw_config(args: RunArgs) -> Result<RawRunConfig, CliError> {
         fingerprint_includes: args.fingerprint_include,
         fingerprint_files: args.fingerprint_file,
         fingerprint_env: args.fingerprint_env,
-        operators: args.operators,
-        exclude_operators: args.exclude_operators,
+        operators: args.operator_selection.operators,
+        exclude_operators: args.operator_selection.exclude_operators,
         allow_best_effort_memory: args.allow_best_effort_memory,
         profile: args.profile.into(),
         limits,

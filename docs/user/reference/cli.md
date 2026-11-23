@@ -610,16 +610,16 @@ Options:
 
           Omit --operators to use the default runtime set. An explicit selection replaces that set. Selecting a family includes all its listed members, including opt-in IDs. --exclude-operators is applied afterward.
 
+      --exclude-operators <EXCLUDE_OPERATORS>
+          Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+
+          Remove the named IDs or every member of the named families after the default or explicit --operators selection. At least one operator must remain selected.
+
       --profile <PROFILE>
           Candidate-selection profile
 
           [default: full]
           [possible values: full, focused]
-
-      --exclude-operators <EXCLUDE_OPERATORS>
-          Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
-
-          Remove the named IDs or every member of the named families after the default or explicit --operators selection. At least one operator must remain selected.
 
       --jobs <JOBS>
           Maximum concurrently active workers
@@ -811,17 +811,17 @@ Argument constraints:
   arity: 1
   repeatable: true
   delimiter: ,
+--exclude-operators
+  required: false
+  arity: 1
+  repeatable: true
+  delimiter: ,
 --profile
   required: false
   arity: 1
   repeatable: false
   default: full
   values: full, focused
---exclude-operators
-  required: false
-  arity: 1
-  repeatable: true
-  delimiter: ,
 --jobs
   required: false
   arity: 1
@@ -979,16 +979,16 @@ Options:
 
           Omit --operators to use the default runtime set. An explicit selection replaces that set. Selecting a family includes all its listed members, including opt-in IDs. --exclude-operators is applied afterward.
 
+      --exclude-operators <EXCLUDE_OPERATORS>
+          Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
+
+          Remove the named IDs or every member of the named families after the default or explicit --operators selection. At least one operator must remain selected.
+
       --profile <PROFILE>
           Candidate-selection profile
 
           [default: full]
           [possible values: full, focused]
-
-      --exclude-operators <EXCLUDE_OPERATORS>
-          Exclude mutation operator IDs or selector families; repeatable or comma-delimited.
-
-          Remove the named IDs or every member of the named families after the default or explicit --operators selection. At least one operator must remain selected.
 
       --jobs <JOBS>
           Maximum concurrently active workers
@@ -1176,17 +1176,17 @@ Argument constraints:
   arity: 1
   repeatable: true
   delimiter: ,
+--exclude-operators
+  required: false
+  arity: 1
+  repeatable: true
+  delimiter: ,
 --profile
   required: false
   arity: 1
   repeatable: false
   default: full
   values: full, focused
---exclude-operators
-  required: false
-  arity: 1
-  repeatable: true
-  delimiter: ,
 --jobs
   required: false
   arity: 1

@@ -228,6 +228,80 @@ The documentation assessment remains **9/10**, with no blocking or failed Quick
 Diagnostic rows. Handwritten applicability still requires factual review when
 analyzers change; sharing text does not prove its semantics.
 
+## Typed selection revision
+
+User review requests typed internal decisions instead of string-based dispatch.
+Expose the existing registry as a `MutationSelector` enum with operator/family
+variants. Keep names at CLI/serialization and presentation boundaries. Group the
+selection arguments in a derived Args struct so documentation consumes that type
+directly instead of searching a command and fields by string IDs.
+
+Design reviews:
+
+1. Identity: retain the existing operator enum and family-member registry; the
+   typed view must not become a second independently maintained catalog.
+2. Exhaustiveness: use enum matches for operator/family classification and named
+   buckets for default/opt-in/family help, replacing positional group numbers.
+3. Boundaries: accepted CLI strings and saved IDs stay compatible. Registry names
+   are output labels and parsed inputs, not internal category discriminators.
+4. Shared explanations: derive the two selection arguments from one Args type,
+   used by command parsing and documentation; preserve doc-comment ownership.
+5. Scope: this is a typed metadata view and argument grouping, not a new mutation
+   policy. Preserve alphabetical advertising and family expansion ordering.
+
+Implementation-plan reviews:
+
+1. Add catalog conformance cases and a round-trip property for typed selectors,
+   alongside the existing exact-default and saved-plan tests.
+2. Project valid names from the typed catalog; keep parsing at the existing input
+   boundary and verify all accepted names retain their meaning.
+3. Match enum variants in help/generator code; reflect typed selection Args without
+   command-name or argument-ID searches. Keep string labels only for rendering.
+4. Replace test parser dispatch with a Run/Plan enum and the generator's manual
+   string flag parsing with Clap-derived typed arguments.
+5. Regenerate shared documents, run focused core/CLI/property/site checks and
+   independent review, then update the same PR and verify its final CI head.
+
+Implementation reviews:
+
+1. The enum catalog projects the existing declarations and family tuples. No
+   second member list or independent name-to-kind registry was added.
+2. Help and reference generation match `MutationSelector` variants. Named default,
+   opt-in and family collections replace numeric group indexes; names are emitted
+   only after the typed classification.
+3. `OperatorSelectionArgs` is flattened into both mutation commands and supplies
+   reflected metadata directly. Selection descriptions remain the same doc comments;
+   grouping changes option ordering, not accepted spellings or semantics.
+4. `GenerateArgs` uses Clap's typed parsing for check mode. The selection property
+   test uses a Run/Plan enum instead of a string comparison. Existing string parsing
+   at external CLI/Markdown boundaries remains explicit.
+5. Independent review found no actionable defects or unnecessary general framework.
+   The selector enum does not derive serialization; saved selection representation
+   and parsing still belong to the existing validated selection type.
+
+Test reviews:
+
+1. Catalog tests initially failed because the typed API was absent. Two
+   parameterized kind cases, an ordering/uniqueness check and an expansion
+   round-trip property pass after implementation.
+2. All 102 existing core selection tests pass, covering defaults, family expansion,
+   exclusions and persisted explicit selections. The finite catalog property is
+   sampled; the handwritten reference completeness check supplies a separate
+   inventory oracle.
+3. All 234 CLI configuration tests pass after the Args extraction. Existing
+   arbitrary selection combinations now dispatch through enum variants and
+   continue to cover both run and plan.
+4. All 26 reference and 10 generator tests pass, including real-binary command
+   wording, shared descriptions and Unicode/LF/CRLF generation. The typed
+   generator's actual `--check` invocation succeeds against the committed target.
+5. Strict documentation build, 68 documentation/skill Python tests, formatting and
+   Clippy across core/CLI targets pass. Independent review reran catalog, reference
+   and generator tests. Final hosted checks are tracked on the PR's new head.
+
+Typed-revision design assessment: **9/10**, no failed diagnostic rows. Enum
+classification and shared Args reflection remove presentation-side rediscovery
+without moving prose back into strings or duplicating registry ownership.
+
 ## Documentation Audit: operator help and reference
 
 **Score:** 9/10 — ready for review. **Shippable:** yes.

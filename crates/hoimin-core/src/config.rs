@@ -333,18 +333,53 @@ const SELECTOR_FAMILIES: &[(&str, &[MutationOperator])] = &[
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MutationOperatorSelection(BTreeSet<MutationOperator>);
 
+/// A registered CLI choice, retaining whether it selects one operator or a family.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MutationSelector {
+    Operator(MutationOperator),
+    Family {
+        name: &'static str,
+        members: &'static [MutationOperator],
+    },
+}
+
+impl MutationSelector {
+    /// Returns the accepted spelling for display or the CLI input boundary.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Operator(operator) => operator.as_str(),
+            Self::Family { name, .. } => name,
+        }
+    }
+}
+
 impl MutationOperatorSelection {
+    /// Returns the typed registry in alphabetical CLI spelling order.
+    /// Family expansion retains its configured member order.
+    #[must_use]
+    pub fn selectors() -> Vec<MutationSelector> {
+        let mut selectors: Vec<_> = MutationOperator::all()
+            .iter()
+            .copied()
+            .map(MutationSelector::Operator)
+            .collect();
+        selectors.extend(
+            SELECTOR_FAMILIES
+                .iter()
+                .map(|&(name, members)| MutationSelector::Family { name, members }),
+        );
+        selectors.sort_unstable_by_key(|selector| selector.as_str());
+        selectors
+    }
+
     /// Returns canonical operator IDs and selector-family names accepted by the CLI.
     #[must_use]
     pub fn valid_names() -> Vec<&'static str> {
-        let mut names: Vec<_> = MutationOperator::all()
-            .iter()
-            .copied()
-            .map(MutationOperator::as_str)
-            .collect();
-        names.extend(SELECTOR_FAMILIES.iter().map(|(name, _)| *name));
-        names.sort_unstable();
-        names
+        Self::selectors()
+            .into_iter()
+            .map(MutationSelector::as_str)
+            .collect()
     }
 
     /// Expands a selector name into its constituent mutation operators.
