@@ -340,6 +340,8 @@ jobs:
           tar -xzf "$archive" -C "$QUINT_HOME/apalache-dist-0.62.4"
       - name: Check finite model, negative control, and oracle freshness
         run: python tools/verify_quint.py
+      - name: Replay SQLite lifecycle and resume selection histories
+        run: cargo test --locked -p hoimin-cli --test quint_session
       - name: Replay model traces and check generated histories
         run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model --test quint_itf --test quint_report --test report_model --test quint_disk --test disk_model
       - name: Check internal completion-ledger correspondence

@@ -1,0 +1,895 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "init",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": false,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "begin",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "lookup",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "finish",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "load",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "lookup",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "1"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "finish",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "load",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "lookup",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "lookup",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "load",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "finish",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "persist",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "1"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "lookup",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "close",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "lookup",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "load",
+      "Session::SessionModel::owned": true,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "close",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "close",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "Session::SessionModel::accepted": true,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "close",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "persist",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "4"
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "finish",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "lookup",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "persist",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "Session::SessionModel::accepted": false,
+      "Session::SessionModel::complete": false,
+      "Session::SessionModel::observed": {
+        "#bigint": "0"
+      },
+      "Session::SessionModel::op": "persist",
+      "Session::SessionModel::owned": false,
+      "Session::SessionModel::present": true,
+      "Session::SessionModel::results": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::sealed": [
+        {
+          "#bigint": "0"
+        },
+        {
+          "#bigint": "0"
+        }
+      ],
+      "Session::SessionModel::slot": {
+        "#bigint": "1"
+      },
+      "Session::SessionModel::status": {
+        "#bigint": "3"
+      }
+    }
+  ],
+  "vars": [
+    "Session::SessionModel::slot",
+    "Session::SessionModel::op",
+    "Session::SessionModel::sealed",
+    "Session::SessionModel::observed",
+    "Session::SessionModel::accepted",
+    "Session::SessionModel::results",
+    "Session::SessionModel::status",
+    "Session::SessionModel::owned",
+    "Session::SessionModel::complete",
+    "Session::SessionModel::present"
+  ]
+}

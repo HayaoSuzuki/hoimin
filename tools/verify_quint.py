@@ -31,6 +31,14 @@ class Model:
 
 
 MODELS = (
+    Model("session.qnt", "Session", "session", "SessionOverwrite", ("recoveryStep",)),
+    Model(
+        "session_selection.qnt",
+        "SessionSelection",
+        "session_selection",
+        "SessionSelectionOldest",
+        ("latestStep", "fallbackStep"),
+    ),
     Model("budget.qnt", "Budget", "trace", "BudgetOverdraft"),
     Model("budget.qnt", "BudgetExtended", "extended"),
     Model("report.qnt", "Report", "report", "ReportEarlyFinish", ("interleavedStep",)),

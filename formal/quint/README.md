@@ -73,7 +73,7 @@ not establish Rust correspondence; ITF replay remains a separate required check.
 
 ## Cleanup and ownership extension
 
-The registry now checks nine finite configurations. In addition to the four above:
+The cleanup and ownership extension adds five finite configurations to the four above:
 
 | Model | Finite scope | Implementation correspondence |
 | --- | --- | --- |
@@ -103,7 +103,7 @@ successful detection of contention. Handles close before temporary directory
 removal. These tests exercise descriptors on the current host; they do not prove
 SQLite recovery, process-crash handling or all possible host failures.
 
-The combined corpus contains 48 histories, including `cleanStep`/`deferredStep`
+The cleanup and ownership corpus contains 48 histories, including `cleanStep`/`deferredStep`
 for disk, `cleanStep`/`refusedStep`/`unjoinedStep`/`availableStep` for finalization,
 and `reacquireStep` for ownership. Six negative-control models check detection of
 unsafe transitions. Every generated history participates in freshness checking.
@@ -113,6 +113,49 @@ cargo test --locked -p hoimin-core --test quint_disk --test disk_model
 cargo test --locked -p hoimin-cli --lib shell::finalization::quint
 cargo test --locked -p hoimin-cli --lib session::ownership::quint
 ```
+
+## SQLite persistence and resume selection
+
+The registry checks eleven finite configurations, with eight negative controls and
+59 committed histories. The SQLite extension adds two independent domains:
+
+| Model | Finite scope | Implementation correspondence | Negative control |
+| --- | --- | --- | --- |
+| Session | One run, two mutants, all seven result statuses, owner release/reacquisition and completion | Public `SessionHandler::begin/persist/lookup/load/finish` on a real temporary SQLite database; `resume_policy` on recovered results | Replace a determinate result |
+| SessionSelection | Two chronological runs, two fingerprints, budgets 1 and 2, complete/incomplete rows | Public handler operations and stored rows after every close/reopen, including budget promotion | Choose the oldest eligible run |
+
+`Session.recoveryStep` saves a timeout, reopens and resumes the DB, replaces it
+with a killed result, and rejects a later survived replacement. Selection's
+`latestStep` and `fallbackStep` force multiple eligible rows and fallback past a
+newer run whose budget is too large. These are input schedules, sharing the same
+model actions as exhaustive checking.
+
+The Rust driver compares operation outcomes, every stored result and run row,
+and probes ownership and reuse with public lookups after every lifecycle step.
+Rejected operations must preserve a complete logical snapshot of all five tables.
+Separate tests inject an invalid diagnostic after an inconclusive result has been
+removed inside a replacement transaction, then check rollback and recovered lookup.
+
+Literal cases cover all 49 pairs of previous and replacement statuses. PBT adds
+64 histories per property, up to 47 lifecycle commands, four runs, three
+fingerprints and 19 loads, including budget byte boundaries and `usize::MAX`.
+The driver treats unexpected error codes as failures; an operational DB failure
+cannot satisfy an expected semantic rejection. SQLite I/O uses bounded PBT rather
+than a per-input libFuzzer database initialization. Existing pure-state fuzz targets
+remain in the bounded campaign.
+
+```sh
+cargo test --locked -p hoimin-cli --test quint_session
+cargo test --locked -p hoimin-cli --test quint_session --all-features
+```
+
+A close/reopen is orderly handle release, not a simulated process crash or power
+failure. The models do not cover concurrent database transactions, schema
+corruption, exact fresh-reason diagnostic priority, or the public `transition`
+protocol. Existing Lean session oracles and native-lock tests continue separately.
+See the [design](../../docs/development/work/quint-session-protocol/design.md),
+[plan](../../docs/development/work/quint-session-protocol/plan.md), and
+[review evidence](../../docs/development/work/quint-session-protocol/review.md).
 
 ## Generated testing and fuzz
 
