@@ -1,0 +1,1075 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::op": "init",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::op": "process",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::op": "output",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::op": "process",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::op": "process",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::op": "output",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "monitor",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "process",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "output",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "stop",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "dispatch",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "output",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "output",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "dispatch",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "process",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "report",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "process",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "stop",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "output",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "3"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "cleanup",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "process",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "monitor",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "DiskNoRoots::DiskModel::accepted": false,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "report",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "DiskNoRoots::DiskModel::accepted": true,
+      "DiskNoRoots::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::deliveryCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::executionCleanup": {
+        "#bigint": "6"
+      },
+      "DiskNoRoots::DiskModel::finished": false,
+      "DiskNoRoots::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskNoRoots::DiskModel::op": "stop",
+      "DiskNoRoots::DiskModel::output": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::owned": {
+        "#set": []
+      },
+      "DiskNoRoots::DiskModel::process": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::report": {
+        "#bigint": "2"
+      },
+      "DiskNoRoots::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskNoRoots::DiskModel::stopped": true
+    }
+  ],
+  "vars": [
+    "DiskNoRoots::DiskModel::output",
+    "DiskNoRoots::DiskModel::owned",
+    "DiskNoRoots::DiskModel::op",
+    "DiskNoRoots::DiskModel::monitor",
+    "DiskNoRoots::DiskModel::stopped",
+    "DiskNoRoots::DiskModel::arg",
+    "DiskNoRoots::DiskModel::report",
+    "DiskNoRoots::DiskModel::active",
+    "DiskNoRoots::DiskModel::root",
+    "DiskNoRoots::DiskModel::executionCleanup",
+    "DiskNoRoots::DiskModel::dispatched",
+    "DiskNoRoots::DiskModel::accepted",
+    "DiskNoRoots::DiskModel::deliveryCleanup",
+    "DiskNoRoots::DiskModel::process",
+    "DiskNoRoots::DiskModel::finished"
+  ]
+}

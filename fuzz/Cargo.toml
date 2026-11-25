@@ -55,6 +55,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "disk_lifecycle"
+path = "fuzz_targets/disk_lifecycle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "report_lifecycle"
 path = "fuzz_targets/report_lifecycle.rs"
 test = false

@@ -71,6 +71,49 @@ u64 ID exhaustion with small-number exhaustion. Unbounded histories, fairness,
 liveness and OS process effects are outside these models. TLC success alone does
 not establish Rust correspondence; ITF replay remains a separate required check.
 
+## Cleanup and ownership extension
+
+The registry now checks nine finite configurations. In addition to the four above:
+
+| Model | Finite scope | Implementation correspondence |
+| --- | --- | --- |
+| DiskLifecycle | Both owned roots, up to one dispatch, all drain/report success or failure and cleanup outcomes | Public `DiskLifecycle::apply/snapshot/may_finish/safety_succeeded` |
+| DiskExecutionOnly | Execution root only; failures may retain it while still reaching finish | Same public adapter |
+| DiskNoRoots | No owned roots; attempted cleanup of unowned roots is rejected | Same public adapter |
+| Finalization | Inner/outer drains, joined/failed/unjoined measurement, cleanup admission/results, one-shot free-space query | CLI `ExecutionFinalization` methods and summary projection, internal fixture |
+| Ownership | Two actors/two run IDs and independent file handles | Real `RunOwnership::acquire` and handle drop using native OS locks |
+
+The disk model initially allowed two dispatches but hit the outer 20-second limit;
+that run is not counted as success. The finite workload uses one dispatch, while
+PBT/fuzz checks longer histories and arbitrary u64 observation values. The public
+adapter compares state fields and acceptance directly with generated expectations.
+PBT additionally checks rejected-input snapshot atomicity, terminal freeze, primary
+failure stability, diagnostic deduplication and cleanup/finish prerequisites.
+
+Finalization checks that an unjoined measurement cannot be repaired by a later
+joined success, a refused removal attempt remains terminal, failed joined readings
+preserve prior evidence, and failed free-space queries do not retry or become zero.
+Zero and full-width readings are tested separately from absent readings. Its PBT
+expectations derive from raw state and history laws rather than the getters being
+tested. This verifies admission/evidence logic, not actual filesystem deletion.
+
+Ownership PBT expands to four actors/three run IDs, and each step probes the real
+OS lock with another independent open. I/O errors are infrastructure failures, not
+successful detection of contention. Handles close before temporary directory
+removal. These tests exercise descriptors on the current host; they do not prove
+SQLite recovery, process-crash handling or all possible host failures.
+
+The combined corpus contains 48 histories, including `cleanStep`/`deferredStep`
+for disk, `cleanStep`/`refusedStep`/`unjoinedStep`/`availableStep` for finalization,
+and `reacquireStep` for ownership. Six negative-control models check detection of
+unsafe transitions. Every generated history participates in freshness checking.
+
+```sh
+cargo test --locked -p hoimin-core --test quint_disk --test disk_model
+cargo test --locked -p hoimin-cli --lib shell::finalization::quint
+cargo test --locked -p hoimin-cli --lib session::ownership::quint
+```
+
 ## Generated testing and fuzz
 
 Literal rstest histories extend to proptest command sequences (256 cases per
@@ -85,6 +128,9 @@ cargo +nightly-2026-10-08 fuzz run report_lifecycle \
   -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
 ```
 
+Use `disk_lifecycle` to check the disk lifecycle laws (first byte: owned-root mask,
+then 17-byte commands with a tag and two full-width u64 fields, capped at128).
+Its committed seeds include failed drains, deferred delivery and boundary readings.
 Use `budget_ledger` and its corresponding directories to fuzz the reservation
 journal. `report_sequence` remains the existing JSON wire-format target;
 `report_lifecycle` adds arbitrary command histories against the independent
@@ -106,3 +152,5 @@ the production feature and selects the corresponding invalid-event handling.
 - [Expanded design](../../docs/development/work/quint-state-machines/design.md)
 - [Implementation plan](../../docs/development/work/quint-state-machines/plan.md)
 - [Expanded review and evidence](../../docs/development/work/quint-state-machines/review.md)
+
+- [Cleanup/ownership design and verification](../../docs/development/work/quint-finalization/review.md)

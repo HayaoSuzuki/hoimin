@@ -1,0 +1,565 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "init",
+      "Ownership::OwnershipModel::result": "init",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "0"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "acquire",
+      "Ownership::OwnershipModel::result": "ok",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "0"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "0"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "acquire",
+      "Ownership::OwnershipModel::result": "busy",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "0"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "close",
+      "Ownership::OwnershipModel::result": "closed",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "0"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "acquire",
+      "Ownership::OwnershipModel::result": "ok",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "close",
+      "Ownership::OwnershipModel::result": "closed",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "close",
+      "Ownership::OwnershipModel::result": "closed",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": []
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "acquire",
+      "Ownership::OwnershipModel::result": "ok",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "release",
+      "Ownership::OwnershipModel::result": "released",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "1"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "acquire",
+      "Ownership::OwnershipModel::result": "ok",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "Ownership::OwnershipModel::actor": {
+        "#bigint": "0"
+      },
+      "Ownership::OwnershipModel::leases": {
+        "#set": [
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "actor": {
+              "#bigint": "1"
+            },
+            "runId": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Ownership::OwnershipModel::op": "close",
+      "Ownership::OwnershipModel::result": "closed",
+      "Ownership::OwnershipModel::runId": {
+        "#bigint": "0"
+      }
+    }
+  ],
+  "vars": [
+    "Ownership::OwnershipModel::leases",
+    "Ownership::OwnershipModel::op",
+    "Ownership::OwnershipModel::actor",
+    "Ownership::OwnershipModel::runId",
+    "Ownership::OwnershipModel::result"
+  ]
+}

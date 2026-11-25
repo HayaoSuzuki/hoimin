@@ -1,5 +1,8 @@
 //! Owns execution cleanup evidence shared by normal and outer finalization.
 
+#[cfg(test)]
+mod quint;
+
 use std::collections::BTreeMap;
 use std::io;
 

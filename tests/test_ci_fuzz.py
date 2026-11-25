@@ -162,6 +162,7 @@ def recorded_campaign(
         "source_index",
         "candidate_validation",
         "python_analyzer",
+        "disk_lifecycle",
         "report_lifecycle",
         "report_sequence",
         "target_resolution",
@@ -406,7 +407,7 @@ def test_campaign_stops_at_failure(fake_fuzz_root: Path, mocker: MockerFixture) 
     mocker.patch.dict(os.environ, {"FAKE_FUZZ_FAIL_TARGET": "source_index"})
     report_dir = fake_fuzz_root / "report"
 
-    campaign = ci_fuzz.Campaign(time.time() + 120, report_dir, seed=123)
+    campaign = ci_fuzz.Campaign(time.time() + 180, report_dir, seed=123)
     with pytest.raises(ci_fuzz.FuzzError, match="source_index"):
         ci_fuzz.run_campaign(campaign)
 
@@ -421,7 +422,7 @@ def test_campaign_reports_all_targets(
     mocker.patch.dict(os.environ, {"FAKE_FUZZ_FAIL_TARGET": ""})
     report_dir = fake_fuzz_root / "report"
 
-    campaign = ci_fuzz.Campaign(time.time() + 120, report_dir, seed=123)
+    campaign = ci_fuzz.Campaign(time.time() + 180, report_dir, seed=123)
 
     ci_fuzz.run_campaign(campaign)
 
@@ -443,6 +444,7 @@ def test_campaign_reports_all_targets(
         "source_index",
         "candidate_validation",
         "python_analyzer",
+        "disk_lifecycle",
         "report_lifecycle",
         "report_sequence",
         "target_resolution",
@@ -467,7 +469,7 @@ def test_campaign_gives_every_target_the_requested_fixed_time(
 ) -> None:
     report_dir = fake_fuzz_root / "report"
 
-    campaign = ci_fuzz.Campaign(time.time() + 120, report_dir, seed=123)
+    campaign = ci_fuzz.Campaign(time.time() + 180, report_dir, seed=123)
 
     ci_fuzz.run_campaign(campaign, seconds_per_target=37)
 
@@ -665,6 +667,7 @@ def test_campaign_generates_with_both_interpreters_before_one_fuzz_run(
         "source_index",
         "candidate_validation",
         "python_analyzer",
+        "disk_lifecycle",
         "report_lifecycle",
         "report_sequence",
         "target_resolution",

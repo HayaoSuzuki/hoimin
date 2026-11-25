@@ -41,6 +41,29 @@ MODELS = (
         "CompletionResurrectRetired",
         ("gapStep", "wrongKindStep"),
     ),
+    Model(
+        "disk.qnt",
+        "DiskLifecycle",
+        "disk",
+        "DiskBadDelivery",
+        ("cleanStep", "deferredStep"),
+    ),
+    Model("disk.qnt", "DiskExecutionOnly", "disk_execution", scenarios=("cleanStep",)),
+    Model("disk.qnt", "DiskNoRoots", "disk_empty", scenarios=("cleanStep",)),
+    Model(
+        "ownership.qnt",
+        "Ownership",
+        "ownership",
+        "OwnershipConflict",
+        ("reacquireStep",),
+    ),
+    Model(
+        "finalization.qnt",
+        "Finalization",
+        "finalization",
+        "FinalizationUnjoined",
+        ("cleanStep", "refusedStep", "unjoinedStep", "availableStep"),
+    ),
 )
 
 

@@ -1,0 +1,662 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::op": "init",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::op": "process",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::op": "output",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "monitor",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "request",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "cleanup",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "report",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "request",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "DiskLifecycle::DiskModel::accepted": true,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "4"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "4"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "cleanup",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "DiskLifecycle::DiskModel::accepted": false,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "4"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "finish",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "DiskLifecycle::DiskModel::accepted": false,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "4"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "finish",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "DiskLifecycle::DiskModel::accepted": false,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "4"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "finish",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "DiskLifecycle::DiskModel::accepted": false,
+      "DiskLifecycle::DiskModel::active": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::arg": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::deliveryCleanup": {
+        "#bigint": "4"
+      },
+      "DiskLifecycle::DiskModel::dispatched": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::executionCleanup": {
+        "#bigint": "5"
+      },
+      "DiskLifecycle::DiskModel::finished": false,
+      "DiskLifecycle::DiskModel::monitor": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::op": "finish",
+      "DiskLifecycle::DiskModel::output": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::owned": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "DiskLifecycle::DiskModel::process": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::report": {
+        "#bigint": "1"
+      },
+      "DiskLifecycle::DiskModel::root": {
+        "#bigint": "0"
+      },
+      "DiskLifecycle::DiskModel::stopped": false
+    }
+  ],
+  "vars": [
+    "DiskLifecycle::DiskModel::owned",
+    "DiskLifecycle::DiskModel::op",
+    "DiskLifecycle::DiskModel::monitor",
+    "DiskLifecycle::DiskModel::stopped",
+    "DiskLifecycle::DiskModel::arg",
+    "DiskLifecycle::DiskModel::report",
+    "DiskLifecycle::DiskModel::active",
+    "DiskLifecycle::DiskModel::root",
+    "DiskLifecycle::DiskModel::executionCleanup",
+    "DiskLifecycle::DiskModel::dispatched",
+    "DiskLifecycle::DiskModel::accepted",
+    "DiskLifecycle::DiskModel::deliveryCleanup",
+    "DiskLifecycle::DiskModel::process",
+    "DiskLifecycle::DiskModel::finished",
+    "DiskLifecycle::DiskModel::output"
+  ]
+}
