@@ -116,8 +116,7 @@ cargo test --locked -p hoimin-cli --lib session::ownership::quint
 
 ## SQLite persistence and resume selection
 
-The registry checks eleven finite configurations, with eight negative controls and
-59 committed histories. The SQLite extension adds two independent domains:
+The SQLite extension adds two independent domains to the earlier configurations:
 
 | Model | Finite scope | Implementation correspondence | Negative control |
 | --- | --- | --- | --- |
@@ -156,6 +155,60 @@ protocol. Existing Lean session oracles and native-lock tests continue separatel
 See the [design](../../docs/development/work/quint-session-protocol/design.md),
 [plan](../../docs/development/work/quint-session-protocol/plan.md), and
 [review evidence](../../docs/development/work/quint-session-protocol/review.md).
+
+## Public bootstrap stop protocol
+
+The registry checks fourteen finite configurations, nine negative controls and
+86 committed histories. Three stop configurations share one model:
+
+| Configuration | Publicly reached entry | Scope |
+| --- | --- | --- |
+| StopEarly | Pending target resolution or preflight (each trace is replayed at both entries) | No workspace-copy reservation or session |
+| StopCopy | Pending run-start output after preflight | Copy reservation and final verification |
+| StopSession | Pending run-start output after session begin | Final-report acknowledgement must precede session finish |
+
+Every entry is built with `RunState::new` and public `transition` calls. The
+adapter never edits private fields. Stops include cancellation, deadline and disk
+policy. Completions cover success, generic failure, output I/O failure, retired,
+duplicate, unknown, wrong-kind and mismatched cleanup reservations. Public phase,
+exit code, pending IDs, retired IDs, output sequence and terminal payloads are
+compared with model expectations or an independent event journal.
+
+The finite model allows two stop requests. PBT runs 256 histories of up to 127
+commands, with arbitrary u64 disk readings, then eight successful acknowledgements
+to check recovery progress under that explicit assumption. It preserves the first
+disk reason, freezes stop causes during cleanup/final-report/session completion,
+and requires session finish to follow the final-report acknowledgement. The
+negative model deliberately violates the last ordering. `terminalStep` forces a
+stop while the final report is pending; `finalFailureStep` forces the discovered
+unacknowledged-start/final-output-failure regression.
+
+A discovered regression is fixed: after an unacknowledged run-start failure,
+failure of the eventual final report terminates the protocol instead of issuing
+a new run-start. The minimized PBT input is retained both as a regression and a
+fuzz seed. Literal cases cover all four entries and three original stop causes.
+
+`run_stop` uses the same public driver in libFuzzer. The first two bytes choose
+entry and initial stop cause; subsequent commands occupy nine bytes (tag and
+little-endian u64 disk observation), capped at 128. Each history ends with eight
+successful acknowledgements. Generated corpus must remain separate from seeds:
+
+```sh
+cargo test --locked -p hoimin-core --test quint_stop --test stop_model
+mkdir -p fuzz/corpus/run_stop
+cargo +nightly-2026-10-08 fuzz run run_stop \
+  fuzz/corpus/run_stop fuzz/seeds/run_stop -- \
+  -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
+```
+
+Invalid completions consume a cloned input in the replay driver; retaining the
+previous state after an error is a replay policy, not a claim about an error state
+returned by `transition`. Auxiliary model flags are not private-state observations.
+Active workers, subprocess shutdown, actual filesystem deletion and concurrent
+session transactions remain outside this bootstrap protocol model.
+See the [design](../../docs/development/work/quint-public-stop/design.md),
+[plan](../../docs/development/work/quint-public-stop/plan.md), and
+[review evidence](../../docs/development/work/quint-public-stop/review.md).
 
 ## Generated testing and fuzz
 

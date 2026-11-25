@@ -1,0 +1,1039 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "init",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": false,
+        "completed": false,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": false,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "0"
+        },
+        "pending": {
+          "#bigint": "0"
+        },
+        "phase": {
+          "#bigint": "0"
+        },
+        "reportAck": false,
+        "reported": false,
+        "started": false,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "1"
+      },
+      "StopEarly::StopModel::op": "stop",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": false,
+        "completed": false,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "1"
+        },
+        "pending": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "#bigint": "0"
+        },
+        "reportAck": false,
+        "reported": false,
+        "started": true,
+        "stopAfterStart": true
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "ack",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "1"
+        },
+        "pending": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "#bigint": "2"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "reservation",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "1"
+        },
+        "pending": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "#bigint": "2"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "ack",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "6"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "ack",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "2"
+      },
+      "StopEarly::StopModel::op": "stop",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "unknown",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "unknown",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "duplicate",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "unknown",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "unknown",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "unknown",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "duplicate",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "unknown",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "duplicate",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "StopEarly::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopEarly::StopModel::op": "retired",
+      "StopEarly::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "4"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopEarly::StopModel::stops": {
+        "#bigint": "2"
+      }
+    }
+  ],
+  "vars": [
+    "StopEarly::StopModel::s",
+    "StopEarly::StopModel::op",
+    "StopEarly::StopModel::arg",
+    "StopEarly::StopModel::stops"
+  ]
+}

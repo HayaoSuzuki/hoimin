@@ -31,6 +31,37 @@ class Model:
 
 
 MODELS = (
+    Model(
+        "stop.qnt",
+        "StopEarly",
+        "stop_early",
+        scenarios=(
+            "cleanStep",
+            "diskStep",
+            "failureStep",
+            "terminalStep",
+            "finalFailureStep",
+        ),
+    ),
+    Model(
+        "stop.qnt",
+        "StopCopy",
+        "stop_copy",
+        scenarios=(
+            "cleanStep",
+            "diskStep",
+            "failureStep",
+            "terminalStep",
+            "finalFailureStep",
+        ),
+    ),
+    Model(
+        "stop.qnt",
+        "StopSession",
+        "stop_session",
+        "StopPrematureSession",
+        ("cleanStep", "diskStep", "failureStep", "terminalStep", "finalFailureStep"),
+    ),
     Model("session.qnt", "Session", "session", "SessionOverwrite", ("recoveryStep",)),
     Model(
         "session_selection.qnt",

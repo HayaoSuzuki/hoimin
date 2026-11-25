@@ -2126,6 +2126,11 @@ pub fn transition(
                 state.flags.scheduling.candidate_exhausted = true;
                 state.pending_failure = Some(failed);
                 state.begin_stopped_mutant_drain()?
+            } else if final_report_pending {
+                // A failed run-start may never have been acknowledged. Failure of
+                // its eventual final report must still terminate the protocol.
+                state.phase = RunPhase::Finished;
+                Vec::new()
             } else if !state.flags.report.report_started {
                 if completed_output == Some(OutputContinuation::RunStarted) {
                     state.cleanup_effects()?
@@ -2133,9 +2138,6 @@ pub fn transition(
                     state.pending_failure = Some(failed);
                     state.start_run_effects()?
                 }
-            } else if final_report_pending {
-                state.phase = RunPhase::Finished;
-                Vec::new()
             } else {
                 state.diagnostic_effect(&failed)?
             }

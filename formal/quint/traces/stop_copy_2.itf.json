@@ -1,0 +1,1039 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "init",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": false,
+        "completed": false,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": false,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "1"
+        },
+        "pending": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "#bigint": "0"
+        },
+        "reportAck": false,
+        "reported": false,
+        "started": false,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "2"
+      },
+      "StopCopy::StopModel::op": "stop",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": false,
+        "completed": false,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "1"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "#bigint": "0"
+        },
+        "reportAck": false,
+        "reported": false,
+        "started": true,
+        "stopAfterStart": true
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "ack",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "1"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "3"
+        },
+        "pending": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "#bigint": "0"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "ack",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "3"
+        },
+        "pending": {
+          "#bigint": "3"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "duplicate",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "3"
+        },
+        "pending": {
+          "#bigint": "3"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "fail",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "5"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "ack",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "#bigint": "2"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "ack",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "6"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "unknown",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "6"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "ack",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "2"
+      },
+      "StopCopy::StopModel::op": "stop",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "unknown",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "unknown",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "retired",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "duplicate",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "unknown",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "retired",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "retired",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "retired",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "unknown",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "retired",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "unknown",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "duplicate",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "retired",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "StopCopy::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopCopy::StopModel::op": "unknown",
+      "StopCopy::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "2"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "2"
+        },
+        "finishPublished": true,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "5"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": true,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopCopy::StopModel::stops": {
+        "#bigint": "2"
+      }
+    }
+  ],
+  "vars": [
+    "StopCopy::StopModel::s",
+    "StopCopy::StopModel::op",
+    "StopCopy::StopModel::arg",
+    "StopCopy::StopModel::stops"
+  ]
+}

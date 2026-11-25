@@ -1,0 +1,547 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "init",
+      "StopSession::StopModel::s": {
+        "cleanupDone": false,
+        "completed": false,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": false,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "1"
+        },
+        "pending": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "#bigint": "0"
+        },
+        "reportAck": false,
+        "reported": false,
+        "started": false,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "1"
+      },
+      "StopSession::StopModel::op": "stop",
+      "StopSession::StopModel::s": {
+        "cleanupDone": false,
+        "completed": false,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "#bigint": "0"
+        },
+        "reportAck": false,
+        "reported": false,
+        "started": true,
+        "stopAfterStart": true
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "ack",
+      "StopSession::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": false,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "2"
+        },
+        "pending": {
+          "#bigint": "3"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "fail",
+      "StopSession::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": false,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "3"
+        },
+        "pending": {
+          "#bigint": "5"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "1"
+      },
+      "StopSession::StopModel::op": "fail",
+      "StopSession::StopModel::s": {
+        "cleanupDone": false,
+        "completed": true,
+        "copy": true,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "3"
+        },
+        "pending": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "#bigint": "2"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "fail",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "5"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "1"
+      },
+      "StopSession::StopModel::op": "fail",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "retired",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "retired",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "retired",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "retired",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "retired",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "StopSession::StopModel::arg": {
+        "#bigint": "0"
+      },
+      "StopSession::StopModel::op": "retired",
+      "StopSession::StopModel::s": {
+        "cleanupDone": true,
+        "completed": true,
+        "copy": false,
+        "deliveryFailed": true,
+        "disk": {
+          "#bigint": "0"
+        },
+        "fatal": true,
+        "finishCode": {
+          "#bigint": "0"
+        },
+        "finishPublished": false,
+        "incomplete": true,
+        "interrupted": false,
+        "outputs": {
+          "#bigint": "4"
+        },
+        "pending": {
+          "#bigint": "8"
+        },
+        "phase": {
+          "#bigint": "3"
+        },
+        "reportAck": false,
+        "reported": true,
+        "started": true,
+        "stopAfterStart": false
+      },
+      "StopSession::StopModel::stops": {
+        "#bigint": "1"
+      }
+    }
+  ],
+  "vars": [
+    "StopSession::StopModel::s",
+    "StopSession::StopModel::op",
+    "StopSession::StopModel::arg",
+    "StopSession::StopModel::stops"
+  ]
+}
