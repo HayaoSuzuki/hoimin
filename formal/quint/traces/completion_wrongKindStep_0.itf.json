@@ -1,0 +1,481 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::op": "init",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "init",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "issue",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "issued",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "wrong",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "ok",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": [
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    }
+  ],
+  "vars": [
+    "Completion::CompletionModel::floor",
+    "Completion::CompletionModel::kind",
+    "Completion::CompletionModel::nextId",
+    "Completion::CompletionModel::id",
+    "Completion::CompletionModel::retired",
+    "Completion::CompletionModel::op",
+    "Completion::CompletionModel::completed",
+    "Completion::CompletionModel::gaps",
+    "Completion::CompletionModel::result",
+    "Completion::CompletionModel::pending"
+  ]
+}

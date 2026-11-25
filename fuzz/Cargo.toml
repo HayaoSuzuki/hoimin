@@ -8,6 +8,9 @@ license = "Elastic-2.0"
 [package.metadata]
 cargo-fuzz = true
 
+[features]
+contracts = ["hoimin-core/contracts"]
+
 # Keep libFuzzer and its nightly build separate from the shipping workspace.
 [workspace]
 members = ["."]
@@ -52,6 +55,34 @@ doc = false
 bench = false
 
 [[bin]]
+name = "run_workers"
+path = "fuzz_targets/run_workers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "run_stop"
+path = "fuzz_targets/run_stop.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "disk_lifecycle"
+path = "fuzz_targets/disk_lifecycle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "report_lifecycle"
+path = "fuzz_targets/report_lifecycle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "report_sequence"
 path = "fuzz_targets/report_sequence.rs"
 test = false
@@ -68,6 +99,13 @@ bench = false
 [[bin]]
 name = "sampling"
 path = "fuzz_targets/sampling.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "budget_ledger"
+path = "fuzz_targets/budget_ledger.rs"
 test = false
 doc = false
 bench = false

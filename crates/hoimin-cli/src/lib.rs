@@ -177,5 +177,8 @@ fn command_result(
 }
 
 #[cfg(test)]
+#[path = "../../hoimin-core/tests/support/quint.rs"]
+mod quint_itf;
+#[cfg(test)]
 #[path = "../tests/support/jsonl_report.rs"]
 mod test_report;

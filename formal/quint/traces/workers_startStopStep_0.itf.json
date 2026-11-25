@@ -1,0 +1,643 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "-1"
+        },
+        "counted": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": false,
+        "finished": [
+          false,
+          false
+        ],
+        "mode": {
+          "#bigint": "0"
+        },
+        "queue": [],
+        "stages": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "started": [
+          false,
+          false
+        ],
+        "status": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "0"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "outcome": {
+            "#bigint": "1"
+          },
+          "worker": {
+            "#bigint": "0"
+          }
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "-1"
+        },
+        "counted": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": false,
+        "finished": [
+          false,
+          false
+        ],
+        "mode": {
+          "#bigint": "0"
+        },
+        "queue": [],
+        "stages": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "started": [
+          false,
+          false
+        ],
+        "status": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "0"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Stop",
+        "value": {
+          "cause": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "drainStart": true,
+        "exhausted": false,
+        "finished": [
+          false,
+          false
+        ],
+        "mode": {
+          "#bigint": "1"
+        },
+        "queue": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          false,
+          false
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Drain",
+        "value": {
+          "worker": {
+            "#bigint": "0"
+          }
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": false,
+        "finished": [
+          false,
+          false
+        ],
+        "mode": {
+          "#bigint": "1"
+        },
+        "queue": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          false
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Drain",
+        "value": {
+          "worker": {
+            "#bigint": "0"
+          }
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "drainStart": true,
+        "exhausted": false,
+        "finished": [
+          true,
+          false
+        ],
+        "mode": {
+          "#bigint": "1"
+        },
+        "queue": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          false
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Drain",
+        "value": {
+          "worker": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "0"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": false,
+        "finished": [
+          true,
+          false
+        ],
+        "mode": {
+          "#bigint": "1"
+        },
+        "queue": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          true
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Drain",
+        "value": {
+          "worker": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": false,
+        "finished": [
+          true,
+          true
+        ],
+        "mode": {
+          "#bigint": "8"
+        },
+        "queue": [],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          true
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Global",
+        "value": {
+          "#tup": []
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": true,
+        "finished": [
+          true,
+          true
+        ],
+        "mode": {
+          "#bigint": "2"
+        },
+        "queue": [],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          true
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Global",
+        "value": {
+          "#tup": []
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": true,
+        "finished": [
+          true,
+          true
+        ],
+        "mode": {
+          "#bigint": "3"
+        },
+        "queue": [],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          true
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Global",
+        "value": {
+          "#tup": []
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": true,
+        "finished": [
+          true,
+          true
+        ],
+        "mode": {
+          "#bigint": "4"
+        },
+        "queue": [],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          true
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Workers::WorkersModel::dispatch": {
+        "tag": "Global",
+        "value": {
+          "#tup": []
+        }
+      },
+      "Workers::WorkersModel::s": {
+        "cause": {
+          "#bigint": "1"
+        },
+        "counted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "drainStart": false,
+        "exhausted": true,
+        "finished": [
+          true,
+          true
+        ],
+        "mode": {
+          "#bigint": "6"
+        },
+        "queue": [],
+        "stages": [
+          {
+            "#bigint": "7"
+          },
+          {
+            "#bigint": "7"
+          }
+        ],
+        "started": [
+          true,
+          true
+        ],
+        "status": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "3"
+          }
+        ]
+      }
+    }
+  ],
+  "vars": [
+    "Workers::WorkersModel::s",
+    "Workers::WorkersModel::dispatch"
+  ]
+}

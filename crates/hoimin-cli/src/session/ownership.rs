@@ -3,6 +3,9 @@ use std::fs::{File, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
 
+#[cfg(test)]
+mod quint;
+
 pub(super) enum AcquireError {
     Active,
     Io(io::Error),

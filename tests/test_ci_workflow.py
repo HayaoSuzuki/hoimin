@@ -35,6 +35,7 @@ LEAN_LAKEFILE = LEAN_ORACLE / "lakefile.toml"
 LEAN_TOOLCHAIN = LEAN_ORACLE / "lean-toolchain"
 STABLE_CANARY_WORKFLOW = ROOT / ".github" / "workflows" / "rust-stable-canary.yml"
 REPOSITORY_RUST_JOBS = {
+    "quint",
     "boundary-contracts",
     "quality",
     "rust",
@@ -1004,6 +1005,8 @@ def test_every_workflow_uses_known_actions_with_full_commit_pins(path: Path) -> 
         CACHE_SAVE_ACTION,
         UPLOAD_ARTIFACT_ACTION,
         "actions/download-artifact",
+        "actions/setup-node",
+        "actions/setup-java",
         "actions/upload-pages-artifact",
         "actions/deploy-pages",
         "actions/attest",

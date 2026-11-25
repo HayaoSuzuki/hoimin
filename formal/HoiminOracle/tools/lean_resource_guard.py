@@ -1,4 +1,4 @@
-"""Run one Lean command with wall-clock and process-tree RSS limits."""
+"""Run one formal verification command with wall-clock and process-tree RSS limits."""
 
 import argparse
 import contextlib
@@ -72,7 +72,8 @@ def process_tree_rss_kib(root_pid: int, rows: dict[int, tuple[int, int, int]]) -
     for pid, (parent_pid, _, _) in rows.items():
         children.setdefault(parent_pid, []).append(pid)
 
-    pending = [root_pid]
+    # Keep accounting for helpers reparented after the command leader exits.
+    pending = [root_pid, *process_group_members(root_pid, rows)]
     process_ids: set[int] = set()
     while pending:
         process_id = pending.pop()
@@ -137,7 +138,7 @@ def write_stats(path: Path, stats: dict[str, int | str]) -> None:
 
 
 # Keep child cleanup, exit classification and stats publication in one scope.
-def run(arguments: Arguments) -> int:  # noqa: C901
+def run(arguments: Arguments) -> int:  # noqa: C901, PLR0912, PLR0915 -- lifecycle and cleanup share ownership
     started_at = time.monotonic()
     peak_rss_kib = 0
     timeout_ms = round(arguments.timeout_seconds * 1000)
@@ -162,6 +163,7 @@ def run(arguments: Arguments) -> int:  # noqa: C901
     reason = "monitor_error"
     public_exit_code = MONITOR_ERROR_EXIT
     process: subprocess.Popen[bytes] | None = None
+    child_exited_at: float | None = None
 
     try:
         process = subprocess.Popen(arguments.command, start_new_session=True)  # noqa: S603 - Trusted CLI/test arguments; no shell execution.
@@ -171,13 +173,19 @@ def run(arguments: Arguments) -> int:  # noqa: C901
             if child_exit_code is not None:
                 rows = process_table()
                 if process_group_members(process.pid, rows):
-                    terminate_process_group(process)
-                    reason = "monitor_error"
-                    public_exit_code = MONITOR_ERROR_EXIT
+                    # CLI shutdown handlers can signal helpers without waiting for
+                    # them. Continue monitoring both limits during bounded cleanup.
+                    if child_exited_at is None:
+                        child_exited_at = time.monotonic()
+                    if time.monotonic() - child_exited_at >= 1.0:
+                        terminate_process_group(process)
+                        reason = "monitor_error"
+                        public_exit_code = MONITOR_ERROR_EXIT
+                        break
                 else:
                     reason = "child_exit"
                     public_exit_code = child_exit_code
-                break
+                    break
             if elapsed_seconds >= arguments.timeout_seconds:
                 reason = "timeout"
                 public_exit_code = TIMEOUT_EXIT

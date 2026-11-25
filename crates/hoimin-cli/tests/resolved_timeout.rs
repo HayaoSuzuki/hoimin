@@ -22,6 +22,8 @@ fn run_args(root: &Path, fixed: Option<&str>, code: &str) -> Vec<OsString> {
             "boolean_literal",
             "--max-mutants",
             "1",
+            "--min-free-space",
+            "1B",
             "--allow-best-effort-memory",
         ]
         .into_iter()

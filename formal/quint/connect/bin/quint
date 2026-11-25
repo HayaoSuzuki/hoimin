@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Route library-launched Quint calls through repository verification policy."""
+import runpy
+from pathlib import Path
+
+runpy.run_path(str(Path(__file__).resolve().parents[4] / "tools/verify_quint_connect.py"), run_name="__main__")
