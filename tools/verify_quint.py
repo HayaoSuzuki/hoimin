@@ -1,4 +1,4 @@
-"""Bounded TLC verification and reproducible ITF oracles for BudgetLedger.
+"""Bounded TLC verification and reproducible ITF oracles for stateful contracts.
 
 The existing POSIX process-tree guard owns termination and resource accounting.
 Only an explicit semantic violation counts as a successful negative control.
@@ -11,6 +11,7 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -18,6 +19,29 @@ ROOT = Path(__file__).resolve().parents[1]
 FORMAL = ROOT / "formal/quint"
 GUARD = ROOT / "formal/HoiminOracle/tools/lean_resource_guard.py"
 QUINT = FORMAL / "node_modules/.bin/quint"
+
+
+@dataclass(frozen=True)
+class Model:
+    source: str
+    main: str
+    prefix: str
+    mutant: str | None = None
+    scenarios: tuple[str, ...] = ()
+
+
+MODELS = (
+    Model("budget.qnt", "Budget", "trace", "BudgetOverdraft"),
+    Model("budget.qnt", "BudgetExtended", "extended"),
+    Model("report.qnt", "Report", "report", "ReportEarlyFinish", ("interleavedStep",)),
+    Model(
+        "completion.qnt",
+        "Completion",
+        "completion",
+        "CompletionResurrectRetired",
+        ("gapStep", "wrongKindStep"),
+    ),
+)
 
 
 def validate_result(code: int, output: str, *, counterexample: bool) -> None:
@@ -68,20 +92,19 @@ def canonical_trace(path: Path) -> str:
     return json.dumps(trace, sort_keys=True, indent=2) + "\n"
 
 
-def verify(*, update: bool, simulate_only: bool = False) -> None:
-    if not QUINT.is_file():
-        msg = (
-            "Install the pinned tool first: "
-            "npm ci --prefix formal/quint --ignore-scripts"
-        )
-        raise RuntimeError(msg)
-    build = FORMAL / "_build"
-    build.mkdir(exist_ok=True)
-    model = str(FORMAL / "budget.qnt")
-    code, output = guarded(["typecheck", model], build, "typecheck")
+def verify_model(
+    specification: Model, build: Path, *, update: bool, simulate_only: bool
+) -> None:
+    model = str(FORMAL / specification.source)
+    code, output = guarded(
+        ["typecheck", model], build, f"{specification.main}-typecheck"
+    )
     validate_result(code, output, counterexample=False)
     if not simulate_only:
-        for module in ("Budget", "BudgetOverdraft"):
+        modules = (specification.main,)
+        if specification.mutant is not None:
+            modules = (*modules, specification.mutant)
+        for module in modules:
             code, output = guarded(
                 [
                     "verify",
@@ -96,7 +119,21 @@ def verify(*, update: bool, simulate_only: bool = False) -> None:
                 build,
                 module,
             )
-            validate_result(code, output, counterexample=module != "Budget")
+            validate_result(code, output, counterexample=module != specification.main)
+    simulate_model(specification, build, update=update)
+    for scenario in specification.scenarios:
+        simulate_model(specification, build, update=update, step=scenario)
+
+
+def simulate_model(
+    specification: Model, build: Path, *, update: bool, step: str = "step"
+) -> None:
+    """Use model actions for both random and deliberately scheduled inputs."""
+    model = str(FORMAL / specification.source)
+    count = 4 if step == "step" else 1
+    prefix = (
+        specification.prefix if step == "step" else f"{specification.prefix}_{step}"
+    )
     with TemporaryDirectory(dir=build) as temporary:
         directory = Path(temporary)
         code, output = guarded(
@@ -104,23 +141,24 @@ def verify(*, update: bool, simulate_only: bool = False) -> None:
                 "run",
                 model,
                 "--backend=typescript",
-                "--main=Budget",
+                f"--main={specification.main}",
                 "--invariant=Safety",
                 "--seed=1172",
-                "--max-steps=24",
-                "--max-samples=20",
-                "--n-traces=4",
+                f"--max-steps={24 if step == 'step' else 12}",
+                f"--max-samples={20 if step == 'step' else 1}",
+                f"--n-traces={count}",
+                f"--step={step}",
                 f"--out-itf={directory}/trace_{{seq}}.itf.json",
                 "--verbosity=1",
             ],
             build,
-            "simulation",
+            f"{specification.main}-{step}-simulation",
         )
         validate_result(code, output, counterexample=False)
-        expected_paths = [directory / f"trace_{i}.itf.json" for i in range(4)]
-        for source in expected_paths:
+        expected_paths = [directory / f"trace_{i}.itf.json" for i in range(count)]
+        for index, source in enumerate(expected_paths):
             content = canonical_trace(source)
-            target = FORMAL / "traces" / source.name
+            target = FORMAL / "traces" / f"{prefix}_{index}.itf.json"
             if update:
                 target.parent.mkdir(exist_ok=True)
                 target.write_text(content, encoding="utf-8")
@@ -129,6 +167,19 @@ def verify(*, update: bool, simulate_only: bool = False) -> None:
                     f"Stale Quint oracle: {target}; run tools/verify_quint.py --update"
                 )
                 raise RuntimeError(msg)
+
+
+def verify(*, update: bool, simulate_only: bool = False) -> None:
+    if not QUINT.is_file():
+        msg = (
+            "Install the pinned tool first: "
+            "npm ci --prefix formal/quint --ignore-scripts"
+        )
+        raise RuntimeError(msg)
+    build = FORMAL / "_build"
+    build.mkdir(exist_ok=True)
+    for specification in MODELS:
+        verify_model(specification, build, update=update, simulate_only=simulate_only)
 
 
 def main() -> None:

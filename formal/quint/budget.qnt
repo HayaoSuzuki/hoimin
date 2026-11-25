@@ -1,6 +1,7 @@
 // A bounded workload, not a bound imposed on the production allocator.
 module BudgetModel {
   const ALLOW_OVERDRAFT: bool
+  const MAX_RESERVATIONS: int
   type Reservation = { id: int, kind: int, amount: int }
   var active: Set[Reservation]
   var released: Set[int]
@@ -25,7 +26,7 @@ module BudgetModel {
     val accepted = n <= 2 - total(active, k) or ALLOW_OVERDRAFT
     all {
       // Stop adding IDs at the workload boundary; this is not exhaustion.
-      nextId < 2 or not(accepted),
+      nextId < MAX_RESERVATIONS or not(accepted),
       active' = if (accepted) active.union(Set({ id: nextId, kind: k, amount: n })) else active,
       released' = released,
       nextId' = if (accepted) nextId + 1 else nextId,
@@ -35,7 +36,7 @@ module BudgetModel {
   }
 
   action release = {
-    nondet i = Set(0, 1, 2).oneOf()
+    nondet i = 0.to(MAX_RESERVATIONS).oneOf()
     val found = active.exists(r => r.id == i)
     all {
       active' = active.filter(r => r.id != i),
@@ -55,5 +56,6 @@ module BudgetModel {
   }
 }
 
-module Budget { import BudgetModel(ALLOW_OVERDRAFT = false).* }
-module BudgetOverdraft { import BudgetModel(ALLOW_OVERDRAFT = true).* }
+module Budget { import BudgetModel(ALLOW_OVERDRAFT = false, MAX_RESERVATIONS = 2).* }
+module BudgetExtended { import BudgetModel(ALLOW_OVERDRAFT = false, MAX_RESERVATIONS = 4).* }
+module BudgetOverdraft { import BudgetModel(ALLOW_OVERDRAFT = true, MAX_RESERVATIONS = 2).* }

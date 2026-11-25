@@ -341,7 +341,9 @@ jobs:
       - name: Check finite model, negative control, and oracle freshness
         run: python tools/verify_quint.py
       - name: Replay model traces and check generated histories
-        run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model
+        run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model --test quint_itf --test quint_report --test report_model
+      - name: Check internal completion-ledger correspondence
+        run: cargo test --locked -p hoimin-core --lib machine::quint_completion
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

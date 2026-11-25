@@ -1,0 +1,1117 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::op": "init",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "init",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "issue",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "issued",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::op": "issue",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "issued",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::op": "issue",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "3"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "issued",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "issue",
+      "Completion::CompletionModel::pending": {
+        "#set": [
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "3"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          },
+          {
+            "id": {
+              "#bigint": "4"
+            },
+            "kind": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      },
+      "Completion::CompletionModel::result": "issued",
+      "Completion::CompletionModel::retired": {
+        "#set": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "3"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "2"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "0"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "duplicate",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "Completion::CompletionModel::completed": {
+        "#set": []
+      },
+      "Completion::CompletionModel::floor": {
+        "#bigint": "4"
+      },
+      "Completion::CompletionModel::gaps": {
+        "#set": []
+      },
+      "Completion::CompletionModel::id": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::kind": {
+        "#bigint": "1"
+      },
+      "Completion::CompletionModel::nextId": {
+        "#bigint": "5"
+      },
+      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::pending": {
+        "#set": []
+      },
+      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::retired": {
+        "#set": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          },
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "4"
+          }
+        ]
+      }
+    }
+  ],
+  "vars": [
+    "Completion::CompletionModel::floor",
+    "Completion::CompletionModel::kind",
+    "Completion::CompletionModel::nextId",
+    "Completion::CompletionModel::id",
+    "Completion::CompletionModel::retired",
+    "Completion::CompletionModel::op",
+    "Completion::CompletionModel::completed",
+    "Completion::CompletionModel::gaps",
+    "Completion::CompletionModel::result",
+    "Completion::CompletionModel::pending"
+  ]
+}

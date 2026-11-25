@@ -8,6 +8,9 @@ license = "Elastic-2.0"
 [package.metadata]
 cargo-fuzz = true
 
+[features]
+contracts = ["hoimin-core/contracts"]
+
 # Keep libFuzzer and its nightly build separate from the shipping workspace.
 [workspace]
 members = ["."]
@@ -47,6 +50,13 @@ bench = false
 [[bin]]
 name = "python_analyzer"
 path = "fuzz_targets/python_analyzer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "report_lifecycle"
+path = "fuzz_targets/report_lifecycle.rs"
 test = false
 doc = false
 bench = false

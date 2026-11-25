@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod coverage_tests;
+#[cfg(test)]
+mod quint_completion;
 mod selection;
 #[cfg(test)]
 mod stop_tests;

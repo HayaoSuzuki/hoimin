@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from tools import verify_quint
 from tools.verify_quint import canonical_trace, validate_result
 
 
@@ -64,3 +65,140 @@ def test_positive_model_rejects_failed_check(code: int) -> None:
     # Act / Assert.
     with pytest.raises(RuntimeError, match="verification"):
         validate_result(code, output, counterexample=False)
+
+
+@pytest.fixture
+def model_tools(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[Path, dict[str, int]]:
+
+    formal = tmp_path / "formal"
+    formal.mkdir()
+    executable = formal / "quint"
+    executable.touch()
+    monkeypatch.setattr(verify_quint, "FORMAL", formal)
+    monkeypatch.setattr(verify_quint, "QUINT", executable)
+    monkeypatch.setattr(
+        verify_quint,
+        "MODELS",
+        (
+            verify_quint.Model("first.qnt", "First", "first", "FirstMutant"),
+            verify_quint.Model(
+                "second.qnt", "Second", "second", scenarios=("targetStep",)
+            ),
+        ),
+    )
+    controls = {"negative_exit": 1, "forbid_tlc": 0}
+
+    def tool(arguments: list[str], directory: Path, name: str) -> tuple[int, str]:
+        del directory, name
+        if arguments[0] == "verify":
+            if controls["forbid_tlc"]:
+                pytest.fail("simulate-only launched TLC")
+            if "--main=FirstMutant" in arguments:
+                return controls["negative_exit"], "[violation] found a counterexample"
+        if arguments[0] == "run":
+            pattern = next(
+                arg.removeprefix("--out-itf=")
+                for arg in arguments
+                if arg.startswith("--out-itf=")
+            )
+            component = next(
+                arg.removeprefix("--main=")
+                for arg in arguments
+                if arg.startswith("--main=")
+            )
+            for index in range(4):
+                Path(pattern.replace("{seq}", str(index))).write_text(
+                    json.dumps(
+                        {
+                            "#meta": {"status": "ok", "timestamp": 123},
+                            "states": [
+                                {"component": component, "amount": {"#bigint": "7"}}
+                            ],
+                        }
+                    )
+                )
+        return 0, ""
+
+    monkeypatch.setattr(verify_quint, "guarded", tool)
+    return formal, controls
+
+
+@pytest.mark.parametrize(
+    ("prefix", "component"), [("first", "First"), ("second", "Second")]
+)
+def test_publishes_each_registered_model(
+    model_tools: tuple[Path, dict[str, int]], prefix: str, component: str
+) -> None:
+    # Arrange.
+
+    formal, _ = model_tools
+    # Act.
+    verify_quint.verify(update=True)
+    # Assert.
+    trace = json.loads((formal / f"traces/{prefix}_3.itf.json").read_text())
+    assert trace["states"] == [{"component": component, "amount": {"#bigint": "7"}}]
+
+
+def test_rejects_stale_oracle_in_later_model(
+    model_tools: tuple[Path, dict[str, int]],
+) -> None:
+    # Arrange.
+
+    formal, _ = model_tools
+    verify_quint.verify(update=True)
+    (formal / "traces/second_0.itf.json").write_text("{}")
+    # Act / Assert.
+    with pytest.raises(RuntimeError, match=r"Stale Quint oracle.*second_0"):
+        verify_quint.verify(update=False)
+
+
+@pytest.mark.parametrize("exit_code", [0, 2, 124, 125, 126])
+def test_negative_tool_failure_stops_model_pipeline(
+    model_tools: tuple[Path, dict[str, int]], exit_code: int
+) -> None:
+    # Arrange.
+
+    _, controls = model_tools
+    controls["negative_exit"] = exit_code
+    # Act / Assert.
+    with pytest.raises(RuntimeError, match="counterexample"):
+        verify_quint.verify(update=True)
+
+
+def test_simulate_only_publishes_without_tlc(
+    model_tools: tuple[Path, dict[str, int]],
+) -> None:
+    # Arrange.
+
+    formal, controls = model_tools
+    controls["forbid_tlc"] = 1
+    # Act.
+    verify_quint.verify(update=True, simulate_only=True)
+    # Assert.
+    assert (formal / "traces/second_3.itf.json").is_file()
+
+
+def test_publishes_targeted_model_schedule(
+    model_tools: tuple[Path, dict[str, int]],
+) -> None:
+    # Arrange.
+    formal, _ = model_tools
+    # Act.
+    verify_quint.verify(update=True)
+    # Assert.
+    trace = json.loads((formal / "traces/second_targetStep_0.itf.json").read_text())
+    assert trace["states"][0]["component"] == "Second"
+
+
+def test_rejects_stale_targeted_schedule(
+    model_tools: tuple[Path, dict[str, int]],
+) -> None:
+    # Arrange.
+    formal, _ = model_tools
+    verify_quint.verify(update=True)
+    (formal / "traces/second_targetStep_0.itf.json").write_text("{}")
+    # Act / Assert.
+    with pytest.raises(RuntimeError, match=r"Stale Quint oracle.*second_targetStep_0"):
+        verify_quint.verify(update=False)
