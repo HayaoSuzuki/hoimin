@@ -28,9 +28,30 @@ class Model:
     prefix: str
     mutant: str | None = None
     scenarios: tuple[str, ...] = ()
+    scenario_steps: int = 12
 
 
 MODELS = (
+    Model(
+        "workers.qnt",
+        "Workers",
+        "workers",
+        scenarios=(
+            "reverseStep",
+            "completedStopStep",
+            "startStopStep",
+            "runningStopStep",
+        ),
+        scenario_steps=24,
+    ),
+    Model(
+        "workers.qnt",
+        "WorkersSession",
+        "workers_session",
+        "WorkersDoubleCount",
+        ("reverseStep", "completedStopStep", "startStopStep", "runningStopStep"),
+        scenario_steps=24,
+    ),
     Model(
         "stop.qnt",
         "StopEarly",
@@ -206,7 +227,7 @@ def simulate_model(
                 f"--main={specification.main}",
                 "--invariant=Safety",
                 "--seed=1172",
-                f"--max-steps={24 if step == 'step' else 12}",
+                f"--max-steps={24 if step == 'step' else specification.scenario_steps}",
                 f"--max-samples={20 if step == 'step' else 1}",
                 f"--n-traces={count}",
                 f"--step={step}",

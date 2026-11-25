@@ -29,7 +29,8 @@ and interprets ITF integer/set encoding. It does not calculate expected policies
 
 `tools/verify_quint.py` owns the model registry, tool invocation and freshness
 checks. Each model generates four random histories (seed 1172, 24 transitions,
-20 samples). Named scenario actions additionally generate 12-transition histories:
+20 samples). Named scenario actions normally generate 12-transition histories (24 for active
+worker schedules):
 `Report.interleavedStep` starts two mutants and finishes them in reverse order;
 `Completion.gapStep` completes four requests in reverse order;
 `Completion.wrongKindStep` attempts a wrong kind before a generic failure.
@@ -158,8 +159,7 @@ See the [design](../../docs/development/work/quint-session-protocol/design.md),
 
 ## Public bootstrap stop protocol
 
-The registry checks fourteen finite configurations, nine negative controls and
-86 committed histories. Three stop configurations share one model:
+The bootstrap-stop extension adds three configurations sharing one model:
 
 | Configuration | Publicly reached entry | Scope |
 | --- | --- | --- |
@@ -209,6 +209,78 @@ session transactions remain outside this bootstrap protocol model.
 See the [design](../../docs/development/work/quint-public-stop/design.md),
 [plan](../../docs/development/work/quint-public-stop/plan.md), and
 [review evidence](../../docs/development/work/quint-public-stop/review.md).
+
+## Active workers and Quint Connect
+
+The registry checks sixteen finite configurations, ten negative controls and
+102 committed histories. `Workers` and `WorkersSession` add two workers and two
+already-loaded candidates, reached only through public setup transitions.
+They cover apply, start acknowledgement, execution, persistence, finish
+acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;
+a stopped unexecuted candidate becomes NotRun. The negative model double-counts
+an executed result while draining it after stop.
+
+`reverseStep` completes worker 1 before worker 0. `completedStopStep` stops while
+a completed result awaits persistence or output acknowledgement. `startStopStep`
+and `runningStopStep` stop before start acknowledgement and during execution.
+The 24-transition scenario bound lets each schedule reach session completion;
+fixture tests require that terminal state. Other models retain their existing
+scenario bounds.
+
+The public driver journals requests, typed callbacks, completed results and
+acknowledged outputs. Counts are derived from that history rather than updating
+a mirror of production counters. Retired and duplicate probes replay real typed
+callbacks, preferring late process/persistence responses. PBT expands to one
+through four workers and 256 histories of up to 95 generated commands. Fuzz
+uses the same driver with up to 128 commands. Successful replies are appended
+after each schedule to check recovery progress under that explicit assumption.
+
+[Quint Connect 0.1.2](https://docs.rs/quint-connect/0.1.2/quint_connect/) is pinned
+in the separate `formal/quint/connect` verification workspace. Its `Driver` calls
+the same public implementation driver and its `State` compares the same observable
+`Snapshot`; state checking is enabled. A typed `dispatch` sum supplies action names
+and arguments through `Config.nondet`, including composed scenario actions.
+The library generates fresh ITF traces at test time and checks each state against
+real Rust behavior. Live PBT generates seeds (four traces per seed); the separate
+command PBT shrinks command histories. A semantic negative control skips a real
+apply response and must fail with a state-invariant error.
+
+```sh
+cargo test --locked -p hoimin-core --test quint_workers --test workers_model
+python tools/verify_quint_connect.py
+mkdir -p fuzz/corpus/run_workers
+cargo +nightly-2026-10-08 fuzz run run_workers \
+  fuzz/corpus/run_workers fuzz/seeds/run_workers -- \
+  -max_total_time=30 -max_len=4096 -timeout=5 -rss_limit_mb=1024
+```
+
+The live launcher adds the pinned Quint executable, TypeScript backend, Safety
+invariant and existing 20-second/2048-MiB process-tree guard. Guard errors propagate;
+timeouts cannot satisfy the semantic negative control. The launcher runs serially,
+with contracts enabled, and has a five-minute outer limit. It requires POSIX
+process monitoring. Ordinary workspace tests replay committed ITF without Node,
+Java or the live crate. Product dependencies are unchanged.
+
+`run_workers` input starts with session/worker-count bytes, then eleven-byte
+commands (tag, worker, outcome, little-endian u64 disk reading). Generated corpus
+stays separate from seeds. This tests callback interleavings in the public state
+machine. It does not prove Rust atomic memory ordering, actual subprocess behavior
+or every OS thread interleaving. TLC's exhaustive result applies to the bounded
+abstract model; Rust correspondence is established by the separate replay tests.
+
+See the [design](../../docs/development/work/quint-active-workers/design.md),
+[plan](../../docs/development/work/quint-active-workers/plan.md), and
+[review evidence](../../docs/development/work/quint-active-workers/review.md).
+
+At long build/verification boundaries, check free space and clean build artifacts
+once Cargo, rustc and fuzz processes have stopped. The development workflow uses
+periodic `cargo clean`; sources, lockfiles, seeds, fixed ITF and verification logs
+remain available:
+
+```sh
+cargo clean
+cargo clean --manifest-path fuzz/Cargo.toml
+```
 
 ## Generated testing and fuzz
 
