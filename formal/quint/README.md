@@ -43,6 +43,15 @@ The models run sequentially. Timeout, memory exhaustion, syntax errors and missi
 Java never count as successful negative-control detection. Freshness checks
 preserve expected states and remove only generator metadata.
 
+The three disk configurations use `verifyStep` for TLC and `step` for ITF
+generation. Both call the same admission and lifecycle transition; `verifyStep`
+keeps only `op`, `arg`, `root`, and `accepted` at their initial values. These four
+fields record the preceding input and its acceptance for replay; neither the
+transition nor `Safety` reads them. Thus TLC still explores every lifecycle
+transition, including rejected inputs, without multiplying states by input history.
+The negative disk control uses the same projection. Bounds and resource limits
+are unchanged; committed ITF files retain their complete input records.
+
 ## Models and implementation correspondence
 
 | Model | Finite domain | Rust correspondence | Negative control |

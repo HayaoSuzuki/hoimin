@@ -29,6 +29,8 @@ class Model:
     mutant: str | None = None
     scenarios: tuple[str, ...] = ()
     scenario_steps: int = 12
+    # TLC may omit input-history fields that do not affect transitions or Safety.
+    verification_step: str = "step"
 
 
 MODELS = (
@@ -107,9 +109,22 @@ MODELS = (
         "disk",
         "DiskBadDelivery",
         ("cleanStep", "deferredStep"),
+        verification_step="verifyStep",
     ),
-    Model("disk.qnt", "DiskExecutionOnly", "disk_execution", scenarios=("cleanStep",)),
-    Model("disk.qnt", "DiskNoRoots", "disk_empty", scenarios=("cleanStep",)),
+    Model(
+        "disk.qnt",
+        "DiskExecutionOnly",
+        "disk_execution",
+        scenarios=("cleanStep",),
+        verification_step="verifyStep",
+    ),
+    Model(
+        "disk.qnt",
+        "DiskNoRoots",
+        "disk_empty",
+        scenarios=("cleanStep",),
+        verification_step="verifyStep",
+    ),
     Model(
         "ownership.qnt",
         "Ownership",
@@ -196,6 +211,7 @@ def verify_model(
                     "--apalache-version=0.62.4",
                     f"--tlc-config={FORMAL / 'tlc.json'}",
                     f"--main={module}",
+                    f"--step={specification.verification_step}",
                     "--invariant=Safety",
                     "--verbosity=3",
                 ],

@@ -30,7 +30,10 @@ module DiskModel {
     deliveryCleanup' = if (OWNED.contains(1)) 0 else 6,
     finished' = false, op' = "init", arg' = 0, root' = 0, accepted' = true,
   }
-  action apply(command: str, value: int, target: int): bool = {
+  // Input history is needed for ITF replay, but is not read by admission,
+  // lifecycle updates, or Safety. TLC fixes it to the initial values to avoid
+  // exploring copies of the same lifecycle state for each preceding input.
+  action applyWithTrace(command: str, value: int, target: int, recordInput: bool): bool = {
     val cleanup = if (target == 0) executionCleanup else deliveryCleanup
     val admitted = not(finished) and
       (if (command == "dispatch") not(stopped) and process == 0
@@ -56,18 +59,25 @@ module DiskModel {
       deliveryCleanup' = if (admitted and target == 1 and command == "request") 1
         else if (admitted and target == 1 and command == "cleanup") value else deliveryCleanup,
       finished' = (finished or (admitted and command == "finish")),
-      op' = command, arg' = value, root' = target, accepted' = admitted,
+      op' = if (recordInput) command else "init",
+      arg' = if (recordInput) value else 0,
+      root' = if (recordInput) target else 0,
+      accepted' = if (recordInput) admitted else true,
     }
   }
-  action step = {
+  action apply(command: str, value: int, target: int): bool =
+    applyWithTrace(command, value, target, true)
+  action stepWithTrace(recordInput: bool): bool = {
     nondet command = Set("dispatch", "stop", "process", "output", "monitor", "report", "request", "cleanup", "finish").oneOf()
     nondet value = (if (command == "cleanup") Set(2,3,4,5) else if (Set("process","output","monitor","report").contains(command)) Set(1,2) else Set(0)).oneOf()
     nondet target = (if (Set("request","cleanup").contains(command)) Set(0,1) else Set(0)).oneOf()
     all {
       command != "dispatch" or dispatched < 1 or stopped or process != 0 or finished,
-      apply(command, value, target),
+      applyWithTrace(command, value, target, recordInput),
     }
   }
+  action step = stepWithTrace(true)
+  action verifyStep = stepWithTrace(false)
   action cleanStep =
     if (process == 0) apply("process",1,0)
     else if (output == 0) apply("output",1,0)

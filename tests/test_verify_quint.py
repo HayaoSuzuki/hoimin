@@ -58,6 +58,47 @@ def test_negative_control_accepts_actual_violation() -> None:
     assert result is None
 
 
+@pytest.mark.parametrize(
+    ("mutant", "index", "main"),
+    [(None, 1, "DiskLifecycle"), ("DiskBadDelivery", 2, "DiskBadDelivery")],
+)
+def test_tlc_uses_projected_step_for_positive_and_negative_models(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mutant: str | None,
+    index: int,
+    main: str,
+) -> None:
+    # Arrange.
+    calls: list[list[str]] = []
+
+    def tool(arguments: list[str], _directory: Path, _name: str) -> tuple[int, str]:
+        calls.append(arguments)
+        if "--main=DiskBadDelivery" in arguments:
+            return 1, "[violation] found a counterexample"
+        return 0, "[ok]"
+
+    monkeypatch.setattr(verify_quint, "guarded", tool)
+    monkeypatch.setattr(verify_quint, "simulate_model", lambda *_args, **_kwargs: None)
+    model = verify_quint.Model(
+        "disk.qnt", "DiskLifecycle", "disk", mutant, verification_step="verifyStep"
+    )
+    # Act.
+    verify_quint.verify_model(model, tmp_path, update=False, simulate_only=False)
+    # Assert.
+    assert calls[index] == [
+        "verify",
+        str(verify_quint.FORMAL / "disk.qnt"),
+        "--backend=tlc",
+        "--apalache-version=0.62.4",
+        f"--tlc-config={verify_quint.FORMAL / 'tlc.json'}",
+        f"--main={main}",
+        "--step=verifyStep",
+        "--invariant=Safety",
+        "--verbosity=3",
+    ]
+
+
 @pytest.mark.parametrize("code", [1, 124, 125, 126])
 def test_positive_model_rejects_failed_check(code: int) -> None:
     # Arrange.

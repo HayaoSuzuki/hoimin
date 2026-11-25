@@ -54,3 +54,23 @@ fixture 初稿の0はCLIが拒否する値であり、再実行でも5件が入�
 最終の Rust 全体は `RUST_TEST_THREADS=4 cargo test --locked --workspace --no-fail-fast` で248 suite、18961成功・失敗0・62 ignored。1B修正後の timeout fixture 18ケースも単独で成功した。Python 全体は2793成功・35スキップ、専用 quint-connect は通常/全featuresで各8ケース、cold cache でも成功。全16設定・10負例・102履歴、実装変異、実fuzz、formatter、Ruff、ty、workflow lint、strict docs build を確認した。
 
 最終の workspace 全targets/全features Clippy も成功（47.33秒）。コミットには workspace/vendor の fmt と Clippy の必須 hook を適用し、その後 Cargo が停止した区切りで workspace/fuzz の cargo clean を再実行する。
+
+## PR #1211: Linux CI の TLC 時間超過
+
+ジョブ139070902989は DiskLifecycle の検証中に終了コード124で停止した。guard の記録は20443ms、peak RSS681240KiB、reason=timeout。反例ではない。修正前のローカル実測は14249ms、25546到達状態であり、20秒の制限に対する余裕が小さかった。
+
+| 回 | 設計レビュー | 計画レビュー | 実装レビュー | テストレビュー |
+| --- | --- | --- | --- | --- |
+| 1 | admission と Safety が読む状態を確認 | CIログとstatsを先に取得 | op/arg/root/acceptedは入力記録専用 | 124を反例扱いしない既存試験を維持 |
+| 2 | 入力記録だけを固定する射影を選択 | 修正前の全探索を計測 | applyWithTraceを両経路で共有 | 正モデルのstep引数を個別検査 |
+| 3 | 入力選択肢とdispatch上限を維持 | 境界試験の失敗後に実装 | stepWithTraceを共有し選択を維持 | 負モデルにも同じstepを指定することを検査 |
+| 4 | ITFの入力記録を維持 | disk正3設定と負例を先に確認 | TLC専用stepはregistryが所有 | 固定ITFを更新せず鮮度を検査 |
+| 5 | 製品APIとguardに変更を加えない | 全registryとlintを確認してpush | 記録変数が遷移条件に使われないことを再読 | AAA・ケース分離を確認し実CIで再検証 |
+
+software-design-philosophy の8診断は、この変更の検証runner・モデル境界で8/8、10/10。失敗項目なし。TLC用stepの選択はregistry、入力記録の省略はモデルが所有し、admission・状態更新・入力選択を複製していない。射影の根拠と適用範囲をREADMEに記載した。これは製品全体の正しさの採点ではない。
+
+初稿の回帰試験2ケースは未対応のverification_step引数で失敗し、実装後に成功した。Quintの引数付きactionに戻り値型が必要だったため、最初のtypecheck失敗を修正した。いずれも意味的な負例検出には数えない。
+
+disk の修正後は1242到達状態、4624ms（同じ20秒/RSS2048MiB制限）。正3設定・負例の意味的反例・固定ITFの鮮度に成功。関連Python試験85ケースも成功した。
+
+全registryの16設定・10負例・102固定ITFも終了コード0で再検証した。Ruff check/format、ty、workflow lint、strict docs buildも成功した。Rustの製品コードと固定ITFには変更がないため、この修正ではRust全体の再ビルドを行わず、Linux CIの専用jobでも確認する。
