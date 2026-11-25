@@ -132,6 +132,7 @@ def selected_jobs(flags: dict[str, bool], *, cgroup: bool) -> dict[str, bool]:
         "linux-best-effort": flags["rust"],
         "fuzz": flags["rust"],
         "lean-audit": flags["formal"],
+        "quint": flags["formal"],
         "creusot": flags["creusot"],
         "boundary-contracts": flags["formal"],
         "wheel-smoke": flags["distribution"] or flags["python"],

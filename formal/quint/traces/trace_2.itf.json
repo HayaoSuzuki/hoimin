@@ -1,0 +1,835 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::op": "init",
+      "Budget::BudgetModel::released": {
+        "#set": []
+      },
+      "Budget::BudgetModel::result": "init"
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": []
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": []
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Budget::BudgetModel::active": {
+        "#set": [
+          {
+            "amount": {
+              "#bigint": "2"
+            },
+            "id": {
+              "#bigint": "0"
+            },
+            "kind": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": []
+      },
+      "Budget::BudgetModel::result": "ok"
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "ok"
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Budget::BudgetModel::active": {
+        "#set": [
+          {
+            "amount": {
+              "#bigint": "0"
+            },
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "2"
+            }
+          }
+        ]
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "ok"
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Budget::BudgetModel::active": {
+        "#set": [
+          {
+            "amount": {
+              "#bigint": "0"
+            },
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "2"
+            }
+          }
+        ]
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Budget::BudgetModel::active": {
+        "#set": [
+          {
+            "amount": {
+              "#bigint": "0"
+            },
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "2"
+            }
+          }
+        ]
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "released"
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Budget::BudgetModel::active": {
+        "#set": [
+          {
+            "amount": {
+              "#bigint": "0"
+            },
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "#bigint": "2"
+            }
+          }
+        ]
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "ok"
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "released"
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "released"
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "unknown"
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "1"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "3"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "reserve",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "limit"
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "Budget::BudgetModel::active": {
+        "#set": []
+      },
+      "Budget::BudgetModel::amount": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::id": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::kind": {
+        "#bigint": "0"
+      },
+      "Budget::BudgetModel::nextId": {
+        "#bigint": "2"
+      },
+      "Budget::BudgetModel::op": "release",
+      "Budget::BudgetModel::released": {
+        "#set": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ]
+      },
+      "Budget::BudgetModel::result": "released"
+    }
+  ],
+  "vars": [
+    "Budget::BudgetModel::active",
+    "Budget::BudgetModel::released",
+    "Budget::BudgetModel::nextId",
+    "Budget::BudgetModel::op",
+    "Budget::BudgetModel::kind",
+    "Budget::BudgetModel::amount",
+    "Budget::BudgetModel::id",
+    "Budget::BudgetModel::result"
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "@informalsystems/quint": "0.33.1"
+  },
+  "name": "hoimin-formal-quint",
+  "private": true,
+  "engines": {
+    "node": "22.x"
+  }
+}

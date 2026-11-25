@@ -73,6 +73,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "budget_ledger"
+path = "fuzz_targets/budget_ledger.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "python_reduce"
 path = "fuzz_targets/python_reduce.rs"
 test = false

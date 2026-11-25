@@ -276,6 +276,55 @@ def test_propagates_normal_child_exit(tmp_path: Path) -> None:
 
 
 @requires_posix_guard
+def test_allows_descendant_to_finish_after_root_exit(tmp_path: Path) -> None:
+    # Arrange: a CLI can signal its helper on exit before the helper is reaped.
+    command = (
+        "import subprocess,sys; "
+        "subprocess.Popen([sys.executable,'-c','import time; time.sleep(.2)'])"
+    )
+    # Act.
+    completed, stats = run_guard(
+        tmp_path, sys.executable, "-c", command, timeout=3, rss_limit_mib=768
+    )
+    # Assert.
+    assert completed.returncode == 0
+    assert stats["reason"] == "child_exit"
+
+
+@requires_posix_guard
+@pytest.mark.parametrize(
+    ("helper", "timeout", "rss_limit_mib", "expected"),
+    [
+        ("import time; time.sleep(2)", 0.15, 768, 124),
+        (
+            "import time; time.sleep(.1); x=bytearray(64*1024*1024); time.sleep(2)",
+            3,
+            32,
+            125,
+        ),
+    ],
+)
+def test_limits_remain_active_after_root_exit(
+    tmp_path: Path, helper: str, timeout: float, rss_limit_mib: int, expected: int
+) -> None:
+    # Arrange.
+    command = (
+        f"import subprocess,sys; subprocess.Popen([sys.executable,'-c',{helper!r}])"
+    )
+    # Act.
+    completed, _ = run_guard(
+        tmp_path,
+        sys.executable,
+        "-c",
+        command,
+        timeout=timeout,
+        rss_limit_mib=rss_limit_mib,
+    )
+    # Assert.
+    assert completed.returncode == expected
+
+
+@requires_posix_guard
 def test_rejects_root_exit_that_leaves_a_descendant(tmp_path: Path) -> None:
     assert hasattr(signal, "SIGKILL"), "process groups require POSIX"
     marker = tmp_path / "descendant.pid"

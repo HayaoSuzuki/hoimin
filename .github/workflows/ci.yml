@@ -55,7 +55,7 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
       - run: uv sync --frozen --group workflow --no-install-project
       - run: uv run --frozen --no-sync python -m tools.workflow_lint
-      - run: uv run --frozen --no-sync pytest tests/test_workflow_lint.py tests/test_ci_selection.py tests/test_ci_selection_workflow.py tests/test_ci_metrics.py tests/test_verify_creusot.py
+      - run: uv run --frozen --no-sync pytest tests/test_workflow_lint.py tests/test_ci_selection.py tests/test_ci_selection_workflow.py tests/test_ci_metrics.py tests/test_verify_creusot.py tests/test_verify_quint.py tests/test_lean_resource_guard.py
 
   quality:
     needs: changes
@@ -294,6 +294,61 @@ jobs:
           name: creusot-proof-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/creusot-report
           if-no-files-found: warn
+          retention-days: 7
+
+  quint:
+    name: Quint and TLC
+    needs: changes
+    if: needs.changes.outputs.formal == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      QUINT_HOME: ${{ github.workspace }}/formal/quint/_build/toolchain
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@d1374f8ac74474200d16ef8ecee22c7ae7a51880 # v6.3.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: rustup toolchain install
+      - run: npm ci --prefix formal/quint --ignore-scripts --no-audit --no-fund
+      - name: Cache pinned TLA toolchain
+        id: tla-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.QUINT_HOME }}/apalache-dist-0.62.4
+          key: quint-apalache-0.62.4-8ac8488422c30d552735bae11b92a2d014d8e02e8608702acc08f9a2d8a9abb2
+      - name: Install verified TLA toolchain before model-checking budget
+        if: steps.tla-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/apalache.tgz"
+          curl --fail --location --retry 2 --max-time 120 \
+            https://github.com/apalache-mc/apalache/releases/download/v0.62.4/apalache.tgz \
+            --output "$archive"
+          printf '%s  %s\n' 8ac8488422c30d552735bae11b92a2d014d8e02e8608702acc08f9a2d8a9abb2 "$archive" | sha256sum --check --strict
+          mkdir -p "$QUINT_HOME/apalache-dist-0.62.4"
+          tar -xzf "$archive" -C "$QUINT_HOME/apalache-dist-0.62.4"
+      - name: Check finite model, negative control, and oracle freshness
+        run: python tools/verify_quint.py
+      - name: Replay model traces and check generated histories
+        run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: quint-verification
+          path: |
+            formal/quint/_build/*.log
+            formal/quint/_build/*.stats.json
           retention-days: 7
 
   lean-audit:
@@ -829,7 +884,7 @@ jobs:
   result:
     name: CI result
     if: always()
-    needs: [changes, quality, workflow-lint, fuzz, rust, creusot, lean-audit, boundary-contracts, rust-shuffle, contracts, core-dependency-purity, wheel-smoke, linux-best-effort, linux-cgroup-v2-hard]
+    needs: [changes, quality, workflow-lint, fuzz, rust, creusot, lean-audit, quint, boundary-contracts, rust-shuffle, contracts, core-dependency-purity, wheel-smoke, linux-best-effort, linux-cgroup-v2-hard]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

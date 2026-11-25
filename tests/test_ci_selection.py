@@ -14,6 +14,15 @@ from pytest_mock import MockerFixture
 from tools import ci_selection
 
 
+def test_formal_changes_require_quint_verification() -> None:
+    # Arrange.
+    flags = ci_selection.classify(["formal/quint/budget.qnt"])
+    # Act.
+    selected = ci_selection.selected_jobs(flags, cgroup=False)
+    # Assert.
+    assert selected.get("quint") is True
+
+
 @pytest.mark.parametrize(
     "path",
     [

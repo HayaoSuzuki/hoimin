@@ -13,6 +13,7 @@ checks and test conventions. Product usage belongs in the [user documentation](.
 | Performance | [Performance gates and measurements](performance/README.md) |
 | Current knowledge | [OKF catalog](knowledge/index.md): contracts, decisions, audits and their sources |
 | Testing research | [Evaluation results](knowledge/testing-research-evaluation.md): seven techniques, adoption decisions and remaining questions |
+| State-machine verification | [Quint, TLC and budget ledger model-based tests](/formal/quint/README.md) |
 | Development records | [Work index](work/index.md): original designs, plans, reviews, audits and measurements |
 
 Read relevant knowledge concepts and their sources before changing a contract.
