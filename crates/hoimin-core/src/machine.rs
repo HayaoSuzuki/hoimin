@@ -1476,6 +1476,12 @@ pub enum MachineError {
     WorkerCountMismatch { configured: u32, preflight: u32 },
     #[error("unknown worker {0}")]
     UnknownWorker(u32),
+    #[error("worker creation {id:?} used reservation {received:?}, expected {expected:?}")]
+    WorkerReservationMismatch {
+        id: EffectId,
+        expected: ReservationId,
+        received: ReservationId,
+    },
     #[error("process worker mismatch: expected {expected:?}, received {received:?}")]
     ProcessWorkerMismatch {
         expected: Option<u32>,
@@ -1523,6 +1529,7 @@ impl MachineError {
             Self::ProcessCountOverflow => "machine.process.count_overflow",
             Self::WorkerCountMismatch { .. } => "machine.worker.count_mismatch",
             Self::UnknownWorker(_) => "machine.worker.unknown",
+            Self::WorkerReservationMismatch { .. } => "machine.worker.reservation_mismatch",
             Self::ProcessWorkerMismatch { .. } => "machine.worker.process_mismatch",
             Self::SessionIdentityMismatch { .. } => "machine.session.identity_mismatch",
             Self::SessionFinishMismatch { .. } => "machine.session.finish_mismatch",
@@ -1636,6 +1643,17 @@ pub fn transition(
         RunEvent::WorkerCreated(value) if state.phase == RunPhase::Copy => {
             if completed_worker != Some(value.worker) {
                 return Err(MachineError::UnknownWorker(value.worker));
+            }
+            let reservation = state
+                .copy_grant
+                .ok_or(MachineError::WrongPhase { phase: state.phase })?
+                .reservation_id();
+            if value.reservation_id != reservation {
+                return Err(MachineError::WorkerReservationMismatch {
+                    id: value.id,
+                    expected: reservation,
+                    received: value.reservation_id,
+                });
             }
             state.workers.entry(value.worker).or_default();
             if state.workers.len() == state.config.limits.jobs.get() {

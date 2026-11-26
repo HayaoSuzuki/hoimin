@@ -35,6 +35,19 @@ class Model:
 
 MODELS = (
     Model(
+        "worker_grant.qnt",
+        "WorkerGrant",
+        "worker_grant",
+        "WorkerGrantIgnoresReservation",
+        (
+            "reverseStep",
+            "wrongReservationStep",
+            "wrongWorkerStep",
+            "failureStep",
+            "deadlineStep",
+        ),
+    ),
+    Model(
         "session_startup.qnt",
         "SessionStartup",
         "session_startup",

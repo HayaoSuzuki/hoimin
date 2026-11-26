@@ -550,12 +550,32 @@ verification or a failure diagnostic. The negative model creates a
 worker on resume before the header is acknowledged.
 
 Ten histories compare the requests and report provenance, the copy
-handoff, and errors on missing fingerprints or late session replies.
+handoff, and errors on missing fingerprints or late or duplicate session
+replies.
+
+## Workspace worker acknowledgements
+
+`WorkerGrant` starts with two worker creation requests that share a
+copy reservation. Post-materialization verification requires matching
+effect, worker and reservation IDs for both workers. Either worker can
+complete first. A failure or deadline retires the outstanding siblings
+and leads to a diagnostic or pre-report verification. The negative model
+accepts a worker completion for a different reservation.
+
+Nine histories compare the original preflight ID and allowance in both
+requests, pending and retired IDs, and exact completion errors. The
+wrong-reservation history originally advanced to materialization
+verification and now checks `machine.worker.reservation_mismatch`.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_session_startup
+cargo test --locked -p hoimin-core --test machine quint_worker_grant
+```
 
 ## Active workers and Quint Connect
 
-The registry checks thirty-two finite configurations, twenty-six
-negative controls and 254 committed histories. `Workers` and `WorkersSession` add
+The registry checks thirty-three finite configurations, twenty-seven
+negative controls and 263 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
