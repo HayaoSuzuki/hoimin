@@ -35,6 +35,20 @@ class Model:
 
 MODELS = (
     Model(
+        "verify_budget_gate.qnt",
+        "VerifyBudgetGate",
+        "verify_budget_gate",
+        "VerifyBudgetGateWarnsAtEquality",
+        (
+            "belowStep",
+            "equalStep",
+            "aboveStep",
+            "cancelWarningStep",
+            "deadlineObservationStep",
+            "failWarningStep",
+        ),
+    ),
+    Model(
         "analysis_diagnostics.qnt",
         "AnalysisDiagnostics",
         "analysis_diagnostics",

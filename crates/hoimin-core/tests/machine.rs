@@ -30,6 +30,8 @@ mod quint_ordered;
 mod quint_ordered_drain;
 #[path = "machine/quint_resume.rs"]
 mod quint_resume;
+#[path = "machine/quint_verify_budget.rs"]
+mod quint_verify_budget;
 
 #[test]
 fn baseline_success_requires_owned_restoration_before_dispatch() {
@@ -6668,6 +6670,16 @@ fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
     let mut baseline = process_finished(baseline_id, ProcessTermination::Exit(0));
     baseline.elapsed = Duration::from_secs(17);
     let (state, effects) = transition(state, RunEvent::BaselineFinished(baseline)).unwrap();
+    let output_id = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    })
+    .id();
+    let (state, emitted) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap();
+    assert_eq!(emitted, Vec::new());
     complete_baseline_restoration(state, &effects)
 }
 

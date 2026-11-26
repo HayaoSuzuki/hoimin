@@ -367,6 +367,20 @@ Nine ITF histories replay the public transition with two workers and one
 target. They compare phase, pending and retired effect IDs, exact callback
 errors, exit status, and the initial analysis or finalization effect.
 
+## Ordered verification budget
+
+`VerifyBudgetGate` starts after restoration with one pending budget
+observation. For 30 selections on one worker and a 35-second effective
+timeout, the threshold is 1050 seconds. The model compares zero remaining
+time and the threshold at and within one millisecond on either side.
+A shortfall emits a warning and waits for its acknowledgement before
+analysis. The warning preserves the successful exit status. Cancellation,
+deadline, or failure while waiting sends the run to finalization. The
+negative control warns at the exact threshold.
+
+Ten ITF histories compare the public phase, effects, warning fields,
+exit status, and duplicate or retired acknowledgement errors.
+
 ## Analysis diagnostics
 
 `AnalysisDiagnostics` starts with analysis of the last target in an ordinary
@@ -391,8 +405,8 @@ cargo test --locked -p hoimin-core --test machine quint_analysis
 
 ## Active workers and Quint Connect
 
-The registry checks twenty-three finite configurations, seventeen negative
-controls and 173 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks twenty-four finite configurations, eighteen negative
+controls and 183 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

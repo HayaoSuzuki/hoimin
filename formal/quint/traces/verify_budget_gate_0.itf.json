@@ -1,0 +1,1087 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "0"
+        },
+        "observation": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Observing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Absent",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "0"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Warning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050001"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "0"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Warning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050000"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "0"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Warning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "0"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Warning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050000"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050000"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1049999"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050000"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050000"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050000"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1050000"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "1049999"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "VerifyBudgetGate::VerifyBudgetGateModel::s": {
+        "exit": {
+          "#bigint": "4"
+        },
+        "observation": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "remaining": {
+          "#bigint": "0"
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "warning": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    }
+  ],
+  "vars": [
+    "VerifyBudgetGate::VerifyBudgetGateModel::s",
+    "VerifyBudgetGate::VerifyBudgetGateModel::dispatch"
+  ]
+}
