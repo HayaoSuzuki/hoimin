@@ -38,6 +38,8 @@ mod quint_resume;
 mod quint_spool;
 #[path = "machine/quint_verify_budget.rs"]
 mod quint_verify_budget;
+#[path = "machine/quint_worker_failure.rs"]
+mod quint_worker_failure;
 
 #[test]
 fn baseline_success_requires_owned_restoration_before_dispatch() {

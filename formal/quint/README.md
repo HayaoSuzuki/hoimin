@@ -462,10 +462,25 @@ cargo test --locked -p hoimin-core --test machine quint_explicit
 cargo test --locked -p hoimin-core --test machine quint_admission
 ```
 
+## Active worker failures
+
+`WorkerFailure` starts with one admitted candidate in an ordinary run.
+A generic failure at apply, start output, or execution reports the
+candidate as `NotRun`. A generic failure at finish output preserves the
+classified result and its count. Failure after start acknowledgement
+replaces only the finish. The failure diagnostic follows the replacement
+output. A report write failure proceeds directly to the diagnostic and
+cleanup, then terminates with delivery suppressed. The negative model
+replaces a classified result with `NotRun`.
+
+Ten ITF histories compare effects, counts, exit status, and exact duplicate
+errors for retries of failed effects. They end at the next read on the
+normal path or after cleanup and reporting on the failure paths.
+
 ## Active workers and Quint Connect
 
-The registry checks twenty-seven finite configurations, twenty-one
-negative controls and 207 committed histories. `Workers` and `WorkersSession` add
+The registry checks twenty-eight finite configurations, twenty-two
+negative controls and 217 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish

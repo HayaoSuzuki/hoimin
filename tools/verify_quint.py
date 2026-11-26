@@ -35,6 +35,20 @@ class Model:
 
 MODELS = (
     Model(
+        "worker_failure.qnt",
+        "WorkerFailure",
+        "worker_failure",
+        "WorkerFailureDropsResult",
+        (
+            "applyFailureStep",
+            "startFailureStep",
+            "runFailureStep",
+            "finishFailureStep",
+            "reportStartFailureStep",
+            "reportFinishFailureStep",
+        ),
+    ),
+    Model(
         "mutant_admission.qnt",
         "MutantAdmission",
         "mutant_admission",
