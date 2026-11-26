@@ -54,6 +54,27 @@ are unchanged; committed ITF files retain their complete input records.
 
 ## Models and implementation correspondence
 
+`DiskObservation` adds three-input histories of threshold observations,
+measurement failures, and dispatch requests. Its six measurement representatives
+include both exact thresholds, simultaneous limits, a changed duration, and changed
+byte values. The state retains complete primary evidence and ordered, deduplicated
+secondary evidence. `priorityStep`, `duplicateStep`, and `failureStep` exercise
+these paths deliberately. `DiskObservationReplace` must produce a semantic
+counterexample when a later failure replaces the first primary reason.
+
+The isolated Connect workspace replays this model against public `DiskLifecycle`
+calls with state comparison after every step. Ordinary Rust tests replay seven
+fixed ITF histories. Seed PBT generates live histories; byte-history PBT and the
+`disk_observation` fuzz target extend to full-width byte counters, measurement
+durations and error identities, with at most 128 commands. The fuzz target uses
+25-byte records and shares its driver with both replay harnesses. It checks first
+failure preservation, secondary uniqueness, and stopped dispatch admission.
+These are simulated observations; no test fills the real filesystem.
+
+See the [design](../../docs/development/work/quint-live-lifecycles/design.md),
+[plan](../../docs/development/work/quint-live-lifecycles/plan.md), and
+[review evidence](../../docs/development/work/quint-live-lifecycles/review.md).
+
 | Model | Finite domain | Rust correspondence | Negative control |
 | --- | --- | --- | --- |
 | Budget | Capacity 2 per kind, 3 kinds, amounts 0–3, 2 successful reservations | Public `BudgetLedger::reserve/release`, returned IDs, contents and totals | Overdraft |

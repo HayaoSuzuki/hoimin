@@ -126,3 +126,6 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod disk_observation;

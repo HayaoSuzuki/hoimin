@@ -35,6 +35,13 @@ class Model:
 
 MODELS = (
     Model(
+        "disk_observation.qnt",
+        "DiskObservation",
+        "disk_observation",
+        "DiskObservationReplace",
+        ("priorityStep", "duplicateStep", "failureStep"),
+    ),
+    Model(
         "workers.qnt",
         "Workers",
         "workers",

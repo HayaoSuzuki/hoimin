@@ -345,7 +345,7 @@ jobs:
       - name: Replay SQLite lifecycle and resume selection histories
         run: cargo test --locked -p hoimin-cli --test quint_session
       - name: Replay model traces and check generated histories
-        run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model --test quint_itf --test quint_report --test report_model --test quint_disk --test disk_model --test quint_stop --test stop_model --test quint_workers --test workers_model
+        run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model --test quint_itf --test quint_report --test report_model --test quint_disk --test quint_disk_observation --test disk_model --test quint_stop --test stop_model --test quint_workers --test workers_model
       - name: Check internal completion-ledger correspondence
         run: cargo test --locked -p hoimin-core --lib machine::quint_completion
       - name: Check cleanup admission and actual OS ownership
