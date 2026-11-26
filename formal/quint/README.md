@@ -255,7 +255,12 @@ The finite model allows two stop requests. PBT runs 256 histories of up to 127
 commands, with arbitrary u64 disk readings, then eight successful acknowledgements
 to check recovery progress under that explicit assumption. It preserves the first
 disk reason, freezes stop causes during cleanup/final-report/session completion,
-and requires session finish to follow the final-report acknowledgement. The
+and requires session finish to follow the final-report acknowledgement.
+`reserveEvidenceStep` keeps a zero free-space reading when a measurement error
+arrives later. `measurementEvidenceStep` keeps the measurement error message when
+a reserve notification follows. The Rust replay checks the emitted diagnostic
+and the final report. `diagnosticEvidenceStep` verifies that later effect
+failures add unique secondary diagnostics in arrival order. The
 negative model deliberately violates the last ordering. `terminalStep` forces a
 stop while the final report is pending; `finalFailureStep` forces the discovered
 unacknowledged-start/final-output-failure regression.
@@ -290,7 +295,7 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 ## Active workers and Quint Connect
 
 The registry checks eighteen finite configurations, twelve negative controls and
-125 committed histories. `Workers` and `WorkersSession` add two workers and two
+128 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

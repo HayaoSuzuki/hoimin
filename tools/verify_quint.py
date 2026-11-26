@@ -99,7 +99,16 @@ MODELS = (
         "StopSession",
         "stop_session",
         "StopPrematureSession",
-        ("cleanStep", "diskStep", "failureStep", "terminalStep", "finalFailureStep"),
+        (
+            "cleanStep",
+            "diskStep",
+            "failureStep",
+            "terminalStep",
+            "finalFailureStep",
+            "reserveEvidenceStep",
+            "measurementEvidenceStep",
+            "diagnosticEvidenceStep",
+        ),
     ),
     Model("session.qnt", "Session", "session", "SessionOverwrite", ("recoveryStep",)),
     Model(

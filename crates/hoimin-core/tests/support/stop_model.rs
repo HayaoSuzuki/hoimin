@@ -1,9 +1,9 @@
 //! Public bootstrap/stop driver. Protocol laws use emitted effects and an event journal;
 //! no private `RunState` fields or transition helpers are used.
 use hoimin_core::{
-    CleanupFinished, CommandArg, DiskFailure, DiskFailureReason, DiskObservation,
-    DiskStopRequested, EffectFailed, EffectFailure, EffectId, IntegrityCheckpoint, MachineError,
-    OriginalsVerified, OutputEmitted, OutputEvent, PreflightCompleted, RawRunConfig,
+    CleanupFinished, CommandArg, DiskFailure, DiskFailureReason, DiskObservation, DiskSecondary,
+    DiskStopReport, DiskStopRequested, EffectFailed, EffectFailure, EffectId, IntegrityCheckpoint,
+    MachineError, OriginalsVerified, OutputEmitted, OutputEvent, PreflightCompleted, RawRunConfig,
     RemainingBudgetObserved, ReservationId, ResourceControl, ResourceMode, RunConfig, RunEffect,
     RunEvent, RunFingerprint, RunPhase, RunState, SessionConfig, SessionFinished, SessionStarted,
     StartRequested, TargetSlice, TargetsResolved, transition,
@@ -32,6 +32,7 @@ impl Entry {
 #[derive(Clone, Copy, Debug)]
 pub enum Command {
     Stop(u8, u64),
+    DiskMeasurementFailed,
     Ack,
     Fail(bool),
     Retired,
@@ -55,7 +56,14 @@ fn kind(effect: &RunEffect) -> u8 {
         RunEffect::ResolveTargets(_) | RunEffect::Preflight(_) => 0,
         RunEffect::EmitOutput(output) => match &output.event {
             OutputEvent::RunStarted(_) => 1,
-            OutputEvent::Diagnostic(d) if d.code == hoimin_core::FILESYSTEM_RESERVE_REACHED => 2,
+            OutputEvent::Diagnostic(d)
+                if matches!(
+                    d.code.as_str(),
+                    "filesystem.reserve.reached" | "disk.measurement.failed"
+                ) =>
+            {
+                2
+            }
             OutputEvent::Diagnostic(_) => 5,
             OutputEvent::RunFinished(_) => 6,
             event => panic!("unexpected output {event:?}"),
@@ -201,7 +209,7 @@ pub struct Driver {
     session: bool,
     stopped: bool,
     causes: Causes,
-    first_disk: Option<u64>,
+    first_disk: Option<DiskStopReport>,
     outputs: u64,
     last_sequence: Option<u64>,
     finish_code: Option<i32>,
@@ -262,6 +270,22 @@ impl Driver {
                 self.finish_code.is_none(),
                 "final report cannot be followed by further output"
             );
+            if k == 2 {
+                let OutputEvent::Diagnostic(diagnostic) = &request.event else {
+                    unreachable!("disk diagnostic classified as output");
+                };
+                let first = self.first_disk.as_ref().unwrap();
+                let message = first.message.clone().unwrap_or_else(|| {
+                    format!(
+                        "disk policy stopped execution; owned bytes: {}; available bytes: {}",
+                        first.owned_bytes.unwrap(),
+                        first.available_bytes.unwrap(),
+                    )
+                });
+                assert_eq!(diagnostic.code, first.code);
+                assert_eq!(diagnostic.message, message);
+                assert_eq!(diagnostic.level, "error");
+            }
             let sequence = match &request.event {
                 OutputEvent::RunStarted(value) => value.sequence,
                 OutputEvent::Diagnostic(value) => value.sequence,
@@ -319,44 +343,63 @@ impl Driver {
         }
         let disk = self.state.disk_summary();
         assert_eq!(
-            disk.stop.as_ref().and_then(|s| s.available_bytes),
-            self.first_disk,
-            "first disk reason remains latched"
+            disk.stop, self.first_disk,
+            "first disk reason and later diagnostics match the event journal"
         );
-        if let Some(stop) = &disk.stop {
-            assert_eq!(stop.owned_bytes, Some(4096));
-            assert!(
-                stop.secondary
-                    .iter()
-                    .enumerate()
-                    .all(|(i, value)| !stop.secondary[..i].contains(value)),
-                "secondary errors are unique"
-            );
-        }
         if self.pending.is_none() {
             assert_eq!(self.state.phase(), RunPhase::Finished);
         }
     }
+    fn record_stop(&mut self, event: RunEvent) -> RunEvent {
+        if matches!(self.pending_kind(), 4 | 6 | 7 | 8) {
+            return event;
+        }
+        self.stopped = true;
+        match &event {
+            RunEvent::CancellationRequested => self.causes.interrupted = true,
+            RunEvent::DeadlineReached => self.causes.incomplete = true,
+            RunEvent::DiskStopRequested(request) => {
+                self.causes.fatal = true;
+                self.causes.incomplete = true;
+                self.first_disk
+                    .get_or_insert_with(|| match &request.failure.reason {
+                        DiskFailureReason::FilesystemReserveReached(observation) => {
+                            DiskStopReport {
+                                code: "filesystem.reserve.reached".into(),
+                                owned_bytes: Some(observation.owned_bytes),
+                                available_bytes: Some(observation.available_bytes),
+                                message: None,
+                                secondary: vec![],
+                            }
+                        }
+                        DiskFailureReason::MeasurementFailed(message) => DiskStopReport {
+                            code: "disk.measurement.failed".into(),
+                            owned_bytes: None,
+                            available_bytes: None,
+                            message: Some(message.clone()),
+                            secondary: vec![],
+                        },
+                        other => panic!("unexpected fixture disk reason {other:?}"),
+                    });
+            }
+            other => panic!("unexpected fixture stop {other:?}"),
+        }
+        event
+    }
+
     fn event(&mut self, command: Command) -> Option<(RunEvent, Option<Verdict>, bool)> {
         let k = self.pending_kind();
-        let frozen = matches!(k, 4 | 6 | 7 | 8);
         let mut completing = false;
         let mut expected = None;
         let event = match command {
-            Command::Stop(cause, available) => {
-                if !frozen {
-                    self.stopped = true;
-                    match cause % 3 {
-                        0 => self.causes.interrupted = true,
-                        1 => self.causes.incomplete = true,
-                        _ => {
-                            self.causes.fatal = true;
-                            self.causes.incomplete = true;
-                            self.first_disk.get_or_insert(available);
-                        }
-                    }
-                }
-                stop(cause, available)
+            Command::Stop(cause, available) => self.record_stop(stop(cause, available)),
+            Command::DiskMeasurementFailed => {
+                self.record_stop(RunEvent::DiskStopRequested(DiskStopRequested {
+                    failure: DiskFailure {
+                        reason: DiskFailureReason::MeasurementFailed("meter failed".into()),
+                        secondary: vec![],
+                    },
+                }))
             }
             Command::Ack if k != 8 => {
                 completing = true;
@@ -368,6 +411,20 @@ impl Driver {
             Command::Fail(report) if k != 8 && (!report || output_kind(k)) => {
                 completing = true;
                 self.causes.fatal = true;
+                if let Some(stop) = &mut self.first_disk {
+                    let (code, message) = if report {
+                        ("report.io", "write: fixture")
+                    } else {
+                        ("fixture.failed", "fixture")
+                    };
+                    let secondary = DiskSecondary::Error {
+                        code: code.into(),
+                        message: message.into(),
+                    };
+                    if !stop.secondary.contains(&secondary) {
+                        stop.secondary.push(secondary);
+                    }
+                }
                 RunEvent::EffectFailed(EffectFailed {
                     id: self.pending.as_ref().unwrap().id(),
                     failure: if report {
@@ -468,7 +525,7 @@ impl Driver {
         for effect in &effects {
             self.observe(effect);
         }
-        if matches!(command, Command::Stop(..)) && frozen {
+        if matches!(command, Command::Stop(..) | Command::DiskMeasurementFailed) && frozen {
             assert_eq!(effects, Vec::new());
             assert_eq!(
                 (
@@ -521,10 +578,27 @@ impl Driver {
             !self.state.disk_summary().cleanup.is_empty(),
             s["cleanupDone"].as_bool().unwrap()
         );
-        assert_eq!(
-            self.state.disk_summary().stop.is_some(),
-            integer(&s["disk"]) != 0
-        );
+        let evidence = &s["diskEvidence"];
+        let code = evidence["code"].as_str().unwrap();
+        let message = evidence["message"].as_str().unwrap();
+        let expected_disk = (!code.is_empty()).then(|| DiskStopReport {
+            code: code.to_owned(),
+            owned_bytes: (code == "filesystem.reserve.reached")
+                .then(|| integer(&evidence["owned"])),
+            available_bytes: (code == "filesystem.reserve.reached")
+                .then(|| integer(&evidence["available"])),
+            message: (!message.is_empty()).then(|| message.to_owned()),
+            secondary: s["diskSecondary"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| DiskSecondary::Error {
+                    code: entry["code"].as_str().unwrap().to_owned(),
+                    message: entry["message"].as_str().unwrap().to_owned(),
+                })
+                .collect(),
+        });
+        assert_eq!(self.state.disk_summary().stop, expected_disk);
     }
     pub fn exit_code(&self) -> i32 {
         self.state.exit_code()

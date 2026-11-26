@@ -35,6 +35,8 @@ fn stopped_bootstrap_drains_in_protocol_order(
 }
 #[rstest::rstest]
 #[case::preserve_disk_diagnostic(2,&[C::Stop(1,0),C::Stop(2,u64::MAX),C::Ack,C::Ack,C::Ack,C::Ack,C::Ack,C::Ack],2)]
+#[case::measurement_does_not_replace_reserve(2,&[C::Ack,C::DiskMeasurementFailed,C::Ack],2)]
+#[case::reserve_does_not_replace_measurement(1,&[C::DiskMeasurementFailed,C::Ack,C::Stop(2,0),C::Ack],2)]
 #[case::cancel_overrides_disk(2,&[C::Stop(0,0),C::Ack,C::Ack,C::Ack,C::Ack,C::Ack,C::Ack],130)]
 #[case::start_delivery_failure(1,&[C::Fail(true),C::Ack,C::Ack],2)]
 #[case::verification_failure(1,&[C::Ack,C::Fail(false),C::Ack,C::Ack,C::Ack,C::Ack],2)]
@@ -55,6 +57,7 @@ fn literal_stop_history_checks_failure_and_freeze_rules(
 fn command() -> impl Strategy<Value = C> {
     prop_oneof![
         (0..3u8, any::<u64>()).prop_map(|(cause, bytes)| C::Stop(cause, bytes)),
+        Just(C::DiskMeasurementFailed),
         Just(C::Ack),
         any::<bool>().prop_map(C::Fail),
         Just(C::Retired),
