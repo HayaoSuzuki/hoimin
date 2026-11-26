@@ -20,11 +20,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": false,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": false,
         "interrupted": false,
         "outputs": {
@@ -61,11 +75,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": false,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -102,11 +130,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": false,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -143,11 +185,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -184,11 +240,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -225,11 +295,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -266,11 +350,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -307,11 +405,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -348,11 +460,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -389,11 +515,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -430,11 +570,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -471,11 +625,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -512,11 +680,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {

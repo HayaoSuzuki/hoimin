@@ -8,16 +8,18 @@ use hoimin_core::{
     BeginSession, ByteSpan, EffectFailed, EffectFailure, EffectId, FinishSession, LoadSession,
     LookupStoredResult, MutantResult, MutationCandidate, MutationOutcome, MutationStatus,
     OutputSpoolRef, PersistResult, ProcessOutputState, ProcessTermination, ResourceMode,
-    ResumeDecision, ReusedMutationStatus, RunFingerprint, SessionDiagnostic, SessionLoadOutcome,
-    resume_policy,
+    ResumeDecision, ResumeFreshReason, ReusedMutationStatus, RunFingerprint, SessionDiagnostic,
+    SessionLoadOutcome, resume_policy,
 };
 use proptest::prelude::*;
 use rusqlite::Connection;
 use serde_json::Value;
 
 #[path = "../../hoimin-core/tests/support/quint.rs"]
-#[allow(dead_code)] // The shared ITF set reader is unused by these list-based models.
 mod quint;
+
+#[path = "quint_session/ownership.rs"]
+mod ownership;
 
 fn fingerprint(value: u8) -> RunFingerprint {
     RunFingerprint::from_bytes([value; 32])
@@ -174,17 +176,22 @@ struct Database {
 }
 impl Database {
     fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
-        let handler = Some(SessionHandler::open(directory.path().join("session.sqlite3")).unwrap());
-        Self { handler, directory }
+        let mut database = Self {
+            handler: None,
+            directory: tempfile::tempdir().unwrap(),
+        };
+        database.handler = Some(database.open_handler());
+        database
     }
     fn handler(&mut self) -> &mut SessionHandler {
         self.handler.as_mut().unwrap()
     }
+    fn open_handler(&self) -> SessionHandler {
+        SessionHandler::open(self.directory.path().join("session.sqlite3")).unwrap()
+    }
     fn reopen(&mut self) {
         drop(self.handler.take());
-        self.handler =
-            Some(SessionHandler::open(self.directory.path().join("session.sqlite3")).unwrap());
+        self.handler = Some(self.open_handler());
     }
     fn connection(&self) -> Connection {
         Connection::open_with_flags(
@@ -543,18 +550,24 @@ enum SelectionCommand {
     Create(u8, usize, bool),
     Load(u8, usize),
 }
-fn apply_selection(database: &mut Database, command: SelectionCommand) -> Option<usize> {
+#[derive(Debug, PartialEq, Eq)]
+enum SelectionOutcome {
+    Created,
+    Resumed(usize),
+    Fresh(ResumeFreshReason),
+}
+fn apply_selection(database: &mut Database, command: SelectionCommand) -> SelectionOutcome {
     let selected = match command {
         SelectionCommand::Create(fp, budget, complete) => {
             let run = database.rows().len();
             database.handler().begin(begin(run, fp, budget)).unwrap();
             database.handler().finish(finish(run, complete)).unwrap();
-            None
+            SelectionOutcome::Created
         }
         SelectionCommand::Load(fp, budget) => {
             match database.handler().load(&load(fp, budget)).unwrap().outcome {
-                SessionLoadOutcome::Fresh(_) => None,
-                SessionLoadOutcome::Resumed(reference) => Some(
+                SessionLoadOutcome::Fresh(reason) => SelectionOutcome::Fresh(reason),
+                SessionLoadOutcome::Resumed(reference) => SelectionOutcome::Resumed(
                     reference
                         .run_id
                         .strip_prefix("run-")
@@ -568,7 +581,7 @@ fn apply_selection(database: &mut Database, command: SelectionCommand) -> Option
     database.reopen();
     selected
 }
-fn reference_selection(rows: &mut Vec<Row>, command: SelectionCommand) -> Option<usize> {
+fn reference_selection(rows: &mut Vec<Row>, command: SelectionCommand) -> SelectionOutcome {
     match command {
         SelectionCommand::Create(fp, budget, complete) => {
             rows.push(Row {
@@ -576,7 +589,7 @@ fn reference_selection(rows: &mut Vec<Row>, command: SelectionCommand) -> Option
                 budget,
                 complete,
             });
-            None
+            SelectionOutcome::Created
         }
         SelectionCommand::Load(fp, budget) => {
             let selected = rows
@@ -584,12 +597,24 @@ fn reference_selection(rows: &mut Vec<Row>, command: SelectionCommand) -> Option
                 .rposition(|r| r.fp == fp && !r.complete && r.budget <= budget);
             if let Some(index) = selected {
                 rows[index].budget = budget;
+                return SelectionOutcome::Resumed(index);
             }
-            selected
+            // The best explanation offered by any row wins, regardless of row order.
+            let reason = rows
+                .iter()
+                .map(|row| match (row.fp == fp, row.complete) {
+                    (true, false) => (0, ResumeFreshReason::BudgetDecreased),
+                    (true, true) => (1, ResumeFreshReason::MatchingRunComplete),
+                    (false, false) => (2, ResumeFreshReason::FingerprintMismatch),
+                    (false, true) => (3, ResumeFreshReason::NoIncompleteRun),
+                })
+                .min_by_key(|&(priority, _)| priority)
+                .map_or(ResumeFreshReason::NoPriorRun, |(_, reason)| reason);
+            SelectionOutcome::Fresh(reason)
         }
     }
 }
-fn check_selection_history(commands: &[SelectionCommand]) -> Vec<Option<usize>> {
+fn check_selection_history(commands: &[SelectionCommand]) -> Vec<SelectionOutcome> {
     let mut database = Database::new();
     let mut rows = Vec::new();
     commands
@@ -623,10 +648,16 @@ fn replay_selection(trace: &str) -> usize {
             op => panic!("unknown op {op}"),
         };
         if let Some(command) = command {
-            let expected = usize::try_from(signed(&state["selected"])).ok();
+            let selected = usize::try_from(signed(&state["selected"])).ok();
+            let outcome = apply_selection(&mut database, command);
+            let (actual_selected, actual_reason) = match outcome {
+                SelectionOutcome::Created => (None, ""),
+                SelectionOutcome::Resumed(index) => (Some(index), ""),
+                SelectionOutcome::Fresh(reason) => (None, reason.code()),
+            };
             assert_eq!(
-                apply_selection(&mut database, command),
-                expected,
+                (actual_selected, actual_reason),
+                (selected, state["freshReason"].as_str().unwrap()),
                 "{command:?}"
             );
         }
@@ -651,6 +682,7 @@ fn replay_selection(trace: &str) -> usize {
 #[case::random_three(include_str!("../../../formal/quint/traces/session_selection_3.itf.json"))]
 #[case::latest(include_str!("../../../formal/quint/traces/session_selection_latestStep_0.itf.json"))]
 #[case::fallback(include_str!("../../../formal/quint/traces/session_selection_fallbackStep_0.itf.json"))]
+#[case::fresh_priority(include_str!("../../../formal/quint/traces/session_selection_freshPriorityStep_0.itf.json"))]
 fn quint_resume_selection_matches_sqlite(#[case] trace: &str) {
     // Arrange.
     let history = trace;
@@ -660,16 +692,16 @@ fn quint_resume_selection_matches_sqlite(#[case] trace: &str) {
     assert!(checked_states > 1);
 }
 #[rstest::rstest]
-#[case::latest(0, 1, false, 2, Some(1))]
-#[case::other_fingerprint(1, 1, false, 2, Some(0))]
-#[case::budget_too_large(0, 2, false, 1, Some(0))]
-#[case::already_complete(0, 1, true, 2, Some(0))]
+#[case::latest(0, 1, false, 2, 1)]
+#[case::other_fingerprint(1, 1, false, 2, 0)]
+#[case::budget_too_large(0, 2, false, 1, 0)]
+#[case::already_complete(0, 1, true, 2, 0)]
 fn literal_selection_chooses_latest_eligible_run(
     #[case] fp: u8,
     #[case] budget: usize,
     #[case] complete: bool,
     #[case] requested: usize,
-    #[case] expected: Option<usize>,
+    #[case] expected: usize,
 ) {
     // Arrange.
     let commands = [
@@ -680,7 +712,14 @@ fn literal_selection_chooses_latest_eligible_run(
     // Act.
     let selected = check_selection_history(&commands);
     // Assert.
-    assert_eq!(selected, [None, None, expected]);
+    assert_eq!(
+        selected,
+        [
+            SelectionOutcome::Created,
+            SelectionOutcome::Created,
+            SelectionOutcome::Resumed(expected),
+        ]
+    );
 }
 #[test]
 fn resumed_budget_is_durable_and_rejects_later_decrease() {
@@ -694,7 +733,15 @@ fn resumed_budget_is_durable_and_rejects_later_decrease() {
     // Act.
     let selected = check_selection_history(&commands);
     // Assert.
-    assert_eq!(selected, [None, Some(0), None, Some(0)]);
+    assert_eq!(
+        selected,
+        [
+            SelectionOutcome::Created,
+            SelectionOutcome::Resumed(0),
+            SelectionOutcome::Fresh(ResumeFreshReason::BudgetDecreased),
+            SelectionOutcome::Resumed(0),
+        ]
+    );
 }
 fn budget_strategy() -> impl Strategy<Value = usize> {
     prop_oneof![1..5usize, Just(255), Just(256), Just(usize::MAX)]

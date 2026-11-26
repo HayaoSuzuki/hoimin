@@ -1,0 +1,102 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [],
+        "found": {
+          "#set": []
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Scan",
+          "value": {
+            "#tup": []
+          }
+        },
+        "scanned": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Discover",
+        "value": {
+          "#bigint": "2"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [],
+        "found": {
+          "#set": []
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Scan",
+          "value": {
+            "#tup": []
+          }
+        },
+        "scanned": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "EndOfSpool",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [],
+        "found": {
+          "#set": []
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "3"
+        },
+        "read": {
+          "tag": "NoRead",
+          "value": {
+            "#tup": []
+          }
+        },
+        "scanned": {
+          "#bigint": "1"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "OrderedDiscovery::OrderedDiscoveryModel::s",
+    "OrderedDiscovery::OrderedDiscoveryModel::dispatch"
+  ]
+}

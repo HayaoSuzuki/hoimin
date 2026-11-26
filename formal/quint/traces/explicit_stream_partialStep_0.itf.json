@@ -1,0 +1,617 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [],
+        "consumed": {
+          "#bigint": "0"
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "phase": {
+          "tag": "Reading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": []
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Supply",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "consumed": {
+          "#bigint": "1"
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "phase": {
+          "tag": "Applying",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Complete",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "consumed": {
+          "#bigint": "1"
+        },
+        "killed": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "tag": "Reading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "EndOfSpool",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "consumed": {
+          "#bigint": "1"
+        },
+        "killed": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "tag": "Reading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Missing",
+          "value": {
+            "#bigint": "3"
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Supply",
+        "value": {
+          "#bigint": "3"
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "1"
+        },
+        "phase": {
+          "tag": "Applying",
+          "value": {
+            "#bigint": "3"
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Complete",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Reading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "EndOfSpool",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "ExplicitStream::ExplicitStreamModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ExplicitStream::ExplicitStreamModel::s": {
+        "admitted": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "3"
+          }
+        ],
+        "consumed": {
+          "#bigint": "2"
+        },
+        "killed": {
+          "#bigint": "2"
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "vars": [
+    "ExplicitStream::ExplicitStreamModel::s",
+    "ExplicitStream::ExplicitStreamModel::dispatch"
+  ]
+}

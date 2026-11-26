@@ -42,6 +42,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "0"
       },
@@ -51,7 +55,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": false
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -91,6 +95,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -100,7 +108,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -140,6 +148,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -149,7 +161,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -189,6 +201,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -198,7 +214,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -238,6 +254,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -247,7 +267,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -287,6 +307,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -296,7 +320,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -336,6 +360,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -345,7 +373,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -385,6 +413,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -394,7 +426,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -434,6 +466,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -443,7 +479,7 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -483,6 +519,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -492,7 +532,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -532,6 +577,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -541,7 +590,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -581,6 +635,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -590,7 +648,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -630,6 +693,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -639,7 +706,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -679,6 +751,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -688,7 +764,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -728,6 +809,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -737,7 +822,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -777,6 +867,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -786,7 +880,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -826,6 +925,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -835,7 +938,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -875,6 +983,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -884,7 +996,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -924,6 +1041,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -933,7 +1054,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -973,6 +1099,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -982,7 +1112,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -1022,6 +1157,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -1031,7 +1170,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -1071,6 +1215,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -1080,7 +1228,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -1120,6 +1273,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -1129,7 +1286,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -1169,6 +1331,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -1178,7 +1344,12 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     },
     {
       "#meta": {
@@ -1218,6 +1389,10 @@
           }
         ]
       },
+      "DiskLifecycle::DiskModel::primary": {
+        "code": "process.failed",
+        "message": "process drain failed"
+      },
       "DiskLifecycle::DiskModel::process": {
         "#bigint": "2"
       },
@@ -1227,24 +1402,30 @@
       "DiskLifecycle::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskLifecycle::DiskModel::stopped": true
+      "DiskLifecycle::DiskModel::secondary": [
+        {
+          "code": "disk.measurement.failed",
+          "message": "model"
+        }
+      ]
     }
   ],
   "vars": [
-    "DiskLifecycle::DiskModel::owned",
-    "DiskLifecycle::DiskModel::op",
-    "DiskLifecycle::DiskModel::monitor",
-    "DiskLifecycle::DiskModel::stopped",
-    "DiskLifecycle::DiskModel::arg",
-    "DiskLifecycle::DiskModel::report",
-    "DiskLifecycle::DiskModel::active",
     "DiskLifecycle::DiskModel::root",
     "DiskLifecycle::DiskModel::executionCleanup",
     "DiskLifecycle::DiskModel::dispatched",
     "DiskLifecycle::DiskModel::accepted",
     "DiskLifecycle::DiskModel::deliveryCleanup",
+    "DiskLifecycle::DiskModel::owned",
     "DiskLifecycle::DiskModel::process",
     "DiskLifecycle::DiskModel::finished",
-    "DiskLifecycle::DiskModel::output"
+    "DiskLifecycle::DiskModel::primary",
+    "DiskLifecycle::DiskModel::output",
+    "DiskLifecycle::DiskModel::op",
+    "DiskLifecycle::DiskModel::monitor",
+    "DiskLifecycle::DiskModel::secondary",
+    "DiskLifecycle::DiskModel::arg",
+    "DiskLifecycle::DiskModel::report",
+    "DiskLifecycle::DiskModel::active"
   ]
 }

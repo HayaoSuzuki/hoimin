@@ -3,9 +3,35 @@
 mod model;
 #[path = "support/quint.rs"]
 mod quint;
-use hoimin_core::disk::DiskLifecycle;
+use hoimin_core::disk::{DiskFailure, DiskFailureReason, DiskLifecycle, DiskSecondary};
 use model::Command as C;
 use rstest::rstest;
+
+fn expected_evidence(row: &serde_json::Value) -> (Option<DiskFailure>, Vec<DiskSecondary>) {
+    let secondary = row["secondary"]
+        .as_array()
+        .expect("ITF diagnostic list")
+        .iter()
+        .map(|diagnostic| DiskSecondary::Error {
+            code: diagnostic["code"].as_str().unwrap().to_owned(),
+            message: diagnostic["message"].as_str().unwrap().to_owned(),
+        })
+        .collect::<Vec<_>>();
+    let primary = &row["primary"];
+    let message = || primary["message"].as_str().unwrap().to_owned();
+    let reason = match primary["code"].as_str().unwrap() {
+        "" => None,
+        "disk.measurement.failed" => Some(DiskFailureReason::MeasurementFailed(message())),
+        "process.failed" => Some(DiskFailureReason::ProcessFailed(message())),
+        other => panic!("unknown primary failure {other}"),
+    };
+    let failure = reason.map(|reason| DiskFailure {
+        reason,
+        secondary: secondary.clone(),
+    });
+    (failure, secondary)
+}
+
 fn replay(trace: &str) -> Result<(), String> {
     let states = quint::states(trace);
     assert!(states.len() > 1);
@@ -60,9 +86,11 @@ fn replay(trace: &str) -> Result<(), String> {
             "deliveryCleanup",
         ]
         .map(|field| quint::number(&row[field]));
+        let (expected_stop, expected_secondary) = expected_evidence(row);
         if got != row["accepted"].as_bool().unwrap()
             || snapshot.finished != row["finished"].as_bool().unwrap()
-            || snapshot.stop.is_some() != row["stopped"].as_bool().unwrap()
+            || snapshot.stop != expected_stop
+            || snapshot.secondary != expected_secondary
             || got_fields != expected
         {
             return Err(format!("{row}: got {snapshot:?}, accepted {got}"));
@@ -87,6 +115,8 @@ fn replay(trace: &str) -> Result<(), String> {
 #[case::disk_empty_3(include_str!("../../../formal/quint/traces/disk_empty_3.itf.json"))]
 #[case::disk_empty_clean(include_str!("../../../formal/quint/traces/disk_empty_cleanStep_0.itf.json"))]
 #[case::delivery_deferred(include_str!("../../../formal/quint/traces/disk_deferredStep_0.itf.json"))]
+#[case::process_evidence(include_str!("../../../formal/quint/traces/disk_processEvidenceStep_0.itf.json"))]
+#[case::cleanup_diagnostics(include_str!("../../../formal/quint/traces/disk_cleanupDiagnosticStep_0.itf.json"))]
 fn model_matches_public_disk_lifecycle(#[case] trace: &str) {
     // Arrange.
     let oracle = trace;

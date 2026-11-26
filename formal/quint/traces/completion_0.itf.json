@@ -30,6 +30,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "init",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -66,10 +67,12 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           }
         ]
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "issued",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -106,7 +109,8 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           },
           {
             "id": {
@@ -114,10 +118,12 @@
             },
             "kind": {
               "#bigint": "1"
-            }
+            },
+            "reservations": []
           }
         ]
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "issued",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -154,7 +160,8 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           },
           {
             "id": {
@@ -162,7 +169,8 @@
             },
             "kind": {
               "#bigint": "1"
-            }
+            },
+            "reservations": []
           },
           {
             "id": {
@@ -170,10 +178,12 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           }
         ]
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "issued",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -210,7 +220,8 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           },
           {
             "id": {
@@ -218,7 +229,8 @@
             },
             "kind": {
               "#bigint": "1"
-            }
+            },
+            "reservations": []
           },
           {
             "id": {
@@ -226,7 +238,8 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           },
           {
             "id": {
@@ -234,10 +247,12 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           }
         ]
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "issued",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -269,6 +284,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -313,6 +329,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -348,7 +365,7 @@
         "#bigint": "2"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "1"
+        "#bigint": "2"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
@@ -357,6 +374,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -401,6 +419,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -445,6 +464,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -489,6 +509,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -521,19 +542,20 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "0"
+        "#bigint": "5"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "0"
+        "#bigint": "2"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
       },
-      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::op": "complete",
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "unknown",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -565,19 +587,20 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "0"
+        "#bigint": "1"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "0"
+        "#bigint": "2"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
       },
-      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::op": "complete",
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "retired",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -609,19 +632,20 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "4"
+        "#bigint": "0"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "1"
+        "#bigint": "0"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
       },
-      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::op": "retire",
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -653,19 +677,20 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "5"
+        "#bigint": "0"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "2"
+        "#bigint": "0"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
       },
-      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::op": "retire",
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -709,6 +734,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -753,6 +779,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -785,7 +812,7 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "0"
+        "#bigint": "4"
       },
       "Completion::CompletionModel::kind": {
         "#bigint": "0"
@@ -793,11 +820,12 @@
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
       },
-      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::op": "complete",
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "retired",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -829,7 +857,7 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "4"
+        "#bigint": "0"
       },
       "Completion::CompletionModel::kind": {
         "#bigint": "0"
@@ -837,11 +865,12 @@
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
       },
-      "Completion::CompletionModel::op": "complete",
+      "Completion::CompletionModel::op": "retire",
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -873,19 +902,20 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "0"
+        "#bigint": "5"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "0"
+        "#bigint": "1"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
       },
-      "Completion::CompletionModel::op": "retire",
+      "Completion::CompletionModel::op": "complete",
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired_all",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "unknown",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -917,7 +947,7 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "4"
+        "#bigint": "2"
       },
       "Completion::CompletionModel::kind": {
         "#bigint": "2"
@@ -929,6 +959,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -961,10 +992,10 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "3"
+        "#bigint": "0"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "1"
+        "#bigint": "3"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
@@ -973,7 +1004,8 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -1005,10 +1037,10 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "3"
+        "#bigint": "5"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "0"
+        "#bigint": "1"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
@@ -1017,7 +1049,8 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "retired",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "unknown",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -1061,6 +1094,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "retired_all",
       "Completion::CompletionModel::retired": {
         "#set": [
@@ -1093,10 +1127,10 @@
         "#set": []
       },
       "Completion::CompletionModel::id": {
-        "#bigint": "5"
+        "#bigint": "3"
       },
       "Completion::CompletionModel::kind": {
-        "#bigint": "0"
+        "#bigint": "2"
       },
       "Completion::CompletionModel::nextId": {
         "#bigint": "5"
@@ -1105,7 +1139,8 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
-      "Completion::CompletionModel::result": "unknown",
+      "Completion::CompletionModel::reservations": [],
+      "Completion::CompletionModel::result": "retired",
       "Completion::CompletionModel::retired": {
         "#set": [
           {
@@ -1125,15 +1160,16 @@
     }
   ],
   "vars": [
-    "Completion::CompletionModel::floor",
-    "Completion::CompletionModel::kind",
-    "Completion::CompletionModel::nextId",
-    "Completion::CompletionModel::id",
     "Completion::CompletionModel::retired",
     "Completion::CompletionModel::op",
     "Completion::CompletionModel::completed",
-    "Completion::CompletionModel::gaps",
     "Completion::CompletionModel::result",
-    "Completion::CompletionModel::pending"
+    "Completion::CompletionModel::gaps",
+    "Completion::CompletionModel::reservations",
+    "Completion::CompletionModel::pending",
+    "Completion::CompletionModel::floor",
+    "Completion::CompletionModel::kind",
+    "Completion::CompletionModel::nextId",
+    "Completion::CompletionModel::id"
   ]
 }

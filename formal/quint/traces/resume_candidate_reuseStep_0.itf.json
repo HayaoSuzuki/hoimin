@@ -1,0 +1,175 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "NoOutcome",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "init",
+        "stage": {
+          "tag": "LookupPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "8"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Reply",
+        "value": {
+          "identityOk": true,
+          "status": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedKilled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "StartPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedKilled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "FinishPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "1"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedKilled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "NextCandidate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "1"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "ResumeCandidate::ResumeCandidateModel::s",
+    "ResumeCandidate::ResumeCandidateModel::dispatch"
+  ]
+}

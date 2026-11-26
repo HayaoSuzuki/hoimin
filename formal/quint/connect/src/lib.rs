@@ -39,7 +39,13 @@ mod tests {
                 Ack(worker:u8,outcome:u8) => {
                     let inner=self.inner.as_mut().unwrap();
                     if self.skip_apply && inner.snapshot().stages.get(usize::from(worker))==Some(&0) {self.skip_apply=false;}
-                    else {assert_eq!(inner.apply(C::Ack(worker,outcome==2)),model::Verdict::Accepted);}
+                    else {
+                        let command = match outcome {
+                            1 => C::Ack(worker, false), 2 => C::Ack(worker, true), 4 => C::Timeout(worker),
+                            other => panic!("unknown worker outcome {other}"),
+                        };
+                        assert_eq!(inner.apply(command), model::Verdict::Accepted);
+                    }
                 },
                 Drain(worker:u8) => {assert_eq!(self.inner.as_mut().unwrap().apply(C::Ack(worker,false)),model::Verdict::Accepted);},
                 Global => {assert_eq!(self.inner.as_mut().unwrap().apply(C::Global),model::Verdict::Accepted);},
@@ -91,6 +97,8 @@ mod tests {
     #[case::random("step")]
     #[case::reverse("reverseStep")]
     #[case::persist_stop("completedStopStep")]
+    #[case::timeout("timeoutStep")]
+    #[case::timeout_stop("timeoutStopStep")]
     fn live_scheduled_traces_match_public_implementation(
         #[values(false, true)] session: bool,
         #[case] schedule: &str,
@@ -126,3 +134,9 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod disk_observation;
+
+#[cfg(test)]
+mod budget;

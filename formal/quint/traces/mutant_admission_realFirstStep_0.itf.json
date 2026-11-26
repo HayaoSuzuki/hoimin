@@ -1,0 +1,727 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "0"
+        },
+        "eof": false,
+        "incomplete": false,
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "0"
+        },
+        "supplied": {
+          "#bigint": "0"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": false,
+        "incomplete": false,
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "0"
+        },
+        "supplied": {
+          "#bigint": "1"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "1"
+            },
+            "stage": {
+              "tag": "Apply",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Advance",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": false,
+        "incomplete": false,
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "0"
+        },
+        "supplied": {
+          "#bigint": "1"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "1"
+            },
+            "stage": {
+              "tag": "StartReal",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Advance",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": false,
+        "incomplete": false,
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "1"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "1"
+            },
+            "stage": {
+              "tag": "RunReal",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Advance",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": false,
+        "incomplete": false,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "1"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "1"
+            },
+            "stage": {
+              "tag": "FinishReal",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Advance",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": false,
+        "incomplete": false,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "1"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "1"
+            },
+            "stage": {
+              "tag": "Reset",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Advance",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": false,
+        "incomplete": false,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "1"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": false,
+        "incomplete": true,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "2"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Read",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "2"
+            },
+            "stage": {
+              "tag": "StartSynthetic",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "EndOfSpool",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": true,
+        "incomplete": true,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "2"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "2"
+            },
+            "stage": {
+              "tag": "StartSynthetic",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Advance",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": true,
+        "incomplete": true,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "2"
+        },
+        "verifying": false,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "2"
+            },
+            "stage": {
+              "tag": "FinishSynthetic",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Advance",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": true,
+        "incomplete": true,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "2"
+        },
+        "verifying": true,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Wait",
+        "value": {
+          "#tup": []
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": true,
+        "incomplete": true,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "2"
+        },
+        "verifying": true,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "MutantAdmission::MutantAdmissionModel::dispatch": {
+        "tag": "Wait",
+        "value": {
+          "#tup": []
+        }
+      },
+      "MutantAdmission::MutantAdmissionModel::s": {
+        "admitted": {
+          "#bigint": "1"
+        },
+        "eof": true,
+        "incomplete": true,
+        "killed": {
+          "#bigint": "1"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "started": {
+          "#bigint": "1"
+        },
+        "supplied": {
+          "#bigint": "2"
+        },
+        "verifying": true,
+        "workers": [
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          },
+          {
+            "candidate": {
+              "#bigint": "0"
+            },
+            "stage": {
+              "tag": "Idle",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "vars": [
+    "MutantAdmission::MutantAdmissionModel::s",
+    "MutantAdmission::MutantAdmissionModel::dispatch"
+  ]
+}

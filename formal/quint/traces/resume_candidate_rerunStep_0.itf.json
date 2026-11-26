@@ -1,0 +1,138 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "NoOutcome",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "init",
+        "stage": {
+          "tag": "LookupPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "8"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Reply",
+        "value": {
+          "identityOk": false,
+          "status": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "NoOutcome",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "identity",
+        "stage": {
+          "tag": "LookupPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "8"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Reply",
+        "value": {
+          "identityOk": true,
+          "status": {
+            "#bigint": "3"
+          }
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "NoOutcome",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "ApplyPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "3"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "ResumeCandidate::ResumeCandidateModel::s",
+    "ResumeCandidate::ResumeCandidateModel::dispatch"
+  ]
+}

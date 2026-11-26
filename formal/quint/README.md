@@ -31,9 +31,10 @@ and interprets ITF integer/set encoding. It does not calculate expected policies
 checks. Each model generates four random histories (seed 1172, 24 transitions,
 20 samples). Named scenario actions normally generate 12-transition histories (24 for active
 worker schedules):
-`Report.interleavedStep` starts two mutants and finishes them in reverse order;
+`Report.interleavedStep` starts two mutants, rejects premature finish, and finishes them in reverse order;
 `Completion.gapStep` completes four requests in reverse order;
-`Completion.wrongKindStep` attempts a wrong kind before a generic failure.
+`Completion.wrongKindStep` attempts a wrong kind before a generic failure;
+`Completion.cleanupStep` retries a cleanup while a completion gap is open.
 These schedules constrain inputs and reuse the same model transitions to compute
 expectations. They avoid depending on chance to cover these paths.
 
@@ -54,27 +55,73 @@ are unchanged; committed ITF files retain their complete input records.
 
 ## Models and implementation correspondence
 
+`DiskObservation` adds three-input histories of threshold observations,
+measurement failures, and dispatch requests. Its six measurement representatives
+include both exact thresholds, simultaneous limits, a changed duration, and changed
+byte values. The state retains complete primary evidence and ordered, deduplicated
+secondary evidence. `priorityStep`, `duplicateStep`, and `failureStep` exercise
+these paths deliberately. `DiskObservationReplace` must produce a semantic
+counterexample when a later failure replaces the first primary reason.
+
+The isolated Connect workspace replays this model against public `DiskLifecycle`
+calls with state comparison after every step. Ordinary Rust tests replay seven
+fixed ITF histories. Seed PBT generates live histories; byte-history PBT and the
+`disk_observation` fuzz target extend to full-width byte counters, measurement
+durations and error identities, with at most 128 commands. The fuzz target uses
+25-byte records and shares its driver with both replay harnesses. It checks first
+failure preservation, secondary uniqueness, and stopped dispatch admission.
+These are simulated observations; no test fills the real filesystem.
+
+See the [design](../../docs/development/work/quint-live-lifecycles/design.md),
+[plan](../../docs/development/work/quint-live-lifecycles/plan.md), and
+[review evidence](../../docs/development/work/quint-live-lifecycles/review.md).
+
+`BudgetConnect` supplies typed live commands to the same `BudgetModel` transitions
+used by `BudgetExtended` (four successful reservations, capacity two per kind).
+It generates at most eight commands. `reuseStep` covers a rejected reservation,
+release, duplicate release, unknown ID, zero-sized reservation and allocation
+after rejection; `zeroStep` fills the workload with zero-sized reservations and
+releases them out of order. The existing TLC checks establish the underlying
+finite model's invariants; Connect also checks `Safety` on generated histories.
+The command wrapper is not a separate exhaustive Rust proof.
+
+The Connect state compares real returned IDs, reservations visible through public
+ID queries, inferred released IDs, totals for all three budget kinds, and actual
+result codes. IDs 0–4 and all returned IDs are queried; no private ledger fields
+are exposed. A negative control reports a successful release without calling
+the real API and must fail the framework's state comparison. Seed PBT adds live
+histories alongside the existing fixed ITF, independent journal PBT, and
+`budget_ledger` fuzz target. Ordinary tests remain offline.
+
 | Model | Finite domain | Rust correspondence | Negative control |
 | --- | --- | --- | --- |
 | Budget | Capacity 2 per kind, 3 kinds, amounts 0–3, 2 successful reservations | Public `BudgetLedger::reserve/release`, returned IDs, contents and totals | Overdraft |
 | BudgetExtended | Same capacities, 4 successful reservations, release IDs 0–4 | Same public adapter, covering release followed by further allocation | Shared overdraft control |
-| Report | 2 run IDs, 2 mutant IDs, 2 mutant identity sequences, accepted event numbers 0–5; attempts use the last or next number | Public `ReportSequence::validate/observe` error categories and priority; the journal also checks exact errors | Finish while mutants remain active |
-| Completion | 4 issued requests, 2 completion kinds, generic failure, attempted IDs 0–5 | Internal fixture of production `RunState::allocate_id/register/accept_completion/retire_pending`; pending, next ID, retired, compressed floor/gaps and outcomes | Accept a retired completion again |
+| Report | 2 run IDs, 2 mutant IDs, 2 mutant identity sequences, event numbers 0–5 | Public `ReportSequence::validate/observe` errors with their exact fields | Finish while mutants remain active |
+| Completion | 4 issued requests, 3 completion kinds, generic failure, attempted IDs 0–5; at most one cleanup with two reserved IDs | Internal fixture of production `RunState::allocate_id/register/accept_completion/retire_pending`; pending requests and their reservation lists, next ID, retired, compressed floor/gaps and outcomes | Accept a retired completion again |
 
 Report covers run start/finish, mutant start/finish and a diagnostic as the
 representative ordinary report event. Its model-derived replay compares public
-validation outcomes; private validator fields are not inspected. The independent
-accepted-event journal compares exact errors, exercises rejected `observe` calls
-in default builds and probes subsequent validation to detect hidden state changes.
+validation outcomes, including the stored run ID, the previous event number, the
+active mutant count, and the stored mutant sequence. `gappedStep` accepts gaps,
+rejects an older event, and reports the original run ID for an event sent for a
+different run after completion. `interleavedStep` checks that two active mutants
+take priority over a repeated event sequence and exercises identity rejections
+before and after a mutant finishes. The independent accepted-event
+journal derives errors from the history and probes subsequent validation to
+detect hidden state changes. Default builds also exercise rejected `observe` calls.
 With contracts enabled, invalid consumer input goes through `validate`, because
 `observe` intentionally asserts on invalid producer events.
 
-Completion replay compares the internal ledger's state directly. Its independent
-PBT oracle uses an uncompressed journal of pending/completed/retired slots and
-derives the prefix, rather than copying the production floor/gaps update loop.
-This is internal-fixture correspondence, not a proof of the surrounding public
-transition protocol or OS scheduling. Cleanup reservation-argument matching and
-other completion payloads are outside this finite model.
+Completion replay compares the internal ledger directly. `cleanupStep` delivers
+a later completion first, rejects duplicate, missing and unexpected reservation
+IDs while retaining the earlier cleanup request, then accepts the same IDs in
+reverse order. The accepted retry closes the gap. The independent PBT oracle
+derives the prefix from an uncompressed journal of pending, completed and
+retired slots. It generates reservation lists with up to four entries, including
+empty lists and full-width IDs. The fixture covers request registration and
+acknowledgement in the ledger. Public phase transitions and actual resource
+release have separate tests.
 
 The reservation/request counts bound workloads; they do not replace production
 u64 ID exhaustion with small-number exhaustion. Unbounded histories, fairness,
@@ -90,22 +137,30 @@ The cleanup and ownership extension adds five finite configurations to the four 
 | DiskLifecycle | Both owned roots, up to one dispatch, all drain/report success or failure and cleanup outcomes | Public `DiskLifecycle::apply/snapshot/may_finish/safety_succeeded` |
 | DiskExecutionOnly | Execution root only; failures may retain it while still reaching finish | Same public adapter |
 | DiskNoRoots | No owned roots; attempted cleanup of unowned roots is rejected | Same public adapter |
-| Finalization | Inner/outer drains, joined/failed/unjoined measurement, cleanup admission/results, one-shot free-space query | CLI `ExecutionFinalization` methods and summary projection, internal fixture |
+| Finalization | Inner/outer drains, joined/failed/unjoined measurement, cleanup admission/results, one-shot free-space query for two filesystem keys | CLI `ExecutionFinalization` methods, per-key free-space lookup and summary projection, internal fixture |
 | Ownership | Two actors/two run IDs and independent file handles | Real `RunOwnership::acquire` and handle drop using native OS locks |
 
 The disk model initially allowed two dispatches but hit the outer 20-second limit;
 that run is not counted as success. The finite workload uses one dispatch, while
 PBT/fuzz checks longer histories and arbitrary u64 observation values. The public
-adapter compares state fields and acceptance directly with generated expectations.
-PBT additionally checks rejected-input snapshot atomicity, terminal freeze, primary
-failure stability, diagnostic deduplication and cleanup/finish prerequisites.
+adapter compares admission, the complete primary failure, and ordered diagnostics
+against generated expectations. `processEvidenceStep` keeps a measurement failure
+primary when the process drain fails and delivery cleanup is deferred.
+`cleanupDiagnosticStep` records identical failures from two roots once and then
+records a measurement stop. `cleanStep` submits a late measurement failure after
+finish and checks that the terminal snapshot is preserved. PBT extends these checks
+to longer histories and verifies cleanup and finish prerequisites.
 
 Finalization checks that an unjoined measurement cannot be repaired by a later
 joined success, a refused removal attempt remains terminal, failed joined readings
 preserve prior evidence, and failed free-space queries do not retry or become zero.
-Zero and full-width readings are tested separately from absent readings. Its PBT
-expectations derive from raw state and history laws rather than the getters being
-tested. This verifies admission/evidence logic, not actual filesystem deletion.
+The free-space model distinguishes a failed query, a successful empty query, and
+readings indexed by filesystem key. `pairedAvailableStep` retains two distinct
+readings after a second query request. `missingAvailableStep` retains a zero
+reading for one key and absence for the other, even when a later request would
+supply the missing key. Rust checks both keys and an unknown key after every step.
+PBT varies key presence and full-width byte counts independently. The query
+callback supplies synthetic readings and counts invocations.
 
 Ownership PBT expands to four actors/three run IDs, and each step probes the real
 OS lock with another independent open. I/O errors are infrastructure failures, not
@@ -113,7 +168,7 @@ successful detection of contention. Handles close before temporary directory
 removal. These tests exercise descriptors on the current host; they do not prove
 SQLite recovery, process-crash handling or all possible host failures.
 
-The cleanup and ownership corpus contains 48 histories, including `cleanStep`/`deferredStep`
+The corpus through the cleanup and ownership extension contains 54 histories, including `cleanStep`/`deferredStep`
 for disk, `cleanStep`/`refusedStep`/`unjoinedStep`/`availableStep` for finalization,
 and `reacquireStep` for ownership. Six negative-control models check detection of
 unsafe transitions. Every generated history participates in freshness checking.
@@ -124,20 +179,32 @@ cargo test --locked -p hoimin-cli --lib shell::finalization::quint
 cargo test --locked -p hoimin-cli --lib session::ownership::quint
 ```
 
-## SQLite persistence and resume selection
+## SQLite persistence, resume selection and ownership
 
-The SQLite extension adds two independent domains to the earlier configurations:
+The SQLite extension adds three domains to the earlier configurations:
 
 | Model | Finite scope | Implementation correspondence | Negative control |
 | --- | --- | --- | --- |
 | Session | One run, two mutants, all seven result statuses, owner release/reacquisition and completion | Public `SessionHandler::begin/persist/lookup/load/finish` on a real temporary SQLite database; `resume_policy` on recovered results | Replace a determinate result |
-| SessionSelection | Two chronological runs, two fingerprints, budgets 1 and 2, complete/incomplete rows | Public handler operations and stored rows after every close/reopen, including budget promotion | Choose the oldest eligible run |
+| SessionSelection | Two chronological runs, two fingerprints, budgets 1 and 2, complete/incomplete rows | Public handler outcomes, fresh-start reasons and stored rows after every close/reopen, including budget promotion | Choose the oldest eligible run |
+| SessionOwnership | Two independent handles, one saved run, budgets 1 and 2 | Two `SessionHandler` instances on the same SQLite database using native locks, with public ownership probes and durable row comparison | Share ownership between handlers |
 
 `Session.recoveryStep` saves a timeout, reopens and resumes the DB, replaces it
 with a killed result, and rejects a later survived replacement. Selection's
 `latestStep` and `fallbackStep` force multiple eligible rows and fallback past a
-newer run whose budget is too large. These are input schedules, sharing the same
-model actions as exhaustive checking.
+newer run whose budget is too large. `freshPriorityStep` starts with empty history,
+finds a matching complete run, then prefers the budget-decrease reason once a
+matching incomplete run with a larger budget exists. All five ordinary fresh
+reasons participate in the safety invariant and in SQLite outcome comparison.
+
+`SessionOwnership.handoffStep` starts with a saved timeout. It repeats the run's
+creation, then acquires the run and rejects another handle's promotion request
+while the run is owned. The failed promotion leaves the stored budget intact.
+Reopening the first handle releases the lock. The second handle can then resume
+and promote the budget, and a smaller request gets the budget-decrease reason.
+The schedule exercises both incomplete and complete finish. The driver also
+checks durable rows and looks up the saved timeout through each handle after
+every operation. Interleavings occur between completed public calls.
 
 The Rust driver compares operation outcomes, every stored result and run row,
 and probes ownership and reuse with public lookups after every lifecycle step.
@@ -159,9 +226,10 @@ cargo test --locked -p hoimin-cli --test quint_session --all-features
 ```
 
 A close/reopen is orderly handle release, not a simulated process crash or power
-failure. The models do not cover concurrent database transactions, schema
-corruption, exact fresh-reason diagnostic priority, or the public `transition`
-protocol. Existing Lean session oracles and native-lock tests continue separately.
+failure. The models assume valid rows, orderly ownership release and no concurrent
+writers. `CandidateChanged` belongs to the selection/recheck race, which is
+covered separately by the SQLite fault tests. Existing Lean session oracles and
+native-lock tests continue separately.
 See the [design](../../docs/development/work/quint-session-protocol/design.md),
 [plan](../../docs/development/work/quint-session-protocol/plan.md), and
 [review evidence](../../docs/development/work/quint-session-protocol/review.md).
@@ -186,11 +254,24 @@ compared with model expectations or an independent event journal.
 The finite model allows two stop requests. PBT runs 256 histories of up to 127
 commands, with arbitrary u64 disk readings, then eight successful acknowledgements
 to check recovery progress under that explicit assumption. It preserves the first
-disk reason, freezes stop causes during cleanup/final-report/session completion,
-and requires session finish to follow the final-report acknowledgement. The
+disk reason, freezes stop causes during and after cleanup, and requires
+session finish to follow the final-report acknowledgement.
+`reserveEvidenceStep` keeps a zero free-space reading when a measurement error
+arrives later. `measurementEvidenceStep` keeps the measurement error message when
+a reserve notification follows. The Rust replay checks the emitted diagnostic
+and the final report. `diagnosticEvidenceStep` verifies that later effect
+failures add unique secondary diagnostics in arrival order. The
 negative model deliberately violates the last ordering. `terminalStep` forces a
 stop while the final report is pending; `finalFailureStep` forces the discovered
 unacknowledged-start/final-output-failure regression.
+
+`cleanupCancelStep` and `cleanupDiskStep` deliver a stop while the
+diagnostic from a failed cleanup awaits acknowledgement. Rust had issued
+a second cleanup on cancellation and replaced the pending diagnostic on a
+disk stop. Both schedules now preserve the diagnostic, single cleanup
+record, and exit status before completing the final report. The
+`StopReopensCleanup` negative control enables the original stop behavior
+and violates the post-cleanup invariant.
 
 A discovered regression is fixed: after an unacknowledged run-start failure,
 failure of the eventual final report terminates the protocol instead of issuing
@@ -219,19 +300,320 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 [plan](../../docs/development/work/quint-public-stop/plan.md), and
 [review evidence](../../docs/development/work/quint-public-stop/review.md).
 
+## Ordered candidate discovery
+
+`OrderedDiscovery` starts with two idle workers awaiting a sequential spool
+read. It requests IDs `[3, 1]`, accepts up to four discovery replies, and uses
+ID `2` as an unselected candidate. Each sequential reply can only request
+another sequential read. EOF rejects the first missing requested ID, or starts
+indexed reads in request order. `orderedStep` discovers a duplicate, then
+rejects an absent and a wrong indexed body before retrying both requests.
+`missingStep` reaches EOF with an incomplete selection. The negative model
+requests the first body in ascending ID order and violates `Safety`.
+
+The Rust fixture uses public `RunState::with_selection` and `transition` and
+ends at the missing-selection error or the handoff to two pending apply
+requests. It compares pending read targets, apply order, and exact callback
+errors. The fixture retains a clone of the input for corrected replies after
+an identity error. Existing worker and stop tests cover execution after handoff.
+
+`OrderedDrain` uses the same public setup and stops during discovery or an
+indexed read. Its four schedules cover partial discovery, repeated stops
+and retired reads, failure of an indexed read, and a trailing discovery
+failure. Surviving candidates are reported once as `NotRun` in requested
+order. Failed indexed bodies are skipped. Each history hands off to final
+verification or the failure diagnostic after these reports. The negative
+model tries to drain an undiscovered candidate.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_ordered
+```
+
+## Resumed candidate lookup
+
+`ResumeCandidate` starts with one pending lookup in a resumed session. The
+finite input domain covers all seven stored statuses, an absent result, and
+stored results with the wrong candidate identity. Killed and survived results
+use synthetic start and finish outputs. Missing or inconclusive results hand
+off to real apply work. Synthetic accounting commits at the finish acknowledgement.
+
+The three cancellation schedules cover lookup, synthetic start, and synthetic
+finish. They check rejection of the retired callback both before and after its
+replacement is acknowledged. Cancellation during lookup produces `NotRun`.
+Cancellation during a synthetic output preserves the reused outcome. The
+negative model reruns a conclusive result and violates `Safety`.
+
+`failedStartStep` and `failedFinishStep` inject a generic effect failure.
+The replacement retains the reused outcome, and an acknowledgement for the
+failed request is rejected as a duplicate. After the replacement finish is
+acknowledged, the run emits the failure diagnostic, cleans up, then sends its
+incomplete report and finishes the session. `reportIoStep` injects a report
+write failure and reaches a terminal state after the diagnostic and cleanup,
+with zero committed results and no final report or session finish request.
+Each history injects at most one cancellation or output failure.
+
+The Rust replay reaches lookup via public `transition` calls, compares emitted
+effects and exact errors, and checks counters after every transition. Lookup
+and cancellation histories end at a pending apply or the next sequential read.
+Output failure histories continue to termination. The SQLite models check
+durable lookup content separately.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_resume
+```
+
+## Baseline restoration
+
+`BaselineRestoration` starts after a successful baseline with both the
+baseline output and worker reset pending. The two acknowledgements may arrive
+in either order. Only the reset releases one analysis request. The model
+also checks wrong worker and completion kinds, duplicate acknowledgements,
+and cancellation or effect failure before restoration. The negative model
+releases analysis on output acknowledgement and violates `Safety`.
+
+Nine ITF histories replay the public transition with two workers and one
+target. They compare phase, pending and retired effect IDs, exact callback
+errors, exit status, and the initial analysis or finalization effect.
+
+## Ordered verification budget
+
+`VerifyBudgetGate` starts after restoration with one pending budget
+observation. For 30 selections on one worker and a 35-second effective
+timeout, the threshold is 1050 seconds. The model compares zero remaining
+time and the threshold at and within one millisecond on either side.
+A shortfall emits a warning and waits for its acknowledgement before
+analysis. The warning preserves the successful exit status. Cancellation,
+deadline, or failure while waiting sends the run to finalization. The
+negative control warns at the exact threshold.
+
+Ten ITF histories compare the public phase, effects, warning fields,
+exit status, and duplicate or retired acknowledgement errors.
+
+## Analysis diagnostics
+
+`AnalysisDiagnostics` starts with analysis of the last target in an ordinary
+run. It models absent, empty, populated, and truncated spools with lists of up
+to two warnings. Warnings are emitted in input order, including repeated
+messages, with one outstanding acknowledgement. The candidate read or final
+verification is released after the last acknowledgement. A duplicate reply
+leaves the next warning pending. Cancellation retires the outstanding warning
+and hands off to verification. A generic warning effect failure completes the
+failed request and hands off to the failure diagnostic.
+
+Ten ITF histories compare the public effects, warning content and sequence,
+exact errors, exit status, and phase. The fixtures use the same populated spool
+to check candidate reads after ordinary analysis and final verification after
+truncated analysis. The negative model advances past analysis while the first
+warning still awaits acknowledgement.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_baseline
+cargo test --locked -p hoimin-core --test machine quint_verify_budget
+cargo test --locked -p hoimin-core --test machine quint_analysis
+```
+
+## Analysis spool handoff
+
+`AnalysisSpool` models two ordered source targets on one worker in a
+regular run or a run with one explicitly selected candidate. An untruncated
+first reply without a spool advances to the second target. At truncation,
+an ordinary run verifies originals, and explicit selection proceeds with
+the available populated spool. Both record an incomplete outcome. Explicit
+selection rejects a missing final spool or an empty spool with a selected
+candidate still missing. The retry schedule samples corrected replies to
+the same request following both errors. A deadline between targets retires
+the outstanding analysis request. The negative model reads candidates
+after truncation in an ordinary run.
+
+Ten ITF histories compare target paths, the final-target flag, the
+candidate spool token and record count, exit status, and exact callback
+errors via public transitions. They end at candidate reading or final
+verification.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_spool
+```
+
+## Explicit candidate streaming
+
+`ExplicitStream` scans up to four records on one worker with two requested
+IDs. It applies each selected ID once in discovery order, skipping an
+unrequested ID and repeat appearances. End of spool returns the first
+unmatched ID until both are discovered. A wrong-worker reply leaves the
+read pending. The negative model applies a repeated selected ID again.
+
+Seven ITF histories compare effects, dispatch order, counts, and exact
+errors through public transitions. The `Complete` action groups one
+successful apply, killed execution, report acknowledgements, and reset.
+`partialStep` supplies a corrected reply to the same read after premature
+end of spool.
+
+## Mutant admission at the run limit
+
+`MutantAdmission` models two workers with a run limit of one and a spool
+of one or two candidates. Admission reserves the slot when the first
+candidate is handed to apply. A second candidate uses synthetic start and
+finish outputs even if the first worker is still applying. The incomplete
+status is set when the extra candidate is read, and `NotRun` is counted
+when its finish output is acknowledged. A spool with exactly one candidate
+can complete successfully. Verification waits for end of spool and both
+workers to become idle. The negative model charges the limit when the
+mutant process is requested and admits two applies before either starts.
+
+Seven ITF histories compare both workers' pending requests, candidate
+identities, apply and process requests, counters, and exit status. The
+schedules include a synthetic finish before the admitted worker even
+acknowledges apply.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_explicit
+cargo test --locked -p hoimin-core --test machine quint_admission
+```
+
+## Active worker failures
+
+`WorkerFailure` starts with one admitted candidate in an ordinary run.
+A generic failure at apply, start output, or execution reports the
+candidate as `NotRun`. A generic failure at finish output preserves the
+classified result and its count. Failure after start acknowledgement
+replaces only the finish. The failure diagnostic follows the replacement
+output. A report write failure proceeds directly to the diagnostic and
+cleanup, then terminates with delivery suppressed. The negative model
+replaces a classified result with `NotRun`.
+
+Ten ITF histories compare effects, counts, exit status, and exact duplicate
+errors for retries of failed effects. They end at the next read on the
+normal path or after cleanup and reporting on the failure paths.
+
+## Session process results
+
+`ProcessResult` starts with one running session candidate. It models
+successful and unsuccessful process exits, process timeout, and memory
+exhaustion, each with complete output or an output-close timeout. An
+output-close timeout classifies the result as `Error` and retains the
+original termination and an output diagnostic. One matching persistence
+acknowledgement records the result. A cancellation during persistence or
+finish reporting preserves the classified result exactly once. A callback
+for a retired persistence request returns the retired-effect error.
+The negative model classifies with the process termination alone.
+
+Ten ITF histories compare persisted and reported evidence, bad run and
+candidate IDs, retired or duplicate acknowledgements, summary counts,
+and exit status through public transitions. They end at pending
+pre-report verification. Persistence is represented by its request and
+acknowledgement.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_worker_failure
+cargo test --locked -p hoimin-core --test machine quint_process_result
+```
+
+## Original integrity acknowledgements
+
+`IntegrityCheckpointProtocol` requires the post-materialization
+checkpoint before the baseline and the pre-report checkpoint before
+cleanup. After a mismatched callback, the replay uses the retained input
+state to send a corrected reply. A deadline while waiting for pre-report verification
+retires that request and issues a replacement. A verification failure
+emits the original-change diagnostic. The negative model accepts an
+unrelated checkpoint before cleanup.
+
+Seven histories reach both checkpoints through public Rust transitions.
+Two histories reproduced premature cleanup before the pre-report guard
+was added. They now require the same phase error used at the
+post-materialization checkpoint and compare duplicate and retired
+callback errors.
+
+## Session finish acknowledgements
+
+`SessionFinishAck` starts at the final report of a clean or incomplete
+session. A report delivery failure terminates without closing the
+session. A successful report acknowledgement issues the finish request.
+The finish acknowledgement must identify the same run and carry its
+requested completion flag. A mismatched callback returns
+`machine.session.finish_mismatch`, and a callback for a consumed request
+returns the duplicate-effect error. A generic finish failure remains
+terminal with an infrastructure error. Deadline requests leave the
+pending report or finish unchanged.
+
+Ten histories compare the final report, finish request, callback decisions
+and exit status through public Rust transitions. The model represents
+SQLite operations by their acknowledgements. Durable storage is exercised
+by the SQLite suite above.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_integrity
+cargo test --locked -p hoimin-core --test machine quint_finish_ack
+```
+
+## Session startup
+
+`SessionStartup` follows preflight in disabled, fresh, and resume modes.
+Session load and begin require preflight fingerprint evidence and forward
+it with the mutant budget. Resuming selects the saved run ID, and fresh
+fallback preserves the selection reason in the run-start header. The
+header acknowledgement releases worker creation. A deadline or session
+I/O failure during a session request preserves the run-start header before
+verification or a failure diagnostic. The negative model creates a
+worker on resume before the header is acknowledged.
+
+Ten histories compare the requests and report provenance, the copy
+handoff, and errors on missing fingerprints or late or duplicate session
+replies.
+
+## Workspace copy preflight
+
+`CopyPreflight` models two configured workers and a 20-byte workspace
+copy budget. It accepts zero bytes and exact-budget measurements,
+checks aggregate arithmetic and overflow, and requires the preflight
+worker count to match the configuration before emitting a run-start
+header, loading a session, or starting a new one. The negative model
+proceeds after receiving a smaller worker count.
+
+Eight histories replay the public machine with sessions disabled, fresh,
+or resumed. They check exact errors and corrected replies, and verify
+that both creation requests carry the original preflight ID and the
+same aggregate allowance. The overflow representative sends two
+workers each reporting `u64::MAX` bytes.
+
+## Workspace worker acknowledgements
+
+`WorkerGrant` starts with two worker creation requests that share a
+copy reservation. Post-materialization verification requires matching
+effect, worker and reservation IDs for both workers. Either worker can
+complete first. A failure or deadline retires the outstanding siblings
+and leads to a diagnostic or pre-report verification. The negative model
+accepts a worker completion for a different reservation.
+
+Nine histories compare the original preflight ID and allowance in both
+requests, pending and retired IDs, and exact completion errors. The
+wrong-reservation history originally advanced to materialization
+verification and now checks `machine.worker.reservation_mismatch`.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_session_startup
+cargo test --locked -p hoimin-core --test machine quint_copy_preflight
+cargo test --locked -p hoimin-core --test machine quint_worker_grant
+```
+
 ## Active workers and Quint Connect
 
-The registry checks sixteen finite configurations, ten negative controls and
-102 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks thirty-four finite configurations, twenty-nine
+negative controls and 273 committed histories. `Workers` and `WorkersSession` add
+two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
-acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;
+acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;
 a stopped unexecuted candidate becomes NotRun. The negative model double-counts
 an executed result while draining it after stop.
 
 `reverseStep` completes worker 1 before worker 0. `completedStopStep` stops while
 a completed result awaits persistence or output acknowledgement. `startStopStep`
 and `runningStopStep` stop before start acknowledgement and during execution.
+`timeoutStep` carries a process timeout through normal finalization with exit
+code 4 and an incomplete report. `timeoutStopStep` cancels after that result
+arrives and checks that the timeout survives draining and counts once. With a
+session, cancellation can arrive before the timeout's persistence acknowledgement.
 The 24-transition scenario bound lets each schedule reach session completion;
 fixture tests require that terminal state. Other models retain their existing
 scenario bounds.
@@ -271,7 +653,8 @@ process monitoring. Ordinary workspace tests replay committed ITF without Node,
 Java or the live crate. Product dependencies are unchanged.
 
 `run_workers` input starts with session/worker-count bytes, then eleven-byte
-commands (tag, worker, outcome, little-endian u64 disk reading). Generated corpus
+commands (tag, worker, outcome, little-endian u64 disk reading). The outcome byte
+can select an injected process timeout. Generated corpus
 stays separate from seeds. This tests callback interleavings in the public state
 machine. It does not prove Rust atomic memory ordering, actual subprocess behavior
 or every OS thread interleaving. TLC's exhaustive result applies to the bounded

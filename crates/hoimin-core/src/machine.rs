@@ -668,18 +668,23 @@ impl RunState {
         Ok(vec![RunEffect::Preflight(Preflight { id })])
     }
 
-    fn create_worker_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
+    fn checked_worker_count(&self, requested: u32) -> Result<u32, MachineError> {
         // RunConfig bounds jobs by MAX_JOBS (256), below u32::MAX.
         let count = u32::try_from(self.config.limits.jobs.get()).expect("validated jobs fit u32");
+        if requested != count {
+            return Err(MachineError::WorkerCountMismatch {
+                configured: count,
+                preflight: requested,
+            });
+        }
+        Ok(count)
+    }
+
+    fn create_worker_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         let grant = self
             .copy_grant
             .ok_or(MachineError::WrongPhase { phase: self.phase })?;
-        if grant.requested_workers() != count {
-            return Err(MachineError::WorkerCountMismatch {
-                configured: count,
-                preflight: grant.requested_workers(),
-            });
-        }
+        let count = self.checked_worker_count(grant.requested_workers())?;
         let mut effects = Vec::with_capacity(count as usize);
         for worker in 0..count {
             let id = self.allocate_id()?;
@@ -1476,6 +1481,12 @@ pub enum MachineError {
     WorkerCountMismatch { configured: u32, preflight: u32 },
     #[error("unknown worker {0}")]
     UnknownWorker(u32),
+    #[error("worker creation {id:?} used reservation {received:?}, expected {expected:?}")]
+    WorkerReservationMismatch {
+        id: EffectId,
+        expected: ReservationId,
+        received: ReservationId,
+    },
     #[error("process worker mismatch: expected {expected:?}, received {received:?}")]
     ProcessWorkerMismatch {
         expected: Option<u32>,
@@ -1489,6 +1500,16 @@ pub enum MachineError {
         field: &'static str,
         expected: String,
         received: String,
+    },
+    #[error(
+        "session finish {id:?} acknowledged {received_run_id:?} (complete={received_complete}), expected {expected_run_id:?} (complete={expected_complete})"
+    )]
+    SessionFinishMismatch {
+        id: EffectId,
+        expected_run_id: String,
+        received_run_id: String,
+        expected_complete: bool,
+        received_complete: bool,
     },
 }
 
@@ -1513,8 +1534,10 @@ impl MachineError {
             Self::ProcessCountOverflow => "machine.process.count_overflow",
             Self::WorkerCountMismatch { .. } => "machine.worker.count_mismatch",
             Self::UnknownWorker(_) => "machine.worker.unknown",
+            Self::WorkerReservationMismatch { .. } => "machine.worker.reservation_mismatch",
             Self::ProcessWorkerMismatch { .. } => "machine.worker.process_mismatch",
             Self::SessionIdentityMismatch { .. } => "machine.session.identity_mismatch",
+            Self::SessionFinishMismatch { .. } => "machine.session.finish_mismatch",
         }
     }
 }
@@ -1548,6 +1571,7 @@ pub fn transition(
         .any(|pending| pending.output_continuation() == Some(OutputContinuation::RunFinished));
     if is_stop
         && (final_report_pending
+            || state.flags.cleanup.cleanup_done
             || state.flags.cleanup.session_finish_attempted
             || state.phase == RunPhase::Finished
             || state.phase == RunPhase::Cleaning)
@@ -1604,10 +1628,11 @@ pub fn transition(
             state.start_run_effects()?
         }
         RunEvent::PreflightCompleted(value) if state.phase == RunPhase::Preflight => {
-            state.fingerprint = value.fingerprint;
             let grant = reserve_workspace_copy(&mut state.budgets, &value)
                 .map_err(|error| MachineError::Budget(error.to_string()))?;
+            state.checked_worker_count(grant.requested_workers())?;
             state.copy_grant = Some(grant);
+            state.fingerprint = value.fingerprint;
             match &state.config.session {
                 crate::SessionMode::Disabled => state.start_run_effects()?,
                 crate::SessionMode::Fresh(_) => state.begin_session_effects()?,
@@ -1625,6 +1650,17 @@ pub fn transition(
         RunEvent::WorkerCreated(value) if state.phase == RunPhase::Copy => {
             if completed_worker != Some(value.worker) {
                 return Err(MachineError::UnknownWorker(value.worker));
+            }
+            let reservation = state
+                .copy_grant
+                .ok_or(MachineError::WrongPhase { phase: state.phase })?
+                .reservation_id();
+            if value.reservation_id != reservation {
+                return Err(MachineError::WorkerReservationMismatch {
+                    id: value.id,
+                    expected: reservation,
+                    received: value.reservation_id,
+                });
             }
             state.workers.entry(value.worker).or_default();
             if state.workers.len() == state.config.limits.jobs.get() {
@@ -2030,10 +2066,24 @@ pub fn transition(
             *state.worker_mut(value.worker)? = WorkerState::Idle;
             state.schedule_read_or_finalize()?
         }
-        RunEvent::OriginalsVerified(_) if state.phase == RunPhase::Finalize => {
+        RunEvent::OriginalsVerified(value)
+            if state.phase == RunPhase::Finalize
+                && value.checkpoint == IntegrityCheckpoint::PreFinalReport =>
+        {
             state.cleanup_effects()?
         }
-        RunEvent::SessionFinished(_) if state.phase == RunPhase::Finalize => {
+        RunEvent::SessionFinished(value) if state.phase == RunPhase::Finalize => {
+            let expected_run_id = state.run_id();
+            let expected_complete = state.complete();
+            if value.run_id != expected_run_id || value.complete != expected_complete {
+                return Err(MachineError::SessionFinishMismatch {
+                    id: value.id,
+                    expected_run_id: expected_run_id.to_owned(),
+                    received_run_id: value.run_id,
+                    expected_complete,
+                    received_complete: value.complete,
+                });
+            }
             state.phase = RunPhase::Finished;
             Vec::new()
         }

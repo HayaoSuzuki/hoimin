@@ -20,9 +20,8 @@ module BudgetModel {
     op' = "init", kind' = 0, amount' = 0, id' = 0, result' = "init",
   }
 
-  action reserve = {
-    nondet k = Set(0, 1, 2).oneOf()
-    nondet n = Set(0, 1, 2, 3).oneOf()
+  // Shared transition for the random workload and typed Connect commands.
+  action reserveAmount(k:int, n:int):bool = {
     val accepted = n <= 2 - total(active, k) or ALLOW_OVERDRAFT
     all {
       // Stop adding IDs at the workload boundary; this is not exhaustion.
@@ -35,8 +34,13 @@ module BudgetModel {
     }
   }
 
-  action release = {
-    nondet i = 0.to(MAX_RESERVATIONS).oneOf()
+  action reserve = {
+    nondet k = Set(0, 1, 2).oneOf()
+    nondet n = Set(0, 1, 2, 3).oneOf()
+    reserveAmount(k,n)
+  }
+
+  action releaseId(i:int):bool = {
     val found = active.exists(r => r.id == i)
     all {
       active' = active.filter(r => r.id != i),
@@ -45,6 +49,17 @@ module BudgetModel {
       op' = "release", kind' = 0, amount' = 0, id' = i,
       result' = if (found) "ok" else if (released.contains(i)) "released" else "unknown",
     }
+  }
+
+  action release = {
+    nondet i = 0.to(MAX_RESERVATIONS).oneOf()
+    releaseId(i)
+  }
+
+  // Preserve the last observable result once a finite live history is complete.
+  action idleBudget = all {
+    active'=active,released'=released,nextId'=nextId,
+    op'=op,kind'=kind,amount'=amount,id'=id,result'=result,
   }
 
   action step = any { reserve, release }

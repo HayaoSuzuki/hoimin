@@ -1,0 +1,600 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "outcome": {
+          "tag": "Unclassified",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Apply",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": false,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Fail",
+        "value": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "ReplacementStart",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": false,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "RetryFailed",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "ReplacementStart",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": false,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "0"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "ReplacementFinish",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": false,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Diagnostic",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": false,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Cleanup",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": false,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Report",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Done",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Done",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Done",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Done",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Done",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "WorkerFailure::WorkerFailureModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "WorkerFailure::WorkerFailureModel::s": {
+        "failure": {
+          "tag": "EffectFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "killed": {
+          "#bigint": "0"
+        },
+        "notRun": {
+          "#bigint": "1"
+        },
+        "outcome": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Done",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "started": true
+      }
+    }
+  ],
+  "vars": [
+    "WorkerFailure::WorkerFailureModel::s",
+    "WorkerFailure::WorkerFailureModel::dispatch"
+  ]
+}

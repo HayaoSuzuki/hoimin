@@ -11,6 +11,9 @@
       "Report::ReportModel::active": {
         "#set": []
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -44,6 +47,9 @@
       },
       "Report::ReportModel::active": {
         "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -79,6 +85,9 @@
       "Report::ReportModel::active": {
         "#set": []
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -113,6 +122,9 @@
       "Report::ReportModel::active": {
         "#set": []
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -146,6 +158,9 @@
       },
       "Report::ReportModel::active": {
         "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -189,6 +204,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -242,6 +260,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "1"
       },
@@ -293,6 +314,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -346,6 +370,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -397,6 +424,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -450,6 +480,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "1"
       },
@@ -501,6 +534,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -554,6 +590,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "1"
       },
@@ -605,6 +644,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -658,6 +700,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -709,6 +754,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -762,6 +810,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -813,6 +864,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -866,6 +920,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -917,6 +974,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "1"
@@ -970,6 +1030,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "1"
       },
@@ -1021,6 +1084,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
@@ -1074,6 +1140,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -1125,6 +1194,9 @@
             }
           }
         ]
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
       },
       "Report::ReportModel::eventRun": {
         "#bigint": "1"
@@ -1178,6 +1250,9 @@
           }
         ]
       },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
       "Report::ReportModel::eventRun": {
         "#bigint": "0"
       },
@@ -1221,6 +1296,7 @@
     "Report::ReportModel::mutant",
     "Report::ReportModel::last",
     "Report::ReportModel::eventRun",
+    "Report::ReportModel::detail",
     "Report::ReportModel::runId",
     "Report::ReportModel::op",
     "Report::ReportModel::result",

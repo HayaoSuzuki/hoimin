@@ -25,11 +25,17 @@ fn candidate(index: usize) -> MutationCandidate {
 fn index(id: &str) -> usize {
     id.strip_prefix('m').unwrap().parse().unwrap()
 }
-fn process(id: EffectId, worker: u32, survived: bool) -> ProcessFinished {
+fn process(id: EffectId, worker: u32, status: MutationStatus) -> ProcessFinished {
+    let termination = match status {
+        MutationStatus::Killed => ProcessTermination::Exit(1),
+        MutationStatus::Survived => ProcessTermination::Exit(0),
+        MutationStatus::Timeout => ProcessTermination::Timeout,
+        other => panic!("unexpected fixture process status {other:?}"),
+    };
     ProcessFinished {
         id,
         worker: Some(worker),
-        termination: ProcessTermination::Exit(i32::from(!survived)),
+        termination,
         output_state: ProcessOutputState::Complete,
         output: OutputSpoolRef {
             token: "output".into(),
@@ -129,9 +135,11 @@ fn bootstrap(session: bool, jobs: usize) -> (RunState, BTreeMap<EffectId, RunEff
                 id: r.id,
                 checkpoint: r.checkpoint,
             }),
-            RunEffect::RunBaseline(r) => {
-                RunEvent::BaselineFinished(process(r.id, r.context.worker, true))
-            }
+            RunEffect::RunBaseline(r) => RunEvent::BaselineFinished(process(
+                r.id,
+                r.context.worker,
+                MutationStatus::Survived,
+            )),
             RunEffect::ResetWorker(r) => RunEvent::WorkerReset(WorkerReset {
                 id: r.id,
                 worker: r.worker,
@@ -183,7 +191,7 @@ fn slot(effect: &RunEffect) -> Option<(usize, u8)> {
         _ => None,
     }
 }
-fn success(effect: &RunEffect, survived: bool) -> RunEvent {
+fn success(effect: &RunEffect, status: MutationStatus) -> RunEvent {
     match effect {
         RunEffect::ApplyMutation(r) => RunEvent::MutationApplied(MutationApplied {
             id: r.id,
@@ -191,7 +199,7 @@ fn success(effect: &RunEffect, survived: bool) -> RunEvent {
         }),
         RunEffect::EmitOutput(r) => RunEvent::OutputEmitted(OutputEmitted { id: r.id }),
         RunEffect::RunMutant(r) => {
-            RunEvent::MutantFinished(process(r.id, r.context.worker, survived))
+            RunEvent::MutantFinished(process(r.id, r.context.worker, status))
         }
         RunEffect::PersistResult(r) => RunEvent::ResultPersisted(ResultPersisted {
             id: r.id,
@@ -227,6 +235,7 @@ fn success(effect: &RunEffect, survived: bool) -> RunEvent {
 #[derive(Clone, Copy, Debug)]
 pub enum Command {
     Ack(u8, bool),
+    Timeout(u8),
     Global,
     Stop(u8, u64),
     Wrong(u8),
@@ -271,10 +280,10 @@ pub struct Driver {
     causes: Causes,
     stopped: bool,
     drained: bool,
-    results: Vec<Option<u8>>,
+    results: Vec<Option<MutationStatus>>,
     persisted: Vec<bool>,
     started: Vec<bool>,
-    finished: Vec<Option<u8>>,
+    finished: Vec<Option<MutationStatus>>,
     sequence: u64,
     final_report: ReportStage,
     first_disk: Option<u64>,
@@ -344,13 +353,14 @@ impl Driver {
             130
         } else if self.causes.fatal {
             2
-        } else if self.causes.incomplete {
+        } else if self.causes.incomplete || self.expected().contains(&Some(MutationStatus::Timeout))
+        {
             4
         } else {
             0
         }
     }
-    fn expected(&self) -> Vec<Option<u8>> {
+    fn expected(&self) -> Vec<Option<MutationStatus>> {
         (0..self.results.len())
             .map(|i| {
                 self.finished[i].or_else(|| {
@@ -377,20 +387,24 @@ impl Driver {
         };
         let actual = self.state.summary();
         assert_eq!(
-            (actual.killed, actual.survived, actual.not_run),
-            (counts(1), counts(2), counts(3)),
+            self.counts(),
+            [
+                MutationStatus::Killed,
+                MutationStatus::Survived,
+                MutationStatus::NotRun,
+                MutationStatus::Timeout
+            ]
+            .map(counts),
             "summary from result/ack journal"
         );
         assert_eq!(
-            (
-                actual.timeout,
-                actual.out_of_memory,
-                actual.process_limit,
-                actual.error
-            ),
-            (0, 0, 0, 0)
+            (actual.out_of_memory, actual.process_limit, actual.error),
+            (0, 0, 0)
         );
-        assert_eq!(actual.inconclusive, counts(3));
+        assert_eq!(
+            actual.inconclusive,
+            counts(MutationStatus::NotRun) + counts(MutationStatus::Timeout)
+        );
         assert_eq!(self.state.exit_code(), self.code());
         assert_eq!(
             self.state
@@ -404,12 +418,12 @@ impl Driver {
             assert_eq!(self.state.phase(), RunPhase::Finished);
         }
     }
-    fn before_completion(&mut self, effect: &RunEffect, survived: bool) {
+    fn before_completion(&mut self, effect: &RunEffect, status: MutationStatus) {
         match effect {
             RunEffect::RunMutant(r) => {
                 let i = index(&r.context.mutant_id);
                 assert!(self.results[i].is_none());
-                self.results[i] = Some(if survived { 2 } else { 1 });
+                self.results[i] = Some(status);
             }
             RunEffect::PersistResult(r) => self.persisted[index(&r.result.candidate.id)] = true,
             RunEffect::EmitOutput(r) => match &r.event {
@@ -429,12 +443,7 @@ impl Driver {
                             "stopped drain follows candidate sequence"
                         );
                     }
-                    self.finished[i] = Some(match v.outcome.status() {
-                        MutationStatus::Killed => 1,
-                        MutationStatus::Survived => 2,
-                        MutationStatus::NotRun => 3,
-                        status => panic!("unexpected {status:?}"),
-                    });
+                    self.finished[i] = Some(v.outcome.status());
                 }
                 OutputEvent::RunFinished(_) => {
                     assert_eq!(self.final_report, ReportStage::Pending);
@@ -474,14 +483,8 @@ impl Driver {
             self.sequence = r.event.sequence();
             if let OutputEvent::MutantFinished(v) = &r.event {
                 let i = index(&v.candidate.id);
-                let expected = self.results[i].unwrap_or(3);
-                let actual = match v.outcome.status() {
-                    MutationStatus::Killed => 1,
-                    MutationStatus::Survived => 2,
-                    MutationStatus::NotRun => 3,
-                    status => panic!("unexpected {status:?}"),
-                };
-                assert_eq!(actual, expected, "result survives stop");
+                let expected = self.results[i].unwrap_or(MutationStatus::NotRun);
+                assert_eq!(v.outcome.status(), expected, "result survives stop");
             }
             if let OutputEvent::RunFinished(v) = &r.event {
                 assert!(
@@ -490,7 +493,7 @@ impl Driver {
                 );
                 assert_eq!(&v.counts, self.state.summary());
                 assert_eq!(v.exit_code, self.code());
-                assert_eq!(v.complete, !self.stopped);
+                assert_eq!(v.complete, self.code() == 0);
                 self.final_report = ReportStage::Pending;
             }
         }
@@ -498,13 +501,8 @@ impl Driver {
             let i = index(&r.result.candidate.id);
             assert_eq!(r.result.run_id, self.state.run_id());
             assert_eq!(r.worker, u32::try_from(i).unwrap());
-            let actual = match r.result.outcome.status() {
-                MutationStatus::Killed => 1,
-                MutationStatus::Survived => 2,
-                status => panic!("unexpected persisted status {status:?}"),
-            };
             assert_eq!(
-                Some(actual),
+                Some(r.result.outcome.status()),
                 self.results[i],
                 "persist payload matches the completed process"
             );
@@ -514,12 +512,17 @@ impl Driver {
                 self.session && self.final_report == ReportStage::Acknowledged,
                 "session closes after final report ack"
             );
-            assert_eq!(r.complete, !self.stopped);
+            assert_eq!(r.complete, self.code() == 0);
         }
     }
-    fn commit(&mut self, event: RunEvent, completion: Option<(RunEffect, bool)>, is_stop: bool) {
-        if let Some((effect, survived)) = &completion {
-            self.before_completion(effect, *survived);
+    fn commit(
+        &mut self,
+        event: RunEvent,
+        completion: Option<(RunEffect, MutationStatus)>,
+        is_stop: bool,
+    ) {
+        if let Some((effect, status)) = &completion {
+            self.before_completion(effect, *status);
         }
         let (state, effects) = transition(self.state.clone(), event).unwrap();
         self.state = state;
@@ -572,7 +575,7 @@ impl Driver {
                 let Some(e) = self.effect(w) else {
                     return Verdict::Skipped;
                 };
-                let mut event = success(e, false);
+                let mut event = success(e, MutationStatus::Killed);
                 let wrong = if self.results.len() > 1 {
                     u32::try_from((usize::from(w) + 1) % self.results.len()).unwrap()
                 } else {
@@ -621,13 +624,13 @@ impl Driver {
                 let Some((_, effect)) = request else {
                     return Verdict::Skipped;
                 };
-                (success(effect, false), Verdict::Retired)
+                (success(effect, MutationStatus::Killed), Verdict::Retired)
             }
             Command::Duplicate => {
                 let Some((_, effect)) = self.completed.first_key_value() else {
                     return Verdict::Skipped;
                 };
-                (success(effect, false), Verdict::Duplicate)
+                (success(effect, MutationStatus::Killed), Verdict::Duplicate)
             }
             Command::Unknown => (
                 RunEvent::OutputEmitted(OutputEmitted {
@@ -639,14 +642,29 @@ impl Driver {
         };
         self.probe(event, expected)
     }
+    fn commit_success(&mut self, effect: RunEffect, status: MutationStatus) {
+        self.commit(success(&effect, status), Some((effect, status)), false);
+    }
+
+    fn ack(&mut self, worker: u8, status: MutationStatus) -> Verdict {
+        let Some(effect) = self.effect(worker).cloned() else {
+            return Verdict::Skipped;
+        };
+        self.commit_success(effect, status);
+        Verdict::Accepted
+    }
+
     pub fn apply(&mut self, command: Command) -> Verdict {
         match command {
             Command::Ack(w, survived) => {
-                let Some(effect) = self.effect(w).cloned() else {
-                    return Verdict::Skipped;
+                let status = if survived {
+                    MutationStatus::Survived
+                } else {
+                    MutationStatus::Killed
                 };
-                self.commit(success(&effect, survived), Some((effect, survived)), false);
+                return self.ack(w, status);
             }
+            Command::Timeout(w) => return self.ack(w, MutationStatus::Timeout),
             Command::Global => {
                 let Some(effect) = self
                     .pending
@@ -656,7 +674,7 @@ impl Driver {
                 else {
                     return Verdict::Skipped;
                 };
-                self.commit(success(&effect, false), Some((effect, false)), false);
+                self.commit_success(effect, MutationStatus::Killed);
             }
             Command::Stop(c, available) => {
                 let frozen = matches!(self.mode(), 3..=6);
@@ -697,7 +715,7 @@ impl Driver {
             let Some(effect) = self.pending.values().next().cloned() else {
                 break;
             };
-            self.commit(success(&effect, false), Some((effect, false)), false);
+            self.commit_success(effect, MutationStatus::Killed);
         }
         assert_eq!(
             self.state.phase(),
@@ -725,10 +743,7 @@ impl Driver {
             } else {
                 None
             },
-            counts: {
-                let (k, s, n) = self.counts();
-                [k, s, n]
-            },
+            counts: self.counts(),
             started: self.started.clone(),
             finished: self.finished.iter().map(Option::is_some).collect(),
         }
@@ -736,9 +751,9 @@ impl Driver {
     pub fn assert_model(&self, row: &Value) {
         assert_eq!(self.snapshot(), Snapshot::from_spec_record(&row["s"]));
     }
-    pub fn counts(&self) -> (u64, u64, u64) {
+    pub fn counts(&self) -> [u64; 4] {
         let s = self.state.summary();
-        (s.killed, s.survived, s.not_run)
+        [s.killed, s.survived, s.not_run, s.timeout]
     }
 }
 /// Observable correspondence shared by direct ITF replay and Quint Connect's state checker.
@@ -747,7 +762,7 @@ pub struct Snapshot {
     pub mode: u8,
     pub stages: Vec<u8>,
     pub drain: Option<(usize, u8)>,
-    pub counts: [u64; 3],
+    pub counts: [u64; 4],
     pub started: Vec<bool>,
     pub finished: Vec<bool>,
 }
@@ -795,7 +810,7 @@ impl Snapshot {
             } else {
                 None
             },
-            counts: [count(1), count(2), count(3)],
+            counts: [1, 2, 3, 4].map(count),
             started: s["started"]
                 .as_array()
                 .unwrap()
@@ -811,7 +826,7 @@ impl Snapshot {
         }
     }
 }
-pub fn check_history(session: bool, jobs: usize, commands: &[Command]) -> (u64, u64, u64) {
+pub fn check_history(session: bool, jobs: usize, commands: &[Command]) -> [u64; 4] {
     let mut driver = Driver::new(session, jobs);
     for &c in commands {
         driver.apply(c);
@@ -835,6 +850,7 @@ pub fn decode(data: &[u8]) -> (bool, usize, Vec<Command>) {
             let survived = b[2] & 1 != 0;
             let value = u64::from_le_bytes(b[3..].try_into().unwrap());
             match b[0] % 11 {
+                0 if b[2] & 3 == 2 => Command::Timeout(w),
                 0 => Command::Ack(w, survived),
                 1 => Command::Global,
                 2..=4 => Command::Stop(b[0] - 2, value),

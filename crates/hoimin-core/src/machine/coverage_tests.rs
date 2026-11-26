@@ -672,6 +672,16 @@ fn completion_propagates_exhaustion_from_its_next_effect(
     #[case] event: fn(EffectId) -> RunEvent,
 ) {
     let (mut state, id) = pending_state(phase, kind);
+    if kind == CompletionKind::WorkerCreated {
+        let preflight = crate::PreflightCompleted {
+            id,
+            requested_workers: 1,
+            per_worker_logical_bytes: 1,
+            aggregate_logical_bytes: 1,
+            fingerprint: None,
+        };
+        state.copy_grant = Some(reserve_workspace_copy(&mut state.budgets, &preflight).unwrap());
+    }
     state.fingerprint = Some(crate::RunFingerprint::from_bytes([0; 32]));
     state.workers.insert(0, WorkerState::Ready(candidate()));
     state.candidate_spool = Some(crate::CandidateSpoolRef {

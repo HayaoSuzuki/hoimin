@@ -18,7 +18,12 @@ fn replay(session: bool, trace: &str) -> (usize, bool) {
                 continue;
             }
             "Ack" => (
-                C::Ack(worker(), quint::number(&payload["outcome"]) == 2),
+                match quint::number(&payload["outcome"]) {
+                    1 => C::Ack(worker(), false),
+                    2 => C::Ack(worker(), true),
+                    4 => C::Timeout(worker()),
+                    other => panic!("unknown worker outcome {other}"),
+                },
                 Verdict::Accepted,
             ),
             "Drain" => (C::Ack(worker(), false), Verdict::Accepted),
@@ -53,6 +58,8 @@ fn replay(session: bool, trace: &str) -> (usize, bool) {
 #[case::trace_completed_stop_step_0(include_str!("../../../formal/quint/traces/workers_completedStopStep_0.itf.json"), true)]
 #[case::trace_start_stop_step_0(include_str!("../../../formal/quint/traces/workers_startStopStep_0.itf.json"), true)]
 #[case::trace_running_stop_step_0(include_str!("../../../formal/quint/traces/workers_runningStopStep_0.itf.json"), true)]
+#[case::timeout(include_str!("../../../formal/quint/traces/workers_timeoutStep_0.itf.json"), true)]
+#[case::timeout_stop(include_str!("../../../formal/quint/traces/workers_timeoutStopStep_0.itf.json"), true)]
 fn quint_workers_matches_public_protocol(#[case] trace: &str, #[case] end_to_end: bool) {
     // Arrange.
     let session = false;
@@ -72,6 +79,8 @@ fn quint_workers_matches_public_protocol(#[case] trace: &str, #[case] end_to_end
 #[case::trace_completed_stop_step_0(include_str!("../../../formal/quint/traces/workers_session_completedStopStep_0.itf.json"), true)]
 #[case::trace_start_stop_step_0(include_str!("../../../formal/quint/traces/workers_session_startStopStep_0.itf.json"), true)]
 #[case::trace_running_stop_step_0(include_str!("../../../formal/quint/traces/workers_session_runningStopStep_0.itf.json"), true)]
+#[case::timeout(include_str!("../../../formal/quint/traces/workers_session_timeoutStep_0.itf.json"), true)]
+#[case::timeout_stop(include_str!("../../../formal/quint/traces/workers_session_timeoutStopStep_0.itf.json"), true)]
 fn quint_workers_session_matches_public_protocol(#[case] trace: &str, #[case] end_to_end: bool) {
     // Arrange.
     let session = true;

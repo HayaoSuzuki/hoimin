@@ -18,6 +18,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "init",
       "SessionSelection::SessionSelectionModel::rows": [],
       "SessionSelection::SessionSelectionModel::selected": {
@@ -38,6 +39,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "append",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -68,6 +70,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "matching_run_complete",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -98,6 +101,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "matching_run_complete",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -128,6 +132,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "1"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "no_incomplete_run",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -158,6 +163,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "matching_run_complete",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -188,6 +194,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "matching_run_complete",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -218,6 +225,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "append",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -257,6 +265,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "1"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "fingerprint_mismatch",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -296,6 +305,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -335,6 +345,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -374,6 +385,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -413,6 +425,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -452,6 +465,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -491,6 +505,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "1"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "fingerprint_mismatch",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -530,6 +545,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -569,6 +585,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "1"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "fingerprint_mismatch",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -608,6 +625,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -647,6 +665,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -686,6 +705,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -725,6 +745,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -764,6 +785,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -803,6 +825,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "1"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "fingerprint_mismatch",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -842,6 +865,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "1"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "fingerprint_mismatch",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -881,6 +905,7 @@
       "SessionSelection::SessionSelectionModel::fingerprint": {
         "#bigint": "0"
       },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
       "SessionSelection::SessionSelectionModel::op": "load",
       "SessionSelection::SessionSelectionModel::rows": [
         {
@@ -914,6 +939,7 @@
     "SessionSelection::SessionSelectionModel::budget",
     "SessionSelection::SessionSelectionModel::complete",
     "SessionSelection::SessionSelectionModel::selected",
-    "SessionSelection::SessionSelectionModel::expected"
+    "SessionSelection::SessionSelectionModel::expected",
+    "SessionSelection::SessionSelectionModel::freshReason"
   ]
 }

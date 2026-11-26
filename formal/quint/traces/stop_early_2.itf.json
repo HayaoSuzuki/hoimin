@@ -20,11 +20,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": false,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": false,
         "interrupted": false,
         "outputs": {
@@ -50,7 +64,7 @@
         "index": 1
       },
       "StopEarly::StopModel::arg": {
-        "#bigint": "1"
+        "#bigint": "4"
       },
       "StopEarly::StopModel::op": "stop",
       "StopEarly::StopModel::s": {
@@ -59,13 +73,27 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "1"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -100,23 +128,37 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "1"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "1"
+          "#bigint": "2"
         },
         "pending": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "phase": {
-          "#bigint": "2"
+          "#bigint": "0"
         },
         "reportAck": false,
         "reported": true,
@@ -132,32 +174,46 @@
         "index": 3
       },
       "StopEarly::StopModel::arg": {
-        "#bigint": "0"
+        "#bigint": "1"
       },
-      "StopEarly::StopModel::op": "reservation",
+      "StopEarly::StopModel::op": "stop",
       "StopEarly::StopModel::s": {
         "cleanupDone": false,
         "completed": true,
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "1"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "1"
+          "#bigint": "2"
         },
         "pending": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "phase": {
-          "#bigint": "2"
+          "#bigint": "0"
         },
         "reportAck": false,
         "reported": true,
@@ -165,7 +221,7 @@
         "stopAfterStart": false
       },
       "StopEarly::StopModel::stops": {
-        "#bigint": "1"
+        "#bigint": "2"
       }
     },
     {
@@ -177,28 +233,42 @@
       },
       "StopEarly::StopModel::op": "ack",
       "StopEarly::StopModel::s": {
-        "cleanupDone": true,
+        "cleanupDone": false,
         "completed": true,
         "copy": false,
         "deliveryFailed": false,
         "disk": {
+          "#bigint": "2"
+        },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
+        "finishCode": {
           "#bigint": "0"
         },
-        "fatal": false,
-        "finishCode": {
+        "finishPublished": false,
+        "firstDisk": {
           "#bigint": "4"
         },
-        "finishPublished": true,
         "incomplete": true,
         "interrupted": false,
         "outputs": {
           "#bigint": "2"
         },
         "pending": {
-          "#bigint": "6"
+          "#bigint": "4"
         },
         "phase": {
-          "#bigint": "1"
+          "#bigint": "2"
         },
         "reportAck": false,
         "reported": true,
@@ -206,7 +276,7 @@
         "stopAfterStart": false
       },
       "StopEarly::StopModel::stops": {
-        "#bigint": "1"
+        "#bigint": "2"
       }
     },
     {
@@ -223,31 +293,45 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
-        },
-        "pending": {
-          "#bigint": "8"
-        },
-        "phase": {
           "#bigint": "3"
         },
-        "reportAck": true,
+        "pending": {
+          "#bigint": "6"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
         "reported": true,
         "started": true,
         "stopAfterStart": false
       },
       "StopEarly::StopModel::stops": {
-        "#bigint": "1"
+        "#bigint": "2"
       }
     },
     {
@@ -264,31 +348,45 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
-        },
-        "pending": {
-          "#bigint": "8"
-        },
-        "phase": {
           "#bigint": "3"
         },
-        "reportAck": true,
+        "pending": {
+          "#bigint": "6"
+        },
+        "phase": {
+          "#bigint": "1"
+        },
+        "reportAck": false,
         "reported": true,
         "started": true,
         "stopAfterStart": false
       },
       "StopEarly::StopModel::stops": {
-        "#bigint": "1"
+        "#bigint": "2"
       }
     },
     {
@@ -296,26 +394,40 @@
         "index": 7
       },
       "StopEarly::StopModel::arg": {
-        "#bigint": "2"
+        "#bigint": "0"
       },
-      "StopEarly::StopModel::op": "stop",
+      "StopEarly::StopModel::op": "ack",
       "StopEarly::StopModel::s": {
         "cleanupDone": true,
         "completed": true,
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -346,17 +458,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -387,17 +513,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -428,17 +568,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -469,17 +623,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -510,17 +678,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -551,17 +733,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -592,17 +788,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -633,17 +843,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -674,17 +898,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -715,17 +953,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -756,17 +1008,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -797,17 +1063,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -838,17 +1118,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -879,17 +1173,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -920,17 +1228,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -961,17 +1283,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"
@@ -1002,17 +1338,31 @@
         "copy": false,
         "deliveryFailed": false,
         "disk": {
-          "#bigint": "0"
+          "#bigint": "2"
         },
-        "fatal": false,
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "filesystem.reserve.reached",
+          "message": "",
+          "owned": {
+            "#bigint": "4096"
+          }
+        },
+        "diskSecondary": [],
+        "fatal": true,
         "finishCode": {
-          "#bigint": "4"
+          "#bigint": "2"
         },
         "finishPublished": true,
+        "firstDisk": {
+          "#bigint": "4"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
-          "#bigint": "2"
+          "#bigint": "3"
         },
         "pending": {
           "#bigint": "8"

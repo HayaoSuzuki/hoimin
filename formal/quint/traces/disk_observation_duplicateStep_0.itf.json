@@ -1,0 +1,967 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "0"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "0"
+          },
+          "reason": {
+            "#bigint": "0"
+          }
+        },
+        "inputs": {
+          "#bigint": "0"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "0"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "0"
+          },
+          "reason": {
+            "#bigint": "0"
+          }
+        },
+        "secondary": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "owned": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "1"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "owned": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "2"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Observe",
+        "value": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "owned": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "DiskObservation::DiskObservationModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "DiskObservation::DiskObservationModel::s": {
+        "accepted": true,
+        "dispatched": {
+          "#bigint": "0"
+        },
+        "first": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "inputs": {
+          "#bigint": "3"
+        },
+        "primary": {
+          "elapsed": {
+            "#bigint": "0"
+          },
+          "free": {
+            "#bigint": "1"
+          },
+          "message": {
+            "#bigint": "0"
+          },
+          "owned": {
+            "#bigint": "2"
+          },
+          "reason": {
+            "#bigint": "2"
+          }
+        },
+        "secondary": [
+          {
+            "elapsed": {
+              "#bigint": "0"
+            },
+            "free": {
+              "#bigint": "1"
+            },
+            "message": {
+              "#bigint": "0"
+            },
+            "owned": {
+              "#bigint": "2"
+            },
+            "reason": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "vars": [
+    "DiskObservation::DiskObservationModel::s",
+    "DiskObservation::DiskObservationModel::dispatch"
+  ]
+}

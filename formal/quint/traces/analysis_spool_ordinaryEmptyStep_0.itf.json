@@ -1,0 +1,721 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": []
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Ready",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "0"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Start",
+        "value": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": []
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "1"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Absent",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "1"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "AnalysisSpool::AnalysisSpoolModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          },
+          "target": {
+            "#bigint": "2"
+          },
+          "truncated": false
+        }
+      },
+      "AnalysisSpool::AnalysisSpoolModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Ordinary",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "target": {
+          "#bigint": "2"
+        },
+        "truncated": false
+      }
+    }
+  ],
+  "vars": [
+    "AnalysisSpool::AnalysisSpoolModel::s",
+    "AnalysisSpool::AnalysisSpoolModel::dispatch"
+  ]
+}

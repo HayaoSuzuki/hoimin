@@ -2,9 +2,9 @@
 //! This does not claim to execute the surrounding public transition protocol.
 use super::{CompletionKind, MachineError, RunState};
 use crate::{
-    CommandArg, EffectFailed, EffectId, ObserveRemainingBudget, OutputConfig, RawRunConfig,
-    RawRunLimits, RemainingBudgetObserved, ResetWorker, ResourceControl, ResourceMode, RunConfig,
-    RunEffect, RunEvent, WorkerReset,
+    Cleanup, CleanupFinished, CommandArg, EffectFailed, EffectId, ObserveRemainingBudget,
+    OutputConfig, RawRunConfig, RawRunLimits, RemainingBudgetObserved, ReservationId, ResetWorker,
+    ResourceControl, ResourceMode, RunConfig, RunEffect, RunEvent, WorkerReset,
 };
 use proptest::prelude::*;
 use rstest::rstest;
@@ -13,15 +13,28 @@ use std::time::Duration;
 #[path = "../../tests/support/quint.rs"]
 mod quint;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum Work {
+    Budget,
+    Reset,
+    Cleanup(Vec<ReservationId>),
+}
+
+#[derive(Clone, Debug)]
+enum Reply {
+    Success(Work),
+    Failure,
+}
+
+#[derive(Clone, Debug)]
 enum Command {
-    Issue(u8),
-    Complete(u64, u8),
+    Issue(Work),
+    Complete(u64, Reply),
     Retire,
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug)]
 enum Slot {
-    Pending(u8),
+    Pending(Work),
     Done,
     Retired,
 }
@@ -31,7 +44,7 @@ struct Snapshot {
     floor: u64,
     gaps: BTreeSet<u64>,
     retired: BTreeSet<u64>,
-    pending: BTreeMap<u64, u8>,
+    pending: BTreeMap<u64, Work>,
 }
 fn fixture() -> RunState {
     let config = RunConfig::try_from(RawRunConfig {
@@ -57,28 +70,40 @@ fn fixture() -> RunState {
         },
     )
 }
-fn apply(state: &mut RunState, command: Command) -> &'static str {
+fn apply(state: &mut RunState, command: &Command) -> &'static str {
     match command {
-        Command::Issue(kind) => {
+        Command::Issue(work) => {
             let id = state.allocate_id().unwrap();
-            let request = match kind {
-                0 => RunEffect::ObserveRemainingBudget(ObserveRemainingBudget { id }),
-                1 => RunEffect::ResetWorker(ResetWorker { id, worker: 0 }),
-                _ => panic!("unsupported request kind"),
+            let request = match work {
+                Work::Budget => RunEffect::ObserveRemainingBudget(ObserveRemainingBudget { id }),
+                Work::Reset => RunEffect::ResetWorker(ResetWorker { id, worker: 0 }),
+                Work::Cleanup(reservations) => RunEffect::Cleanup(Cleanup {
+                    id,
+                    reservations: reservations.clone(),
+                }),
             };
             state.register(&[request]).unwrap();
             "issued"
         }
-        Command::Complete(id, kind) => {
-            let id = EffectId(id);
-            let event = match kind {
-                0 => RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
-                    id,
-                    remaining: Duration::ZERO,
-                }),
-                1 => RunEvent::WorkerReset(WorkerReset { id, worker: 0 }),
-                2 => RunEvent::EffectFailed(EffectFailed::other(id, "fixture", "fixture")),
-                _ => panic!("unsupported completion kind"),
+        Command::Complete(id, reply) => {
+            let id = EffectId(*id);
+            let event = match reply {
+                Reply::Success(Work::Budget) => {
+                    RunEvent::RemainingBudgetObserved(RemainingBudgetObserved {
+                        id,
+                        remaining: Duration::ZERO,
+                    })
+                }
+                Reply::Success(Work::Reset) => RunEvent::WorkerReset(WorkerReset { id, worker: 0 }),
+                Reply::Success(Work::Cleanup(reservations)) => {
+                    RunEvent::CleanupFinished(CleanupFinished {
+                        id,
+                        released_reservations: reservations.clone(),
+                    })
+                }
+                Reply::Failure => {
+                    RunEvent::EffectFailed(EffectFailed::other(id, "fixture", "fixture"))
+                }
             };
             match state.accept_completion(&event) {
                 Ok(Some(_)) => "ok",
@@ -87,6 +112,22 @@ fn apply(state: &mut RunState, command: Command) -> &'static str {
                 Err(MachineError::UnknownEffect(_)) => "unknown",
                 Err(MachineError::EffectNotPending(_)) => "not_pending",
                 Err(MachineError::WrongCompletion { .. }) => "wrong",
+                Err(MachineError::CleanupReservationMismatch {
+                    id: rejected,
+                    expected,
+                    received,
+                }) => {
+                    let Reply::Success(Work::Cleanup(reservations)) = reply else {
+                        panic!("unexpected reservation mismatch for {reply:?}");
+                    };
+                    assert_eq!(rejected, id);
+                    assert_eq!(&received, reservations);
+                    assert_eq!(
+                        state.pending[&id].cleanup_reservations.as_ref(),
+                        Some(&expected)
+                    );
+                    "reservation_mismatch"
+                }
                 other => panic!("unexpected fixture completion: {other:?}"),
             }
         }
@@ -109,8 +150,11 @@ fn actual(state: &RunState) -> Snapshot {
                 (
                     id.0,
                     match pending.kind() {
-                        CompletionKind::RemainingBudgetObserved => 0,
-                        CompletionKind::WorkerReset => 1,
+                        CompletionKind::RemainingBudgetObserved => Work::Budget,
+                        CompletionKind::WorkerReset => Work::Reset,
+                        CompletionKind::CleanupFinished => {
+                            Work::Cleanup(pending.cleanup_reservations.as_ref().unwrap().clone())
+                        }
                         other => panic!("unexpected fixture pending {other:?}"),
                     },
                 )
@@ -143,20 +187,20 @@ fn expected(slots: &[Slot]) -> Snapshot {
             .collect(),
         pending: numbered()
             .filter_map(|(id, slot)| match slot {
-                Slot::Pending(kind) => Some((id, *kind)),
+                Slot::Pending(work) => Some((id, work.clone())),
                 _ => None,
             })
             .collect(),
     }
 }
-fn journal(slots: &mut Vec<Slot>, command: Command) -> &'static str {
+fn journal(slots: &mut Vec<Slot>, command: &Command) -> &'static str {
     match command {
-        Command::Issue(kind) => {
-            slots.push(Slot::Pending(kind));
+        Command::Issue(work) => {
+            slots.push(Slot::Pending(work.clone()));
             "issued"
         }
-        Command::Complete(id, kind) => {
-            if id == 0 {
+        Command::Complete(id, reply) => {
+            if *id == 0 {
                 return "duplicate";
             }
             match usize::try_from(id - 1)
@@ -167,15 +211,32 @@ fn journal(slots: &mut Vec<Slot>, command: Command) -> &'static str {
                 Some(Slot::Retired) => "retired",
                 Some(Slot::Done) => "duplicate",
                 Some(slot @ Slot::Pending(_)) => {
-                    let Slot::Pending(wanted) = *slot else {
+                    let Slot::Pending(wanted) = slot else {
                         unreachable!()
                     };
-                    if kind != 2 && kind != wanted {
-                        "wrong"
-                    } else {
+                    let result = match (&*wanted, reply) {
+                        (_, Reply::Failure)
+                        | (Work::Budget, Reply::Success(Work::Budget))
+                        | (Work::Reset, Reply::Success(Work::Reset)) => "ok",
+                        (Work::Cleanup(expected), Reply::Success(Work::Cleanup(received))) => {
+                            // Require one copy of each expected item without canonicalizing sets.
+                            if expected.len() == received.len()
+                                && expected.iter().enumerate().all(|(index, id)| {
+                                    !expected[..index].contains(id)
+                                        && received.iter().filter(|item| *item == id).count() == 1
+                                })
+                            {
+                                "ok"
+                            } else {
+                                "reservation_mismatch"
+                            }
+                        }
+                        _ => "wrong",
+                    };
+                    if result == "ok" {
                         *slot = Slot::Done;
-                        "ok"
                     }
+                    result
                 }
             }
         }
@@ -194,14 +255,32 @@ fn check_history(commands: &[Command]) -> Vec<&'static str> {
     let mut slots = Vec::new();
     let mut results = Vec::new();
     for command in commands {
-        let want = journal(&mut slots, *command);
-        let got = apply(&mut state, *command);
+        let want = journal(&mut slots, command);
+        let got = apply(&mut state, command);
         assert_eq!(got, want, "{command:?}");
         assert_eq!(actual(&state), expected(&slots), "{command:?}");
         results.push(got);
     }
     results
 }
+fn reservations_from_model(row: &serde_json::Value) -> Vec<ReservationId> {
+    row["reservations"]
+        .as_array()
+        .expect("ITF reservation list")
+        .iter()
+        .map(|id| ReservationId(quint::number(id)))
+        .collect()
+}
+
+fn work_from_model(kind: u64, reservations: Vec<ReservationId>) -> Work {
+    match kind {
+        0 => Work::Budget,
+        1 => Work::Reset,
+        3 => Work::Cleanup(reservations),
+        _ => panic!("unknown model request kind {kind}"),
+    }
+}
+
 fn model_snapshot(state: &serde_json::Value) -> Snapshot {
     Snapshot {
         next: quint::number(&state["nextId"]),
@@ -219,7 +298,7 @@ fn model_snapshot(state: &serde_json::Value) -> Snapshot {
             .map(|row| {
                 (
                     quint::number(&row["id"]),
-                    u8::try_from(quint::number(&row["kind"])).unwrap(),
+                    work_from_model(quint::number(&row["kind"]), reservations_from_model(row)),
                 )
             })
             .collect(),
@@ -231,12 +310,23 @@ fn replay(trace: &str) -> Result<(), String> {
     let mut state = fixture();
     for row in &states {
         let id = quint::number(&row["id"]);
-        let kind = u8::try_from(quint::number(&row["kind"])).unwrap();
+        let kind = quint::number(&row["kind"]);
+        let reservations = reservations_from_model(row);
         let got = match row["op"].as_str().unwrap() {
             "init" => "init",
-            "issue" => apply(&mut state, Command::Issue(kind)),
-            "complete" => apply(&mut state, Command::Complete(id, kind)),
-            "retire" => apply(&mut state, Command::Retire),
+            "issue" => apply(
+                &mut state,
+                &Command::Issue(work_from_model(kind, reservations)),
+            ),
+            "complete" => {
+                let reply = if kind == 2 {
+                    Reply::Failure
+                } else {
+                    Reply::Success(work_from_model(kind, reservations))
+                };
+                apply(&mut state, &Command::Complete(id, reply))
+            }
+            "retire" => apply(&mut state, &Command::Retire),
             other => return Err(format!("unknown action {other}")),
         };
         if got != row["result"].as_str().unwrap() || actual(&state) != model_snapshot(row) {
@@ -246,11 +336,30 @@ fn replay(trace: &str) -> Result<(), String> {
     Ok(())
 }
 
+use Command::{Complete, Issue, Retire};
+use Reply::{Failure, Success};
+use Work::{Budget, Reset};
+
+fn cleanup(ids: &[u64]) -> Work {
+    Work::Cleanup(ids.iter().copied().map(ReservationId).collect())
+}
+
 #[rstest]
-#[case::out_of_order(&[Command::Issue(0),Command::Issue(1),Command::Complete(2,1),Command::Complete(1,0)], &["issued","issued","ok","ok"])]
-#[case::wrong_kind_and_failure(&[Command::Issue(0),Command::Complete(1,1),Command::Complete(1,2),Command::Complete(1,0)], &["issued","wrong","ok","duplicate"])]
-#[case::late_retired_and_new_issue(&[Command::Issue(0),Command::Retire,Command::Complete(1,0),Command::Issue(1),Command::Complete(2,1),Command::Complete(1,2)], &["issued","retired_all","retired","issued","ok","retired"])]
-#[case::unknown(&[Command::Complete(u64::MAX,0),Command::Complete(0,0)], &["unknown","duplicate"])]
+#[case::out_of_order(&[Issue(Budget),Issue(Reset),Complete(2,Success(Reset)),Complete(1,Success(Budget))], &["issued","issued","ok","ok"])]
+#[case::wrong_kind_and_failure(&[Issue(Budget),Complete(1,Success(Reset)),Complete(1,Failure),Complete(1,Success(Budget))], &["issued","wrong","ok","duplicate"])]
+#[case::late_retired_and_new_issue(&[Issue(Budget),Retire,Complete(1,Success(Budget)),Issue(Reset),Complete(2,Success(Reset)),Complete(1,Failure)], &["issued","retired_all","retired","issued","ok","retired"])]
+#[case::unknown(&[Complete(u64::MAX,Success(Budget)),Complete(0,Success(Budget))], &["unknown","duplicate"])]
+#[case::cleanup_retry(
+    &[Issue(cleanup(&[1,2])),Issue(Budget),Complete(2,Success(Budget)),
+      Complete(1,Success(cleanup(&[1,1,2]))),
+      Complete(1,Success(cleanup(&[1]))),Complete(1,Success(cleanup(&[1,3]))),
+      Complete(1,Success(cleanup(&[2,1]))),Complete(1,Success(cleanup(&[2,1])))],
+    &["issued","issued","ok","reservation_mismatch","reservation_mismatch","reservation_mismatch","ok","duplicate"]
+)]
+#[case::cleanup_failure(
+    &[Issue(cleanup(&[1,2])),Complete(1,Failure),Complete(1,Success(cleanup(&[2,1])))],
+    &["issued","ok","duplicate"]
+)]
 fn literal_completion_history(#[case] commands: &[Command], #[case] expected: &[&str]) {
     // Arrange.
     let history = commands;
@@ -259,11 +368,20 @@ fn literal_completion_history(#[case] commands: &[Command], #[case] expected: &[
     // Assert.
     assert_eq!(result, expected);
 }
+fn work() -> impl Strategy<Value = Work> {
+    prop_oneof![
+        Just(Budget),
+        Just(Reset),
+        prop::collection::vec(prop_oneof![0..6u64, Just(u64::MAX)], 0..5)
+            .prop_map(|ids| cleanup(&ids)),
+    ]
+}
 fn command() -> impl Strategy<Value = Command> {
     prop_oneof![
-        5 => (0..2u8).prop_map(Command::Issue),
-        8 => (prop_oneof![0..20u64,Just(u64::MAX)],0..3u8).prop_map(|(id,kind)|Command::Complete(id,kind)),
-        1 => Just(Command::Retire),
+        5 => work().prop_map(Issue),
+        8 => (prop_oneof![0..20u64,Just(u64::MAX)], prop_oneof![Just(Failure), work().prop_map(Success)])
+            .prop_map(|(id,reply)| Complete(id,reply)),
+        1 => Just(Retire),
     ]
 }
 proptest! {
@@ -284,6 +402,7 @@ proptest! {
 #[case::trace_3(include_str!("../../../../formal/quint/traces/completion_3.itf.json"))]
 #[case::gap_compaction(include_str!("../../../../formal/quint/traces/completion_gapStep_0.itf.json"))]
 #[case::wrong_kind_and_failure(include_str!("../../../../formal/quint/traces/completion_wrongKindStep_0.itf.json"))]
+#[case::cleanup_retry(include_str!("../../../../formal/quint/traces/completion_cleanupStep_0.itf.json"))]
 fn generated_model_matches_internal_completion_ledger(#[case] trace: &str) {
     // Arrange.
     let oracle = trace;

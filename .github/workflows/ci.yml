@@ -301,7 +301,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.formal == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The finite registry takes about 10 minutes before Connect and Rust replay.
+    timeout-minutes: 25
     env:
       QUINT_HOME: ${{ github.workspace }}/formal/quint/_build/toolchain
     steps:
@@ -339,15 +340,17 @@ jobs:
           mkdir -p "$QUINT_HOME/apalache-dist-0.62.4"
           tar -xzf "$archive" -C "$QUINT_HOME/apalache-dist-0.62.4"
       - name: Check finite model, negative control, and oracle freshness
-        run: python tools/verify_quint.py
+        run: python -u tools/verify_quint.py
       - name: Check live Quint Connect correspondence and generated seeds
         run: python tools/verify_quint_connect.py
       - name: Replay SQLite lifecycle and resume selection histories
         run: cargo test --locked -p hoimin-cli --test quint_session
       - name: Replay model traces and check generated histories
-        run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model --test quint_itf --test quint_report --test report_model --test quint_disk --test disk_model --test quint_stop --test stop_model --test quint_workers --test workers_model
+        run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model --test quint_itf --test quint_report --test report_model --test quint_disk --test quint_disk_observation --test disk_model --test quint_stop --test stop_model --test quint_workers --test workers_model
       - name: Check internal completion-ledger correspondence
         run: cargo test --locked -p hoimin-core --lib machine::quint_completion
+      - name: Replay public candidate-loading protocols
+        run: cargo test --locked -p hoimin-core --test machine quint_
       - name: Check cleanup admission and actual OS ownership
         run: |
           cargo test --locked -p hoimin-cli --lib shell::finalization::quint

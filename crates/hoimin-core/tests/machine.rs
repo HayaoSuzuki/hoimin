@@ -17,6 +17,42 @@ use hoimin_core::{
 };
 use proptest::prelude::*;
 
+#[path = "support/quint.rs"]
+#[allow(dead_code)] // These public transition adapters read records and lists.
+mod quint;
+#[path = "machine/quint_admission.rs"]
+mod quint_admission;
+#[path = "machine/quint_analysis.rs"]
+mod quint_analysis;
+#[path = "machine/quint_baseline.rs"]
+mod quint_baseline;
+#[path = "machine/quint_copy_preflight.rs"]
+mod quint_copy_preflight;
+#[path = "machine/quint_explicit.rs"]
+mod quint_explicit;
+#[path = "machine/quint_finish_ack.rs"]
+mod quint_finish_ack;
+#[path = "machine/quint_integrity.rs"]
+mod quint_integrity;
+#[path = "machine/quint_ordered.rs"]
+mod quint_ordered;
+#[path = "machine/quint_ordered_drain.rs"]
+mod quint_ordered_drain;
+#[path = "machine/quint_process_result.rs"]
+mod quint_process_result;
+#[path = "machine/quint_resume.rs"]
+mod quint_resume;
+#[path = "machine/quint_session_startup.rs"]
+mod quint_session_startup;
+#[path = "machine/quint_spool.rs"]
+mod quint_spool;
+#[path = "machine/quint_verify_budget.rs"]
+mod quint_verify_budget;
+#[path = "machine/quint_worker_failure.rs"]
+mod quint_worker_failure;
+#[path = "machine/quint_worker_grant.rs"]
+mod quint_worker_grant;
+
 #[test]
 fn baseline_success_requires_owned_restoration_before_dispatch() {
     // Arrange.
@@ -6593,6 +6629,20 @@ fn waiting_for_baseline() -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffect>) {
+    waiting_for_baseline_with_targets(
+        initial_state,
+        vec![TargetSlice {
+            path: "src/calc.py".into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }],
+    )
+}
+
+fn waiting_for_baseline_with_targets(
+    initial_state: RunState,
+    targets: Vec<TargetSlice>,
+) -> (RunState, Vec<RunEffect>) {
     let (state, effects) =
         transition(initial_state, RunEvent::StartRequested(StartRequested)).unwrap();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
@@ -6602,11 +6652,7 @@ fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffec
         state,
         RunEvent::TargetsResolved(TargetsResolved {
             id: resolve_id,
-            targets: vec![TargetSlice {
-                path: "src/calc.py".into(),
-                lines: Vec::new(),
-                symbols: Vec::new(),
-            }],
+            targets,
         }),
     )
     .unwrap();
@@ -6654,6 +6700,16 @@ fn waiting_for_top_budget_observation() -> (RunState, Vec<RunEffect>) {
     let mut baseline = process_finished(baseline_id, ProcessTermination::Exit(0));
     baseline.elapsed = Duration::from_secs(17);
     let (state, effects) = transition(state, RunEvent::BaselineFinished(baseline)).unwrap();
+    let output_id = find_effect(&effects, |effect| {
+        matches!(effect, RunEffect::EmitOutput(_))
+    })
+    .id();
+    let (state, emitted) = transition(
+        state,
+        RunEvent::OutputEmitted(OutputEmitted { id: output_id }),
+    )
+    .unwrap();
+    assert_eq!(emitted, Vec::new());
     complete_baseline_restoration(state, &effects)
 }
 

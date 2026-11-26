@@ -19,7 +19,7 @@ enum Command {
     Request,
     Defer,
     Complete(u8),
-    Available(bool, u64),
+    Available(Option<[Option<u64>; 2]>),
 }
 struct Harness {
     state: ExecutionFinalization,
@@ -94,21 +94,22 @@ impl Harness {
             Command::Request => decision(self.state.request_cleanup()),
             Command::Defer => decision(self.state.defer_cleanup("model-root".into())),
             Command::Complete(kind) => decision(self.state.complete_cleanup(record(kind), "model")),
-            Command::Available(success, bytes) => {
+            Command::Available(readings) => {
                 let queries = &self.queries;
                 let result = self.state.observe_end_available(|| {
                     queries.set(queries.get() + 1);
-                    if success {
-                        Ok(BTreeMap::from([(FilesystemKey(0), bytes)]))
-                    } else {
-                        Err(io::Error::other("model"))
-                    }
+                    let [first, second] = readings.ok_or_else(|| io::Error::other("model"))?;
+                    Ok(BTreeMap::from_iter(
+                        [(FilesystemKey(0), first), (FilesystemKey(1), second)]
+                            .into_iter()
+                            .filter_map(|(key, bytes)| bytes.map(|bytes| (key, bytes))),
+                    ))
                 });
                 if result.is_ok() { "ok" } else { "error" }
             }
         }
     }
-    fn view(&self) -> ([u64; 8], Option<u64>, Option<u64>) {
+    fn view(&self) -> ([u64; 8], Option<u64>, [Option<u64>; 3]) {
         let state = &self.state;
         let snapshot = state.snapshot();
         let measurement = match state.measurement {
@@ -129,13 +130,7 @@ impl Harness {
         let availability = match &state.end_available {
             EndAvailable::NotObserved => 0,
             EndAvailable::Unavailable => 1,
-            EndAvailable::Available(values) => {
-                if values.get(&FilesystemKey(0)) == Some(&0) {
-                    2
-                } else {
-                    3
-                }
-            }
+            EndAvailable::Available(_) => 2,
         };
         let mut report = summary();
         state.project_summary(&mut report);
@@ -151,7 +146,7 @@ impl Harness {
                 self.queries.get(),
             ],
             report.disk.removed_logical_bytes,
-            state.end_available_bytes(FilesystemKey(0)),
+            [0, 1, 2].map(|key| state.end_available_bytes(FilesystemKey(key))),
         )
     }
 }
@@ -173,9 +168,6 @@ fn history(commands: &[Command]) -> Vec<&'static str> {
         if matches!(command, Command::Measure(2, _)) {
             assert_eq!(after.0[3], 3);
             assert_eq!(after.1, None);
-        }
-        if matches!(command, Command::Available(false, _)) && before.0[6] == 0 {
-            assert_eq!(after.2, None, "failed free-space reading is not zero");
         }
         if before.0[3] == 3 {
             assert_eq!(after.0[3], 3, "unjoined scan must not be repaired");
@@ -207,10 +199,12 @@ fn history(commands: &[Command]) -> Vec<&'static str> {
         {
             assert_eq!(after.1, Some(*bytes));
         }
-        if let Command::Available(true, bytes) = command
+        if let Command::Available(readings) = command
             && before.0[6] == 0
         {
-            assert_eq!(after.2, Some(*bytes));
+            let [first, second] = readings.unwrap_or([None, None]);
+            assert_eq!(after.2, [first, second, None]);
+            assert_eq!(after.0[7], 1, "first free-space query must execute");
         }
         outcomes.push(result);
     }
@@ -236,10 +230,15 @@ fn replay(trace: &str) -> Result<(), String> {
             "request" => actual.apply(Command::Request),
             "defer" => actual.apply(Command::Defer),
             "complete" => actual.apply(Command::Complete(value)),
-            "available" => actual.apply(Command::Available(
-                value != 0,
-                u64::from(value.saturating_sub(1)),
-            )),
+            "available" => actual.apply(Command::Available(match value {
+                0 => None,
+                1 => Some([Some(0), None]),
+                2 => Some([Some(1), None]),
+                3 => Some([None, Some(0)]),
+                4 => Some([Some(0), Some(1)]),
+                5 => Some([None, None]),
+                _ => panic!("unknown free-space observation"),
+            })),
             other => return Err(format!("unknown action {other}")),
         };
         let actual_view = actual.view();
@@ -263,10 +262,12 @@ fn replay(trace: &str) -> Result<(), String> {
             .as_bool()
             .unwrap()
             .then(|| quint::number(&row["removedBytes"]));
-        let available = row["availableKnown"]
-            .as_bool()
-            .unwrap()
-            .then(|| quint::number(&row["availableBytes"]));
+        let mut available = [None; 3];
+        for entry in row["availableReadings"]["#map"].as_array().unwrap() {
+            let index = usize::try_from(quint::number(&entry[0])).unwrap();
+            assert!(index < 2, "unexpected model filesystem key");
+            assert_eq!(available[index].replace(quint::number(&entry[1])), None);
+        }
         if got != row["result"].as_str().unwrap() || actual_view != (expected, removed, available) {
             return Err(format!("{row}: {got}, {actual_view:?}"));
         }
@@ -276,7 +277,9 @@ fn replay(trace: &str) -> Result<(), String> {
 #[rstest]
 #[case::unjoined_cannot_repair(&[Command::Measure(2,0),Command::Measure(0,1),Command::Outer(7),Command::Request],&["error","ok","no","no"])]
 #[case::refused_attempt_terminal(&[Command::Request,Command::Outer(7),Command::Request],&["no","yes","no"])]
-#[case::free_space_no_retry(&[Command::Available(false,0),Command::Available(true,0)],&["error","ok"])]
+#[case::free_space_no_retry(&[Command::Available(None),Command::Available(Some([Some(0),None]))],&["error","ok"])]
+#[case::empty_free_space_no_retry(&[Command::Available(Some([None,None])),Command::Available(Some([Some(0),None]))],&["ok","ok"])]
+#[case::free_space_is_per_filesystem(&[Command::Available(Some([Some(0),Some(u64::MAX)])),Command::Available(Some([Some(1),None]))],&["ok","ok"])]
 #[case::cleanup_measured_zero(&[Command::Outer(7),Command::Measure(0,0),Command::Request,Command::Complete(2)],&["yes","ok","yes","yes"])]
 #[case::partial_inner_drains(&[Command::Inner(0),Command::Inner(7),Command::Outer(7),Command::Request],&["no","error","no","no"])]
 fn literal_finalization_history(#[case] commands: &[Command], #[case] expected: &[&str]) {
@@ -296,11 +299,12 @@ fn command() -> impl Strategy<Value = Command> {
         Just(Command::Request),
         Just(Command::Defer),
         (2..5u8).prop_map(Command::Complete),
-        (
-            any::<bool>(),
-            prop_oneof![Just(0), Just(u64::MAX), any::<u64>()]
-        )
-            .prop_map(|(s, n)| Command::Available(s, n))
+        prop::option::of(prop::array::uniform2(prop::option::of(prop_oneof![
+            Just(0),
+            Just(u64::MAX),
+            any::<u64>()
+        ])))
+        .prop_map(Command::Available)
     ]
 }
 proptest! {
@@ -323,6 +327,8 @@ proptest! {
 #[case::trace_refused_step_0(include_str!("../../../../../formal/quint/traces/finalization_refusedStep_0.itf.json"))]
 #[case::trace_unjoined_step_0(include_str!("../../../../../formal/quint/traces/finalization_unjoinedStep_0.itf.json"))]
 #[case::trace_available_step_0(include_str!("../../../../../formal/quint/traces/finalization_availableStep_0.itf.json"))]
+#[case::paired_available(include_str!("../../../../../formal/quint/traces/finalization_pairedAvailableStep_0.itf.json"))]
+#[case::missing_available(include_str!("../../../../../formal/quint/traces/finalization_missingAvailableStep_0.itf.json"))]
 fn model_matches_finalization_methods(#[case] trace: &str) {
     // Arrange.
     let oracle = trace;

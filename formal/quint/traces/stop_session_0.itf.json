@@ -20,11 +20,25 @@
         "disk": {
           "#bigint": "0"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "",
+          "message": "",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": false,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "0"
+        },
         "incomplete": false,
         "interrupted": false,
         "outputs": {
@@ -50,7 +64,7 @@
         "index": 1
       },
       "StopSession::StopModel::arg": {
-        "#bigint": "2"
+        "#bigint": "3"
       },
       "StopSession::StopModel::op": "stop",
       "StopSession::StopModel::s": {
@@ -61,11 +75,25 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -91,7 +119,7 @@
         "index": 2
       },
       "StopSession::StopModel::arg": {
-        "#bigint": "1"
+        "#bigint": "2"
       },
       "StopSession::StopModel::op": "stop",
       "StopSession::StopModel::s": {
@@ -102,11 +130,25 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -143,11 +185,30 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -184,11 +245,30 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -225,11 +305,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -266,11 +369,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -307,11 +433,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -348,11 +497,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -389,11 +561,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -430,11 +625,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -471,11 +689,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -512,11 +753,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -553,11 +817,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -594,11 +881,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -635,11 +945,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -676,11 +1009,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -717,11 +1073,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -758,11 +1137,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -799,11 +1201,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -840,11 +1265,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -881,11 +1329,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -922,11 +1393,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -963,11 +1457,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {
@@ -1004,11 +1521,34 @@
         "disk": {
           "#bigint": "1"
         },
+        "diskEvidence": {
+          "available": {
+            "#bigint": "0"
+          },
+          "code": "disk.measurement.failed",
+          "message": "meter failed",
+          "owned": {
+            "#bigint": "0"
+          }
+        },
+        "diskSecondary": [
+          {
+            "code": "report.io",
+            "message": "write: fixture"
+          },
+          {
+            "code": "fixture.failed",
+            "message": "fixture"
+          }
+        ],
         "fatal": true,
         "finishCode": {
           "#bigint": "0"
         },
         "finishPublished": false,
+        "firstDisk": {
+          "#bigint": "3"
+        },
         "incomplete": true,
         "interrupted": false,
         "outputs": {

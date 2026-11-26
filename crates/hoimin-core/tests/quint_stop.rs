@@ -15,7 +15,15 @@ fn replay(entry: E, trace: &str) -> usize {
                 driver.assert_model(state);
                 continue;
             }
-            "stop" => (C::Stop(arg, 1024), Verdict::Accepted),
+            "stop" => (
+                match arg {
+                    0..=2 => C::Stop(arg, 1024),
+                    3 => C::DiskMeasurementFailed,
+                    4 => C::Stop(2, 0),
+                    other => panic!("unknown model stop input {other}"),
+                },
+                Verdict::Accepted,
+            ),
             "ack" => (C::Ack, Verdict::Accepted),
             "fail" => (C::Fail(arg == 1), Verdict::Accepted),
             "retired" => (C::Retired, Verdict::Retired),
@@ -63,6 +71,7 @@ fn quint_stop_early_matches_public_transition(
 #[case::trace_failure_step_0(include_str!("../../../formal/quint/traces/stop_copy_failureStep_0.itf.json"))]
 #[case::terminal_stop(include_str!("../../../formal/quint/traces/stop_copy_terminalStep_0.itf.json"))]
 #[case::unacknowledged_start_final_failure(include_str!("../../../formal/quint/traces/stop_copy_finalFailureStep_0.itf.json"))]
+#[case::cleanup_failure_then_cancel(include_str!("../../../formal/quint/traces/stop_copy_cleanupCancelStep_0.itf.json"))]
 fn quint_stop_copy_matches_public_transition(#[case] trace: &str) {
     // Arrange.
     let entry = E::Report;
@@ -83,6 +92,10 @@ fn quint_stop_copy_matches_public_transition(#[case] trace: &str) {
 #[case::trace_failure_step_0(include_str!("../../../formal/quint/traces/stop_session_failureStep_0.itf.json"))]
 #[case::terminal_stop(include_str!("../../../formal/quint/traces/stop_session_terminalStep_0.itf.json"))]
 #[case::unacknowledged_start_final_failure(include_str!("../../../formal/quint/traces/stop_session_finalFailureStep_0.itf.json"))]
+#[case::reserve_evidence(include_str!("../../../formal/quint/traces/stop_session_reserveEvidenceStep_0.itf.json"))]
+#[case::measurement_evidence(include_str!("../../../formal/quint/traces/stop_session_measurementEvidenceStep_0.itf.json"))]
+#[case::ordered_diagnostics(include_str!("../../../formal/quint/traces/stop_session_diagnosticEvidenceStep_0.itf.json"))]
+#[case::cleanup_failure_then_disk_stop(include_str!("../../../formal/quint/traces/stop_session_cleanupDiskStep_0.itf.json"))]
 fn quint_stop_session_matches_public_transition(#[case] trace: &str) {
     // Arrange.
     let entry = E::Session;
