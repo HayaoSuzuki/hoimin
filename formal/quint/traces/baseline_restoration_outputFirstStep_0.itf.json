@@ -1,0 +1,571 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "0"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Restoring",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Output",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "0"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Restoring",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "BaselineRestoration::BaselineRestorationModel::dispatch": {
+        "tag": "Reset",
+        "value": {
+          "#tup": []
+        }
+      },
+      "BaselineRestoration::BaselineRestorationModel::s": {
+        "analyses": {
+          "#bigint": "1"
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "output": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reset": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    }
+  ],
+  "vars": [
+    "BaselineRestoration::BaselineRestorationModel::s",
+    "BaselineRestoration::BaselineRestorationModel::dispatch"
+  ]
+}

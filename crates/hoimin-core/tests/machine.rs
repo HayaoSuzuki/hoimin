@@ -20,6 +20,8 @@ use proptest::prelude::*;
 #[path = "support/quint.rs"]
 #[allow(dead_code)] // These public transition adapters read records and lists.
 mod quint;
+#[path = "machine/quint_baseline.rs"]
+mod quint_baseline;
 #[path = "machine/quint_ordered.rs"]
 mod quint_ordered;
 #[path = "machine/quint_ordered_drain.rs"]

@@ -35,6 +35,19 @@ class Model:
 
 MODELS = (
     Model(
+        "baseline_restoration.qnt",
+        "BaselineRestoration",
+        "baseline_restoration",
+        "BaselineRestorationUsesOutput",
+        (
+            "outputFirstStep",
+            "resetFirstStep",
+            "rejectionsStep",
+            "failureStep",
+            "stopStep",
+        ),
+    ),
+    Model(
         "ordered_discovery.qnt",
         "OrderedDiscovery",
         "ordered_discovery",

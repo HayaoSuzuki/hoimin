@@ -354,10 +354,23 @@ durable lookup content separately.
 cargo test --locked -p hoimin-core --test machine quint_resume
 ```
 
+## Baseline restoration
+
+`BaselineRestoration` starts after a successful baseline with both the
+baseline output and worker reset pending. The two acknowledgements may arrive
+in either order. Only the reset releases one analysis request. The model
+also checks wrong worker and completion kinds, duplicate acknowledgements,
+and cancellation or effect failure before restoration. The negative model
+releases analysis on output acknowledgement and violates `Safety`.
+
+Nine ITF histories replay the public transition with two workers and one
+target. They compare phase, pending and retired effect IDs, exact callback
+errors, exit status, and the initial analysis or finalization effect.
+
 ## Active workers and Quint Connect
 
-The registry checks twenty-one finite configurations, fifteen negative controls and
-154 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks twenty-two finite configurations, sixteen negative controls and
+163 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;
