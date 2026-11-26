@@ -400,13 +400,37 @@ warning still awaits acknowledgement.
 
 ```sh
 cargo test --locked -p hoimin-core --test machine quint_baseline
+cargo test --locked -p hoimin-core --test machine quint_verify_budget
 cargo test --locked -p hoimin-core --test machine quint_analysis
+```
+
+## Analysis spool handoff
+
+`AnalysisSpool` models two ordered source targets on one worker in a
+regular run or a run with one explicitly selected candidate. An untruncated
+first reply without a spool advances to the second target. At truncation,
+an ordinary run verifies originals, and explicit selection proceeds with
+the available populated spool. Both record an incomplete outcome. Explicit
+selection rejects a missing final spool or an empty spool with a selected
+candidate still missing. The retry schedule samples corrected replies to
+the same request following both errors. A deadline between targets retires
+the outstanding analysis request. The negative model reads candidates
+after truncation in an ordinary run.
+
+Ten ITF histories compare target paths, the final-target flag, the
+candidate spool token and record count, exit status, and exact callback
+errors via public transitions. They end at candidate reading or final
+verification.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_spool
 ```
 
 ## Active workers and Quint Connect
 
-The registry checks twenty-four finite configurations, eighteen negative
-controls and 183 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks twenty-five finite configurations, nineteen negative
+controls and 193 committed histories. `Workers` and `WorkersSession` add
+two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

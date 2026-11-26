@@ -30,6 +30,8 @@ mod quint_ordered;
 mod quint_ordered_drain;
 #[path = "machine/quint_resume.rs"]
 mod quint_resume;
+#[path = "machine/quint_spool.rs"]
+mod quint_spool;
 #[path = "machine/quint_verify_budget.rs"]
 mod quint_verify_budget;
 
@@ -6609,6 +6611,20 @@ fn waiting_for_baseline() -> (RunState, Vec<RunEffect>) {
 }
 
 fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffect>) {
+    waiting_for_baseline_with_targets(
+        initial_state,
+        vec![TargetSlice {
+            path: "src/calc.py".into(),
+            lines: Vec::new(),
+            symbols: Vec::new(),
+        }],
+    )
+}
+
+fn waiting_for_baseline_with_targets(
+    initial_state: RunState,
+    targets: Vec<TargetSlice>,
+) -> (RunState, Vec<RunEffect>) {
     let (state, effects) =
         transition(initial_state, RunEvent::StartRequested(StartRequested)).unwrap();
     let resolve_id = effect_id(find_effect(&effects, |effect| {
@@ -6618,11 +6634,7 @@ fn waiting_for_baseline_from(initial_state: RunState) -> (RunState, Vec<RunEffec
         state,
         RunEvent::TargetsResolved(TargetsResolved {
             id: resolve_id,
-            targets: vec![TargetSlice {
-                path: "src/calc.py".into(),
-                lines: Vec::new(),
-                symbols: Vec::new(),
-            }],
+            targets,
         }),
     )
     .unwrap();

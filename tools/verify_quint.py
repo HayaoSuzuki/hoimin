@@ -35,6 +35,20 @@ class Model:
 
 MODELS = (
     Model(
+        "analysis_spool.qnt",
+        "AnalysisSpool",
+        "analysis_spool",
+        "AnalysisSpoolReadsTruncation",
+        (
+            "ordinaryTruncatedStep",
+            "explicitTruncatedStep",
+            "ordinaryEmptyStep",
+            "ordinaryNoSpoolStep",
+            "explicitRetryStep",
+            "deadlineStep",
+        ),
+    ),
+    Model(
         "verify_budget_gate.qnt",
         "VerifyBudgetGate",
         "verify_budget_gate",
