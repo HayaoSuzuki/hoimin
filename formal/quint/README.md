@@ -426,10 +426,24 @@ verification.
 cargo test --locked -p hoimin-core --test machine quint_spool
 ```
 
+## Explicit candidate streaming
+
+`ExplicitStream` scans up to four records on one worker with two requested
+IDs. It applies each selected ID once in discovery order, skipping an
+unrequested ID and repeat appearances. End of spool returns the first
+unmatched ID until both are discovered. A wrong-worker reply leaves the
+read pending. The negative model applies a repeated selected ID again.
+
+Seven ITF histories compare effects, dispatch order, counts, and exact
+errors through public transitions. The `Complete` action groups one
+successful apply, killed execution, report acknowledgements, and reset.
+`partialStep` supplies a corrected reply to the same read after premature
+end of spool.
+
 ## Active workers and Quint Connect
 
-The registry checks twenty-five finite configurations, nineteen negative
-controls and 193 committed histories. `Workers` and `WorkersSession` add
+The registry checks twenty-six finite configurations, twenty negative
+controls and 200 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish

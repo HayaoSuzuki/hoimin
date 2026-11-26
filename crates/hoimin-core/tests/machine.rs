@@ -24,6 +24,8 @@ mod quint;
 mod quint_analysis;
 #[path = "machine/quint_baseline.rs"]
 mod quint_baseline;
+#[path = "machine/quint_explicit.rs"]
+mod quint_explicit;
 #[path = "machine/quint_ordered.rs"]
 mod quint_ordered;
 #[path = "machine/quint_ordered_drain.rs"]

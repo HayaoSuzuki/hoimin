@@ -35,6 +35,13 @@ class Model:
 
 MODELS = (
     Model(
+        "explicit_stream.qnt",
+        "ExplicitStream",
+        "explicit_stream",
+        "ExplicitStreamReappliesDuplicate",
+        ("filteredStep", "partialStep", "workerStep"),
+    ),
+    Model(
         "analysis_spool.qnt",
         "AnalysisSpool",
         "analysis_spool",
