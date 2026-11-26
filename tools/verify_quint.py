@@ -56,7 +56,12 @@ MODELS = (
         "janitor_retry.qnt",
         "JanitorRetry",
         "janitor_retry",
-        scenarios=("stalledStep", "progressStep", "deadlineStep"),
+        scenarios=(
+            "stalledStep",
+            "progressStep",
+            "deadlineStep",
+            "nextRoundDeadlineStep",
+        ),
         simulation_only=True,
         simulation_mutant_step="stalledRetryStep",
     ),

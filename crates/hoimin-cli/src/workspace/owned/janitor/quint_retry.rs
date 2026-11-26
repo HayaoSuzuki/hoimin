@@ -9,7 +9,7 @@ fn roots(value: &Value) -> impl Iterator<Item = u64> {
     value.as_array().unwrap().iter().map(number)
 }
 
-fn replay(trace: &str) {
+fn replay(trace: &str, allow_round_start: bool) {
     let history = states(trace);
     let initial = &history.first().unwrap()["s"];
     let terminal = &history.last().unwrap()["s"];
@@ -21,11 +21,12 @@ fn replay(trace: &str) {
     let visits = terminal["visits"].as_array().unwrap();
     let mut pending: VecDeque<_> = roots(&initial["pending"]).collect();
     let attempted = Cell::new(0);
+    let round_start = Cell::new(allow_round_start);
     let mut actual_order = Vec::new();
 
     retry_deferred(
         &mut pending,
-        || !deadline || attempted.get() < visits.len(),
+        || !deadline || attempted.get() < visits.len() || round_start.replace(false),
         |root| {
             let index = attempted.get();
             attempted.set(index + 1);
@@ -41,6 +42,10 @@ fn replay(trace: &str) {
 
     let expected_order: Vec<_> = visits.iter().map(|visit| number(&visit["root"])).collect();
     let expected_pending: VecDeque<_> = roots(&terminal["pending"]).collect();
+    assert!(
+        !round_start.get(),
+        "expected a final round-entry clock check"
+    );
     assert_eq!(actual_order, expected_order, "visited roots");
     assert_eq!(pending, expected_pending, "pending roots at stop");
 }
@@ -54,5 +59,13 @@ fn replay(trace: &str) {
 #[case::progress(include_str!("../../../../../../formal/quint/traces/janitor_retry_progressStep_0.itf.json"))]
 #[case::deadline(include_str!("../../../../../../formal/quint/traces/janitor_retry_deadlineStep_0.itf.json"))]
 fn quint_history_matches_deferred_retry_scheduler(#[case] trace: &str) {
-    replay(trace);
+    replay(trace, false);
+}
+
+#[test]
+fn deadline_after_round_entry_prevents_its_first_visit() {
+    let trace = include_str!(
+        "../../../../../../formal/quint/traces/janitor_retry_nextRoundDeadlineStep_0.itf.json"
+    );
+    replay(trace, true);
 }

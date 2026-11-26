@@ -247,6 +247,8 @@ the queue order for incomplete cleanup reporting.
 `stalledStep` completes one root and defers the other without progress.
 `progressStep` retries both roots in the following round, and `deadlineStep`
 stops with an unvisited root ahead of the root deferred during that round.
+`nextRoundDeadlineStep` allows the next round's entry check and expires before
+its first visit, so the replay exercises both clock checks.
 `stalledRetryStep` starts a new round despite the absence of progress and
 must violate `Safety`.
 

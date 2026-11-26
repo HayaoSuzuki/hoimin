@@ -77,6 +77,11 @@ module JanitorRetry {
   action deadlineStep =
     if (s.visits.length() == 0) visit(Deferred(1)) else expire
 
+  action nextRoundDeadlineStep =
+    if (s.round > 0) expire
+    else if (s.unvisited == 0) endRound(false)
+    else visit(if (s.visits.length() == 0) Deferred(1) else Deferred(0))
+
   pure def visitsIn(visits: List[Visit], round: int): List[Visit] =
     visits.select(entry => entry.round == round)
 
@@ -106,6 +111,8 @@ module JanitorRetry {
   val stalledAfterCompletion = s.phase == Halted(Stalled) and
     visitsIn(s.visits, s.round).select(entry => entry.result == Complete).length() > 0
   val deadlineMidRound = s.phase == Halted(Deadline) and s.pending == [1, 0]
+  val deadlineBeforeRetry = s.phase == Halted(Deadline) and
+    s.round > 0 and visitsIn(s.visits, s.round) == []
   val failedRoot = s.visits.select(entry => entry.result == Failed).length() > 0
 
   val Safety = all {
