@@ -200,7 +200,8 @@ their own tests. Update this model and regenerate its ITF fixtures when the
 observable classification or summary contract changes.
 
 The registry runs these janitor checks with Quint simulation and checks the ITF
-fixtures for freshness.
+fixtures for freshness. `acknowledgementLostStep` suppresses the effect of an
+acknowledged removal and must violate `Safety`.
 
 ```sh
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_reclaim
@@ -217,7 +218,9 @@ displaces that last normal detail. `issueOnlyStep` checks overflow when the
 slots are already occupied by issues. Omission counts include evictions.
 Truncation counts retain the evidence of an admitted detail that was shortened
 and subsequently evicted. An input omitted at admission contributes only to
-its omission count.
+its omission count. `Safety` derives the total from each detail's admission
+conditions at its arrival. `truncationLostStep` counts only shortened details
+still retained and must produce a violation once a shortened detail is evicted.
 
 The Rust adapter fills the other 254 slots with earlier issues and calls
 `ReclaimLedger::detail` for each simulated arrival. It compares the retained

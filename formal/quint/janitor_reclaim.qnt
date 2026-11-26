@@ -60,18 +60,21 @@ module JanitorReclaim {
       or observation.removed > previous.removed,
   }
 
-  pure def recorded(previous: Evidence, observation: Removal): Evidence =
-    { outcome: if (observation.deleted) Reclaimed
+  pure def recorded(previous: Evidence, observation: Removal, acknowledged: bool): Evidence =
+    { outcome: if (acknowledged) Reclaimed
         else if (observation.absent) Absent else previous.outcome,
       examined: observation.examined, removed: observation.removed }
 
-  action record(observation: Removal): bool = {
+  action recordWithAcknowledgement(observation: Removal, acknowledged: bool): bool = {
     val previous = evidence.get(observation.root)
     all {
       canRecord(previous, observation),
-      publish(evidence.set(observation.root, recorded(previous, observation)), Remove(observation)),
+      publish(evidence.set(observation.root, recorded(previous, observation, acknowledged)),
+        Remove(observation)),
     }
   }
+
+  action record(observation: Removal): bool = recordWithAcknowledgement(observation, observation.deleted)
 
   action recordProgress(root: int): bool = {
     nondet examined = Set(0, 1, 2).oneOf()
@@ -92,13 +95,17 @@ module JanitorReclaim {
     }
   }
 
-  action acknowledgedStep =
+  action acknowledgementScenario(acknowledged: bool): bool =
     if (summary.inspected == 0) inspect
     else if (evidence.get(0).outcome == Pending) classify(0, Failed, Fail(0))
     else if (evidence.get(0).outcome == Failed)
-      record({ root: 0, examined: 1, removed: 1, deleted: true, absent: true })
+      recordWithAcknowledgement(
+        { root: 0, examined: 1, removed: 1, deleted: true, absent: true }, acknowledged)
     else if (summary.inspected == 1) inspect
     else classify(1, Absent, NoticeAbsence(1))
+
+  action acknowledgedStep = acknowledgementScenario(true)
+  action acknowledgementLostStep = acknowledgementScenario(false)
 
   action partialStep =
     if (summary.inspected == 0) inspect

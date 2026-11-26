@@ -236,6 +236,51 @@ def test_simulation_only_model_publishes_without_tlc(
     assert (formal / "traces/first_3.itf.json").is_file()
 
 
+@pytest.mark.parametrize(
+    ("code", "output", "detected"),
+    [
+        (1, "[violation] Found an issue\nerror: Invariant violated", True),
+        (1, "[violation] Found an issue\nerror: unsupported expression", False),
+        (1, "error: Invariant violated", False),
+        (0, "[ok] No violation found", False),
+        (125, "[violation] Found an issue\nerror: Invariant violated", False),
+    ],
+)
+def test_model_requires_a_semantic_simulation_violation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    code: int,
+    output: str,
+    *,
+    detected: bool,
+) -> None:
+    # Arrange.
+    calls: list[list[str]] = []
+
+    def tool(arguments: list[str], _directory: Path, _name: str) -> tuple[int, str]:
+        calls.append(arguments)
+        return (0, "") if arguments[0] == "typecheck" else (code, output)
+
+    monkeypatch.setattr(verify_quint, "guarded", tool)
+    monkeypatch.setattr(verify_quint, "simulate_model", lambda *_args, **_kwargs: None)
+    model = verify_quint.Model(
+        "first.qnt",
+        "First",
+        "first",
+        simulation_only=True,
+        simulation_mutant_step="brokenStep",
+    )
+    # Act / Assert.
+    if detected:
+        verify_quint.verify_model(model, tmp_path, update=False, simulate_only=True)
+    else:
+        with pytest.raises(RuntimeError, match="semantic simulation violation"):
+            verify_quint.verify_model(model, tmp_path, update=False, simulate_only=True)
+    assert [call[0] for call in calls] == ["typecheck", "run"]
+    assert "--step=brokenStep" in calls[1]
+    assert "--invariant=Safety" in calls[1]
+
+
 def test_publishes_targeted_model_schedule(
     model_tools: tuple[Path, dict[str, int]],
 ) -> None:

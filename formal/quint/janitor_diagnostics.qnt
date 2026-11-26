@@ -35,17 +35,23 @@ module JanitorDiagnostics {
       truncated: 0.to(history.length() - 1).filter(id => wasTruncated(history, id)).size() }
   }
 
-  action publish(history: List[Detail]): bool = all {
-    arrivals' = history,
-    summary' = project(history),
+  action publish(history: List[Detail], keepEvictedTruncations: bool): bool = {
+    val projected = project(history)
+    all {
+      arrivals' = history,
+      summary' = if (keepEvictedTruncations) projected
+        else { ...projected, truncated: projected.retained.select(detail => detail.long).length() },
+    }
   }
 
-  action init = publish([])
+  action init = publish([], true)
 
-  action add(kind: Kind, long: bool): bool = all {
+  action addWithTruncation(kind: Kind, long: bool, keepEvictedTruncations: bool): bool = all {
     arrivals.length() < maxInputs,
-    publish(arrivals.append({ id: arrivals.length(), kind: kind, long: long })),
+    publish(arrivals.append({ id: arrivals.length(), kind: kind, long: long }), keepEvictedTruncations),
   }
+
+  action add(kind: Kind, long: bool): bool = addWithTruncation(kind, long, true)
 
   action step = {
     nondet kind = Set(Normal, Issue).oneOf()
@@ -53,10 +59,14 @@ module JanitorDiagnostics {
     add(kind, long)
   }
 
-  action priorityStep = {
+  action priorityScenario(keepEvictedTruncations: bool): bool = {
     val i = arrivals.length()
-    add(if (Set(0, 1, 4).contains(i)) Normal else Issue, Set(0, 2, 4, 5).contains(i))
+    addWithTruncation(if (Set(0, 1, 4).contains(i)) Normal else Issue,
+      Set(0, 2, 4, 5).contains(i), keepEvictedTruncations)
   }
+
+  action priorityStep = priorityScenario(true)
+  action truncationLostStep = priorityScenario(false)
 
   action issueOnlyStep = add(if (arrivals.length() == 2) Normal else Issue, arrivals.length() >= 2)
 
@@ -67,11 +77,16 @@ module JanitorDiagnostics {
   val truncatedDetailLaterEvicted =
     summary.truncated > summary.retained.select(detail => detail.long).length()
 
+  // Admission depends only on arrivals before this detail, even if it is later evicted.
+  pure def admitted(history: List[Detail], detail: Detail): bool =
+    if (detail.kind == Normal) detail.id < capacity
+    else ofKind(history.slice(0, detail.id), Issue).length() < capacity
+
   val Safety = all {
     summary.retained.length() <= capacity,
     summary.retained.length() + summary.omittedNormal + summary.omittedIssue == arrivals.length(),
     ofKind(summary.retained, Issue) == first(ofKind(arrivals, Issue), capacity),
     retainedNormal implies not(omittedIssue),
-    summary.truncated >= summary.retained.select(detail => detail.long).length(),
+    summary.truncated == arrivals.select(detail => detail.long and admitted(arrivals, detail)).length(),
   }
 }

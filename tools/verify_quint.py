@@ -32,6 +32,7 @@ class Model:
     # TLC may omit input-history fields that do not affect transitions or Safety.
     verification_step: str = "step"
     simulation_only: bool = False
+    simulation_mutant_step: str | None = None
 
 
 MODELS = (
@@ -41,6 +42,7 @@ MODELS = (
         "janitor_diagnostics",
         scenarios=("priorityStep", "issueOnlyStep"),
         simulation_only=True,
+        simulation_mutant_step="truncationLostStep",
     ),
     Model(
         "janitor_reclaim.qnt",
@@ -48,6 +50,7 @@ MODELS = (
         "janitor_reclaim",
         scenarios=("acknowledgedStep", "partialStep"),
         simulation_only=True,
+        simulation_mutant_step="acknowledgementLostStep",
     ),
     Model(
         "copy_preflight.qnt",
@@ -441,6 +444,33 @@ def canonical_trace(path: Path) -> str:
     return json.dumps(trace, sort_keys=True, indent=2) + "\n"
 
 
+def check_simulation_mutant(
+    specification: Model, build: Path, model: str, step: str
+) -> None:
+    code, output = guarded(
+        [
+            "run",
+            model,
+            "--backend=typescript",
+            f"--main={specification.main}",
+            f"--step={step}",
+            "--invariant=Safety",
+            f"--max-steps={specification.scenario_steps}",
+            "--max-samples=1",
+            "--seed=1172",
+        ],
+        build,
+        f"{specification.main}-{step}-simulation",
+    )
+    if (
+        code != 1
+        or "[violation]" not in output
+        or "error: Invariant violated" not in output
+    ):
+        msg = f"Expected a semantic simulation violation, got exit {code}:\n{output}"
+        raise RuntimeError(msg)
+
+
 def verify_model(
     specification: Model, build: Path, *, update: bool, simulate_only: bool
 ) -> None:
@@ -449,6 +479,10 @@ def verify_model(
         ["typecheck", model], build, f"{specification.main}-typecheck"
     )
     validate_result(code, output, counterexample=False)
+    if specification.simulation_mutant_step is not None:
+        check_simulation_mutant(
+            specification, build, model, specification.simulation_mutant_step
+        )
     if not (simulate_only or specification.simulation_only):
         modules = (specification.main,)
         if specification.mutant is not None:
