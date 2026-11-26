@@ -35,6 +35,13 @@ class Model:
 
 MODELS = (
     Model(
+        "mutant_admission.qnt",
+        "MutantAdmission",
+        "mutant_admission",
+        "MutantAdmissionChargesAtStart",
+        ("earlyOverflowStep", "exactStep", "realFirstStep"),
+    ),
+    Model(
         "explicit_stream.qnt",
         "ExplicitStream",
         "explicit_stream",

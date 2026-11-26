@@ -440,10 +440,32 @@ successful apply, killed execution, report acknowledgements, and reset.
 `partialStep` supplies a corrected reply to the same read after premature
 end of spool.
 
+## Mutant admission at the run limit
+
+`MutantAdmission` models two workers with a run limit of one and a spool
+of one or two candidates. Admission reserves the slot when the first
+candidate is handed to apply. A second candidate uses synthetic start and
+finish outputs even if the first worker is still applying. The incomplete
+status is set when the extra candidate is read, and `NotRun` is counted
+when its finish output is acknowledged. A spool with exactly one candidate
+can complete successfully. Verification waits for end of spool and both
+workers to become idle. The negative model charges the limit when the
+mutant process is requested and admits two applies before either starts.
+
+Seven ITF histories compare both workers' pending requests, candidate
+identities, apply and process requests, counters, and exit status. The
+schedules include a synthetic finish before the admitted worker even
+acknowledges apply.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_explicit
+cargo test --locked -p hoimin-core --test machine quint_admission
+```
+
 ## Active workers and Quint Connect
 
-The registry checks twenty-six finite configurations, twenty negative
-controls and 200 committed histories. `Workers` and `WorkersSession` add
+The registry checks twenty-seven finite configurations, twenty-one
+negative controls and 207 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
