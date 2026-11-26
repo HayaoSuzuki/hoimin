@@ -290,16 +290,20 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 ## Active workers and Quint Connect
 
 The registry checks eighteen finite configurations, twelve negative controls and
-121 committed histories. `Workers` and `WorkersSession` add two workers and two
+125 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
-acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;
+acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;
 a stopped unexecuted candidate becomes NotRun. The negative model double-counts
 an executed result while draining it after stop.
 
 `reverseStep` completes worker 1 before worker 0. `completedStopStep` stops while
 a completed result awaits persistence or output acknowledgement. `startStopStep`
 and `runningStopStep` stop before start acknowledgement and during execution.
+`timeoutStep` carries a process timeout through normal finalization with exit
+code 4 and an incomplete report. `timeoutStopStep` cancels after that result
+arrives and checks that the timeout survives draining and counts once. With a
+session, cancellation can arrive before the timeout's persistence acknowledgement.
 The 24-transition scenario bound lets each schedule reach session completion;
 fixture tests require that terminal state. Other models retain their existing
 scenario bounds.
@@ -339,7 +343,8 @@ process monitoring. Ordinary workspace tests replay committed ITF without Node,
 Java or the live crate. Product dependencies are unchanged.
 
 `run_workers` input starts with session/worker-count bytes, then eleven-byte
-commands (tag, worker, outcome, little-endian u64 disk reading). Generated corpus
+commands (tag, worker, outcome, little-endian u64 disk reading). The outcome byte
+can select an injected process timeout. Generated corpus
 stays separate from seeds. This tests callback interleavings in the public state
 machine. It does not prove Rust atomic memory ordering, actual subprocess behavior
 or every OS thread interleaving. TLC's exhaustive result applies to the bounded
