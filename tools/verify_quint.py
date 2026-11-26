@@ -35,6 +35,20 @@ class Model:
 
 MODELS = (
     Model(
+        "analysis_diagnostics.qnt",
+        "AnalysisDiagnostics",
+        "analysis_diagnostics",
+        "AnalysisDiagnosticsBypassesOutput",
+        (
+            "fifoStep",
+            "repeatedStep",
+            "truncatedStep",
+            "noSpoolStep",
+            "cancelStep",
+            "failureStep",
+        ),
+    ),
+    Model(
         "baseline_restoration.qnt",
         "BaselineRestoration",
         "baseline_restoration",

@@ -367,10 +367,32 @@ Nine ITF histories replay the public transition with two workers and one
 target. They compare phase, pending and retired effect IDs, exact callback
 errors, exit status, and the initial analysis or finalization effect.
 
+## Analysis diagnostics
+
+`AnalysisDiagnostics` starts with analysis of the last target in an ordinary
+run. It models absent, empty, populated, and truncated spools with lists of up
+to two warnings. Warnings are emitted in input order, including repeated
+messages, with one outstanding acknowledgement. The candidate read or final
+verification is released after the last acknowledgement. A duplicate reply
+leaves the next warning pending. Cancellation retires the outstanding warning
+and hands off to verification. A generic warning effect failure completes the
+failed request and hands off to the failure diagnostic.
+
+Ten ITF histories compare the public effects, warning content and sequence,
+exact errors, exit status, and phase. The fixtures use the same populated spool
+to check candidate reads after ordinary analysis and final verification after
+truncated analysis. The negative model advances past analysis while the first
+warning still awaits acknowledgement.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_baseline
+cargo test --locked -p hoimin-core --test machine quint_analysis
+```
+
 ## Active workers and Quint Connect
 
-The registry checks twenty-two finite configurations, sixteen negative controls and
-163 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks twenty-three finite configurations, seventeen negative
+controls and 173 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

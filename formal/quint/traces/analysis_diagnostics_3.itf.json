@@ -1,0 +1,1043 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Absent",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Analyzing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "AnalysisDiagnostics::AnalysisDiagnosticsModel::s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "analysis": {
+          "diagnostics": [],
+          "spool": {
+            "tag": "Empty",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "issued": [],
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    }
+  ],
+  "vars": [
+    "AnalysisDiagnostics::AnalysisDiagnosticsModel::s",
+    "AnalysisDiagnostics::AnalysisDiagnosticsModel::dispatch"
+  ]
+}
