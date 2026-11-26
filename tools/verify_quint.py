@@ -35,6 +35,13 @@ class Model:
 
 MODELS = (
     Model(
+        "copy_preflight.qnt",
+        "CopyPreflight",
+        "copy_preflight",
+        "CopyPreflightAcceptsWrongCount",
+        ("ordinaryStep", "freshRetryStep", "resumeRetryStep", "emptyStep"),
+    ),
+    Model(
         "worker_grant.qnt",
         "WorkerGrant",
         "worker_grant",

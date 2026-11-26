@@ -668,18 +668,23 @@ impl RunState {
         Ok(vec![RunEffect::Preflight(Preflight { id })])
     }
 
-    fn create_worker_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
+    fn checked_worker_count(&self, requested: u32) -> Result<u32, MachineError> {
         // RunConfig bounds jobs by MAX_JOBS (256), below u32::MAX.
         let count = u32::try_from(self.config.limits.jobs.get()).expect("validated jobs fit u32");
+        if requested != count {
+            return Err(MachineError::WorkerCountMismatch {
+                configured: count,
+                preflight: requested,
+            });
+        }
+        Ok(count)
+    }
+
+    fn create_worker_effects(&mut self) -> Result<Vec<RunEffect>, MachineError> {
         let grant = self
             .copy_grant
             .ok_or(MachineError::WrongPhase { phase: self.phase })?;
-        if grant.requested_workers() != count {
-            return Err(MachineError::WorkerCountMismatch {
-                configured: count,
-                preflight: grant.requested_workers(),
-            });
-        }
+        let count = self.checked_worker_count(grant.requested_workers())?;
         let mut effects = Vec::with_capacity(count as usize);
         for worker in 0..count {
             let id = self.allocate_id()?;
@@ -1622,10 +1627,11 @@ pub fn transition(
             state.start_run_effects()?
         }
         RunEvent::PreflightCompleted(value) if state.phase == RunPhase::Preflight => {
-            state.fingerprint = value.fingerprint;
             let grant = reserve_workspace_copy(&mut state.budgets, &value)
                 .map_err(|error| MachineError::Budget(error.to_string()))?;
+            state.checked_worker_count(grant.requested_workers())?;
             state.copy_grant = Some(grant);
+            state.fingerprint = value.fingerprint;
             match &state.config.session {
                 crate::SessionMode::Disabled => state.start_run_effects()?,
                 crate::SessionMode::Fresh(_) => state.begin_session_effects()?,

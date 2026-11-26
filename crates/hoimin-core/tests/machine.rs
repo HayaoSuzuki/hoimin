@@ -26,6 +26,8 @@ mod quint_admission;
 mod quint_analysis;
 #[path = "machine/quint_baseline.rs"]
 mod quint_baseline;
+#[path = "machine/quint_copy_preflight.rs"]
+mod quint_copy_preflight;
 #[path = "machine/quint_explicit.rs"]
 mod quint_explicit;
 #[path = "machine/quint_finish_ack.rs"]

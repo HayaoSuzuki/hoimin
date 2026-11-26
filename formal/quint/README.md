@@ -553,6 +553,21 @@ Ten histories compare the requests and report provenance, the copy
 handoff, and errors on missing fingerprints or late or duplicate session
 replies.
 
+## Workspace copy preflight
+
+`CopyPreflight` models two configured workers and a 20-byte workspace
+copy budget. It accepts zero bytes and exact-budget measurements,
+checks aggregate arithmetic and overflow, and requires the preflight
+worker count to match the configuration before emitting a run-start
+header, loading a session, or starting a new one. The negative model
+proceeds after receiving a smaller worker count.
+
+Eight histories replay the public machine with sessions disabled, fresh,
+or resumed. They check exact errors and corrected replies, and verify
+that both creation requests carry the original preflight ID and the
+same aggregate allowance. The overflow representative sends two
+workers each reporting `u64::MAX` bytes.
+
 ## Workspace worker acknowledgements
 
 `WorkerGrant` starts with two worker creation requests that share a
@@ -574,8 +589,8 @@ cargo test --locked -p hoimin-core --test machine quint_worker_grant
 
 ## Active workers and Quint Connect
 
-The registry checks thirty-three finite configurations, twenty-seven
-negative controls and 263 committed histories. `Workers` and `WorkersSession` add
+The registry checks thirty-four finite configurations, twenty-eight
+negative controls and 271 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish

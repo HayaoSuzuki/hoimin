@@ -1,0 +1,611 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Ready",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Configure",
+        "value": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Awaiting",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Measure",
+        "value": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Report",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "AckReport",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "CopyPreflight::CopyPreflightModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "CopyPreflight::CopyPreflightModel::s": {
+        "evidence": {
+          "perWorker": {
+            "tag": "Bytes",
+            "value": {
+              "#bigint": "0"
+            }
+          },
+          "total": {
+            "#bigint": "0"
+          },
+          "workers": {
+            "#bigint": "2"
+          }
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stage": {
+          "tag": "Workers",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    }
+  ],
+  "vars": [
+    "CopyPreflight::CopyPreflightModel::s",
+    "CopyPreflight::CopyPreflightModel::dispatch"
+  ]
+}
