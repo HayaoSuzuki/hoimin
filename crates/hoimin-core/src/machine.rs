@@ -2030,7 +2030,10 @@ pub fn transition(
             *state.worker_mut(value.worker)? = WorkerState::Idle;
             state.schedule_read_or_finalize()?
         }
-        RunEvent::OriginalsVerified(_) if state.phase == RunPhase::Finalize => {
+        RunEvent::OriginalsVerified(value)
+            if state.phase == RunPhase::Finalize
+                && value.checkpoint == IntegrityCheckpoint::PreFinalReport =>
+        {
             state.cleanup_effects()?
         }
         RunEvent::SessionFinished(_) if state.phase == RunPhase::Finalize => {

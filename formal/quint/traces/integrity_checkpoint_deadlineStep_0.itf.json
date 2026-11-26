@@ -1,0 +1,949 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": []
+        },
+        "evidence": {
+          "#set": []
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "phase": {
+          "tag": "Pending",
+          "value": {
+            "tag": "AfterCopy",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": []
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PostMaterialization",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "AfterCopy",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "phase": {
+          "tag": "Running",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": []
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "RunToFinal",
+        "value": {
+          "#tup": []
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "phase": {
+          "tag": "Pending",
+          "value": {
+            "tag": "BeforeReport",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": []
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Pending",
+          "value": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "BeforeReport",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Pending",
+          "value": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch": {
+        "tag": "ReplyTo",
+        "value": {
+          "checkpoint": {
+            "tag": "PreFinalReport",
+            "value": {
+              "#tup": []
+            }
+          },
+          "request": {
+            "tag": "Replacement",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s": {
+        "completed": {
+          "#set": [
+            {
+              "tag": "AfterCopy",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Replacement",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "evidence": {
+          "#set": [
+            {
+              "tag": "PostMaterialization",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "PreFinalReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "retired": {
+          "#set": [
+            {
+              "tag": "BeforeReport",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "vars": [
+    "IntegrityCheckpointProtocol::IntegrityCheckpointModel::s",
+    "IntegrityCheckpointProtocol::IntegrityCheckpointModel::dispatch"
+  ]
+}

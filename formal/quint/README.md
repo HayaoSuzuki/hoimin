@@ -500,10 +500,26 @@ cargo test --locked -p hoimin-core --test machine quint_worker_failure
 cargo test --locked -p hoimin-core --test machine quint_process_result
 ```
 
+## Original integrity acknowledgements
+
+`IntegrityCheckpointProtocol` requires the post-materialization
+checkpoint before the baseline and the pre-report checkpoint before
+cleanup. After a mismatched callback, the replay uses the retained input
+state to send a corrected reply. A deadline while waiting for pre-report verification
+retires that request and issues a replacement. A verification failure
+emits the original-change diagnostic. The negative model accepts an
+unrelated checkpoint before cleanup.
+
+Seven histories reach both checkpoints through public Rust transitions.
+Two histories reproduced premature cleanup before the pre-report guard
+was added. They now require the same phase error used at the
+post-materialization checkpoint and compare duplicate and retired
+callback errors.
+
 ## Active workers and Quint Connect
 
-The registry checks twenty-nine finite configurations, twenty-three
-negative controls and 227 committed histories. `Workers` and `WorkersSession` add
+The registry checks thirty finite configurations, twenty-four
+negative controls and 234 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish

@@ -35,6 +35,13 @@ class Model:
 
 MODELS = (
     Model(
+        "integrity_checkpoint.qnt",
+        "IntegrityCheckpointProtocol",
+        "integrity_checkpoint",
+        "IntegrityCheckpointAcceptsWrongFinal",
+        ("bothMismatchStep", "deadlineStep", "invalidFinalStep"),
+    ),
+    Model(
         "process_result.qnt",
         "ProcessResult",
         "process_result",

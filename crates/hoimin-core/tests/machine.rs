@@ -28,6 +28,8 @@ mod quint_analysis;
 mod quint_baseline;
 #[path = "machine/quint_explicit.rs"]
 mod quint_explicit;
+#[path = "machine/quint_integrity.rs"]
+mod quint_integrity;
 #[path = "machine/quint_ordered.rs"]
 mod quint_ordered;
 #[path = "machine/quint_ordered_drain.rs"]
