@@ -22,6 +22,8 @@ use proptest::prelude::*;
 mod quint;
 #[path = "machine/quint_ordered.rs"]
 mod quint_ordered;
+#[path = "machine/quint_resume.rs"]
+mod quint_resume;
 
 #[test]
 fn baseline_success_requires_owned_restoration_before_dispatch() {

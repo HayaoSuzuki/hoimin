@@ -313,10 +313,33 @@ an identity error. Existing worker and stop tests cover execution after handoff.
 cargo test --locked -p hoimin-core --test machine quint_ordered
 ```
 
+## Resumed candidate lookup
+
+`ResumeCandidate` starts with one pending lookup in a resumed session. The
+finite input domain covers all seven stored statuses, an absent result, and
+stored results with the wrong candidate identity. Killed and survived results
+use synthetic start and finish outputs. Missing or inconclusive results hand
+off to real apply work. Synthetic accounting commits at the finish acknowledgement.
+
+The three cancellation schedules cover lookup, synthetic start, and synthetic
+finish. They check rejection of the retired callback both before and after its
+replacement is acknowledged. Cancellation during lookup produces `NotRun`.
+Cancellation during a synthetic output preserves the reused outcome. The
+negative model reruns a conclusive result and violates `Safety`.
+
+The Rust replay reaches lookup via public `transition` calls, compares emitted
+effects and exact errors, and checks counters after every transition. Each
+history ends at a pending apply or the next sequential read. The SQLite
+models check durable lookup content separately.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_resume
+```
+
 ## Active workers and Quint Connect
 
-The registry checks nineteen finite configurations, thirteen negative controls and
-134 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks twenty finite configurations, fourteen negative controls and
+143 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

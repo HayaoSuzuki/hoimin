@@ -42,6 +42,19 @@ MODELS = (
         ("orderedStep", "missingStep"),
     ),
     Model(
+        "resume_candidate.qnt",
+        "ResumeCandidate",
+        "resume_candidate",
+        "ResumeCandidateRerunsCached",
+        (
+            "reuseStep",
+            "rerunStep",
+            "cancelledLookupStep",
+            "cancelledStartStep",
+            "cancelledFinishStep",
+        ),
+    ),
+    Model(
         "disk_observation.qnt",
         "DiskObservation",
         "disk_observation",
