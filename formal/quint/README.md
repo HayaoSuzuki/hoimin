@@ -179,6 +179,33 @@ cargo test --locked -p hoimin-cli --lib shell::finalization::quint
 cargo test --locked -p hoimin-cli --lib session::ownership::quint
 ```
 
+## Startup janitor reclaim evidence
+
+`janitor_reclaim.qnt` models two selected roots from three matching directory
+entry observations. Each transition represents one call to
+`ReclaimLedger::{begin, hold, absent, removal}` in
+`crates/hoimin-cli/src/workspace/owned/janitor.rs`. It follows inspection,
+preservation, absence, and deletion acknowledgement. The scheduled histories
+distinguish a failed deletion with partial progress from an acknowledged deletion
+that also observes absence. Acknowledgement takes precedence over both absence
+and an earlier failure classification. The summary checks the outcome partition,
+acknowledged entry counts, and selection omissions.
+
+The Rust adapter replays each bounded prefix through the real ledger and checks
+its finished summary. A negative control drops the root deletion acknowledgement
+and checks that the same history reports a state mismatch. Measurements and
+filesystem results are injected as observations. The model covers the report
+ledger boundary. The janitor's traversal, OS locks, and deletion effects have
+their own tests. Update this model and regenerate its ITF fixtures when the
+observable classification or summary contract changes.
+
+The registry runs these janitor checks with Quint simulation and checks the ITF
+fixtures for freshness.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_reclaim
+```
+
 ## SQLite persistence, resume selection and ownership
 
 The SQLite extension adds three domains to the earlier configurations:

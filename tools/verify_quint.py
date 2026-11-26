@@ -31,9 +31,17 @@ class Model:
     scenario_steps: int = 12
     # TLC may omit input-history fields that do not affect transitions or Safety.
     verification_step: str = "step"
+    simulation_only: bool = False
 
 
 MODELS = (
+    Model(
+        "janitor_reclaim.qnt",
+        "JanitorReclaim",
+        "janitor_reclaim",
+        scenarios=("acknowledgedStep", "partialStep"),
+        simulation_only=True,
+    ),
     Model(
         "copy_preflight.qnt",
         "CopyPreflight",
@@ -434,7 +442,7 @@ def verify_model(
         ["typecheck", model], build, f"{specification.main}-typecheck"
     )
     validate_result(code, output, counterexample=False)
-    if not simulate_only:
+    if not (simulate_only or specification.simulation_only):
         modules = (specification.main,)
         if specification.mutant is not None:
             modules = (*modules, specification.mutant)

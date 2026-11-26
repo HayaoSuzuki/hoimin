@@ -221,6 +221,21 @@ def test_simulate_only_publishes_without_tlc(
     assert (formal / "traces/second_3.itf.json").is_file()
 
 
+def test_simulation_only_model_publishes_without_tlc(
+    model_tools: tuple[Path, dict[str, int]],
+) -> None:
+    # Arrange.
+    formal, controls = model_tools
+    controls["forbid_tlc"] = 1
+    build = formal / "_build"
+    build.mkdir()
+    model = verify_quint.Model("first.qnt", "First", "first", simulation_only=True)
+    # Act.
+    verify_quint.verify_model(model, build, update=True, simulate_only=False)
+    # Assert.
+    assert (formal / "traces/first_3.itf.json").is_file()
+
+
 def test_publishes_targeted_model_schedule(
     model_tools: tuple[Path, dict[str, int]],
 ) -> None:
