@@ -30,6 +30,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "init",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -66,10 +67,12 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           }
         ]
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "issued",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -106,10 +109,12 @@
             },
             "kind": {
               "#bigint": "0"
-            }
+            },
+            "reservations": []
           }
         ]
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "wrong",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -145,6 +150,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "ok",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -180,6 +186,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -215,6 +222,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -250,6 +258,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -285,6 +294,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -320,6 +330,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -355,6 +366,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -390,6 +402,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -425,6 +438,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -460,6 +474,7 @@
       "Completion::CompletionModel::pending": {
         "#set": []
       },
+      "Completion::CompletionModel::reservations": [],
       "Completion::CompletionModel::result": "duplicate",
       "Completion::CompletionModel::retired": {
         "#set": []
@@ -467,15 +482,16 @@
     }
   ],
   "vars": [
-    "Completion::CompletionModel::floor",
-    "Completion::CompletionModel::kind",
-    "Completion::CompletionModel::nextId",
-    "Completion::CompletionModel::id",
     "Completion::CompletionModel::retired",
     "Completion::CompletionModel::op",
     "Completion::CompletionModel::completed",
-    "Completion::CompletionModel::gaps",
     "Completion::CompletionModel::result",
-    "Completion::CompletionModel::pending"
+    "Completion::CompletionModel::gaps",
+    "Completion::CompletionModel::reservations",
+    "Completion::CompletionModel::pending",
+    "Completion::CompletionModel::floor",
+    "Completion::CompletionModel::kind",
+    "Completion::CompletionModel::nextId",
+    "Completion::CompletionModel::id"
   ]
 }

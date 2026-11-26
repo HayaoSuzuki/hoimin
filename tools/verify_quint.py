@@ -114,7 +114,7 @@ MODELS = (
         "Completion",
         "completion",
         "CompletionResurrectRetired",
-        ("gapStep", "wrongKindStep"),
+        ("gapStep", "wrongKindStep", "cleanupStep"),
     ),
     Model(
         "disk.qnt",

@@ -33,7 +33,8 @@ checks. Each model generates four random histories (seed 1172, 24 transitions,
 worker schedules):
 `Report.interleavedStep` starts two mutants, rejects premature finish, and finishes them in reverse order;
 `Completion.gapStep` completes four requests in reverse order;
-`Completion.wrongKindStep` attempts a wrong kind before a generic failure.
+`Completion.wrongKindStep` attempts a wrong kind before a generic failure;
+`Completion.cleanupStep` retries a cleanup while a completion gap is open.
 These schedules constrain inputs and reuse the same model transitions to compute
 expectations. They avoid depending on chance to cover these paths.
 
@@ -97,7 +98,7 @@ histories alongside the existing fixed ITF, independent journal PBT, and
 | Budget | Capacity 2 per kind, 3 kinds, amounts 0–3, 2 successful reservations | Public `BudgetLedger::reserve/release`, returned IDs, contents and totals | Overdraft |
 | BudgetExtended | Same capacities, 4 successful reservations, release IDs 0–4 | Same public adapter, covering release followed by further allocation | Shared overdraft control |
 | Report | 2 run IDs, 2 mutant IDs, 2 mutant identity sequences, event numbers 0–5 | Public `ReportSequence::validate/observe` errors with their exact fields | Finish while mutants remain active |
-| Completion | 4 issued requests, 2 completion kinds, generic failure, attempted IDs 0–5 | Internal fixture of production `RunState::allocate_id/register/accept_completion/retire_pending`; pending, next ID, retired, compressed floor/gaps and outcomes | Accept a retired completion again |
+| Completion | 4 issued requests, 3 completion kinds, generic failure, attempted IDs 0–5; at most one cleanup with two reserved IDs | Internal fixture of production `RunState::allocate_id/register/accept_completion/retire_pending`; pending requests and their reservation lists, next ID, retired, compressed floor/gaps and outcomes | Accept a retired completion again |
 
 Report covers run start/finish, mutant start/finish and a diagnostic as the
 representative ordinary report event. Its model-derived replay compares public
@@ -112,12 +113,15 @@ detect hidden state changes. Default builds also exercise rejected `observe` cal
 With contracts enabled, invalid consumer input goes through `validate`, because
 `observe` intentionally asserts on invalid producer events.
 
-Completion replay compares the internal ledger's state directly. Its independent
-PBT oracle uses an uncompressed journal of pending/completed/retired slots and
-derives the prefix, rather than copying the production floor/gaps update loop.
-This is internal-fixture correspondence, not a proof of the surrounding public
-transition protocol or OS scheduling. Cleanup reservation-argument matching and
-other completion payloads are outside this finite model.
+Completion replay compares the internal ledger directly. `cleanupStep` delivers
+a later completion first, rejects duplicate, missing and unexpected reservation
+IDs while retaining the earlier cleanup request, then accepts the same IDs in
+reverse order. The accepted retry closes the gap. The independent PBT oracle
+derives the prefix from an uncompressed journal of pending, completed and
+retired slots. It generates reservation lists with up to four entries, including
+empty lists and full-width IDs. The fixture covers request registration and
+acknowledgement in the ledger. Public phase transitions and actual resource
+release have separate tests.
 
 The reservation/request counts bound workloads; they do not replace production
 u64 ID exhaustion with small-number exhaustion. Unbounded histories, fairness,
@@ -160,7 +164,7 @@ successful detection of contention. Handles close before temporary directory
 removal. These tests exercise descriptors on the current host; they do not prove
 SQLite recovery, process-crash handling or all possible host failures.
 
-The corpus through the cleanup and ownership extension contains 50 histories, including `cleanStep`/`deferredStep`
+The corpus through the cleanup and ownership extension contains 52 histories, including `cleanStep`/`deferredStep`
 for disk, `cleanStep`/`refusedStep`/`unjoinedStep`/`availableStep` for finalization,
 and `reacquireStep` for ownership. Six negative-control models check detection of
 unsafe transitions. Every generated history participates in freshness checking.
@@ -272,7 +276,7 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 ## Active workers and Quint Connect
 
 The registry checks seventeen finite configurations, eleven negative controls and
-113 committed histories. `Workers` and `WorkersSession` add two workers and two
+114 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;
