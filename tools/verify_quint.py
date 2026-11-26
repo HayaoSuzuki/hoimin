@@ -35,6 +35,20 @@ class Model:
 
 MODELS = (
     Model(
+        "session_startup.qnt",
+        "SessionStartup",
+        "session_startup",
+        "SessionStartupSkipsReportAck",
+        (
+            "disabledStep",
+            "resumedStep",
+            "fallbackStep",
+            "missingFingerprintStep",
+            "deadlineLoadStep",
+            "failedBeginStep",
+        ),
+    ),
+    Model(
         "session_finish_ack.qnt",
         "SessionFinishAck",
         "session_finish_ack",

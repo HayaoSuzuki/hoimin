@@ -538,10 +538,24 @@ cargo test --locked -p hoimin-core --test machine quint_integrity
 cargo test --locked -p hoimin-core --test machine quint_finish_ack
 ```
 
+## Session startup
+
+`SessionStartup` follows preflight in disabled, fresh, and resume modes.
+Session load and begin require preflight fingerprint evidence and forward
+it with the mutant budget. Resuming selects the saved run ID, and fresh
+fallback preserves the selection reason in the run-start header. The
+header acknowledgement releases worker creation. A deadline or session
+I/O failure during a session request preserves the run-start header before
+verification or a failure diagnostic. The negative model creates a
+worker on resume before the header is acknowledged.
+
+Ten histories compare the requests and report provenance, the copy
+handoff, and errors on missing fingerprints or late session replies.
+
 ## Active workers and Quint Connect
 
-The registry checks thirty-one finite configurations, twenty-five
-negative controls and 244 committed histories. `Workers` and `WorkersSession` add
+The registry checks thirty-two finite configurations, twenty-six
+negative controls and 254 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish

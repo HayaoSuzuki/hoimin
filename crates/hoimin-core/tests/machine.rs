@@ -40,6 +40,8 @@ mod quint_ordered_drain;
 mod quint_process_result;
 #[path = "machine/quint_resume.rs"]
 mod quint_resume;
+#[path = "machine/quint_session_startup.rs"]
+mod quint_session_startup;
 #[path = "machine/quint_spool.rs"]
 mod quint_spool;
 #[path = "machine/quint_verify_budget.rs"]

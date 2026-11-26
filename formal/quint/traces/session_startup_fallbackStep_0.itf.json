@@ -1,0 +1,701 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": false,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "Disabled",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Ready",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "NoProvenance",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Configure",
+        "value": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": false,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "0"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Preflight",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "NoProvenance",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Measure",
+        "value": {
+          "#bigint": "2"
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": false,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Loading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "NoProvenance",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "tag": "FallBack",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": false,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Beginning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Begin",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": false,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Reporting",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "AckReport",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "SessionStartup::SessionStartupModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionStartup::SessionStartupModel::s": {
+        "acknowledged": true,
+        "cause": {
+          "tag": "Healthy",
+          "value": {
+            "#tup": []
+          }
+        },
+        "fingerprint": {
+          "#bigint": "2"
+        },
+        "mode": {
+          "tag": "ResumeMode",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Copying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "provenance": {
+          "tag": "Fresh",
+          "value": {
+            "tag": "CandidateChanged",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "runNumber": {
+          "#bigint": "1"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "SessionStartup::SessionStartupModel::s",
+    "SessionStartup::SessionStartupModel::dispatch"
+  ]
+}
