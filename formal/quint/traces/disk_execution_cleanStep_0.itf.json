@@ -39,6 +39,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "0"
       },
@@ -48,7 +52,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -85,6 +89,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -94,7 +102,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -131,6 +139,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -140,7 +152,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -177,6 +189,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -186,7 +202,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -223,6 +239,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -232,7 +252,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -269,6 +289,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -278,7 +302,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -315,6 +339,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -324,7 +352,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -361,6 +389,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -370,7 +402,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -396,7 +428,7 @@
       "DiskExecutionOnly::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskExecutionOnly::DiskModel::op": "finish",
+      "DiskExecutionOnly::DiskModel::op": "stop",
       "DiskExecutionOnly::DiskModel::output": {
         "#bigint": "1"
       },
@@ -407,6 +439,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -416,7 +452,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -442,7 +478,7 @@
       "DiskExecutionOnly::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskExecutionOnly::DiskModel::op": "finish",
+      "DiskExecutionOnly::DiskModel::op": "stop",
       "DiskExecutionOnly::DiskModel::output": {
         "#bigint": "1"
       },
@@ -453,6 +489,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -462,7 +502,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -488,7 +528,7 @@
       "DiskExecutionOnly::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskExecutionOnly::DiskModel::op": "finish",
+      "DiskExecutionOnly::DiskModel::op": "stop",
       "DiskExecutionOnly::DiskModel::output": {
         "#bigint": "1"
       },
@@ -499,6 +539,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -508,7 +552,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -534,7 +578,7 @@
       "DiskExecutionOnly::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskExecutionOnly::DiskModel::op": "finish",
+      "DiskExecutionOnly::DiskModel::op": "stop",
       "DiskExecutionOnly::DiskModel::output": {
         "#bigint": "1"
       },
@@ -545,6 +589,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -554,7 +602,7 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -580,7 +628,7 @@
       "DiskExecutionOnly::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskExecutionOnly::DiskModel::op": "finish",
+      "DiskExecutionOnly::DiskModel::op": "stop",
       "DiskExecutionOnly::DiskModel::output": {
         "#bigint": "1"
       },
@@ -591,6 +639,10 @@
           }
         ]
       },
+      "DiskExecutionOnly::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskExecutionOnly::DiskModel::process": {
         "#bigint": "1"
       },
@@ -600,24 +652,25 @@
       "DiskExecutionOnly::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskExecutionOnly::DiskModel::stopped": false
+      "DiskExecutionOnly::DiskModel::secondary": []
     }
   ],
   "vars": [
-    "DiskExecutionOnly::DiskModel::owned",
-    "DiskExecutionOnly::DiskModel::op",
-    "DiskExecutionOnly::DiskModel::monitor",
-    "DiskExecutionOnly::DiskModel::stopped",
-    "DiskExecutionOnly::DiskModel::arg",
-    "DiskExecutionOnly::DiskModel::report",
-    "DiskExecutionOnly::DiskModel::active",
     "DiskExecutionOnly::DiskModel::root",
     "DiskExecutionOnly::DiskModel::executionCleanup",
     "DiskExecutionOnly::DiskModel::dispatched",
     "DiskExecutionOnly::DiskModel::accepted",
     "DiskExecutionOnly::DiskModel::deliveryCleanup",
+    "DiskExecutionOnly::DiskModel::owned",
     "DiskExecutionOnly::DiskModel::process",
     "DiskExecutionOnly::DiskModel::finished",
-    "DiskExecutionOnly::DiskModel::output"
+    "DiskExecutionOnly::DiskModel::primary",
+    "DiskExecutionOnly::DiskModel::output",
+    "DiskExecutionOnly::DiskModel::op",
+    "DiskExecutionOnly::DiskModel::monitor",
+    "DiskExecutionOnly::DiskModel::secondary",
+    "DiskExecutionOnly::DiskModel::arg",
+    "DiskExecutionOnly::DiskModel::report",
+    "DiskExecutionOnly::DiskModel::active"
   ]
 }

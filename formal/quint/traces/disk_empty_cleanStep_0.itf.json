@@ -35,6 +35,10 @@
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
       },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "0"
       },
@@ -44,7 +48,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -77,6 +81,10 @@
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
       },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
       },
@@ -86,7 +94,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -119,6 +127,10 @@
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
       },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
       },
@@ -128,7 +140,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -161,6 +173,10 @@
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
       },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
       },
@@ -170,7 +186,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -203,6 +219,10 @@
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
       },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
       },
@@ -212,7 +232,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -245,6 +265,10 @@
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
       },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
+      },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
       },
@@ -254,7 +278,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -280,12 +304,16 @@
       "DiskNoRoots::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::op": "stop",
       "DiskNoRoots::DiskModel::output": {
         "#bigint": "1"
       },
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
+      },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
       },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
@@ -296,7 +324,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -322,12 +350,16 @@
       "DiskNoRoots::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::op": "stop",
       "DiskNoRoots::DiskModel::output": {
         "#bigint": "1"
       },
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
+      },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
       },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
@@ -338,7 +370,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -364,12 +396,16 @@
       "DiskNoRoots::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::op": "stop",
       "DiskNoRoots::DiskModel::output": {
         "#bigint": "1"
       },
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
+      },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
       },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
@@ -380,7 +416,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -406,12 +442,16 @@
       "DiskNoRoots::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::op": "stop",
       "DiskNoRoots::DiskModel::output": {
         "#bigint": "1"
       },
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
+      },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
       },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
@@ -422,7 +462,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -448,12 +488,16 @@
       "DiskNoRoots::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::op": "stop",
       "DiskNoRoots::DiskModel::output": {
         "#bigint": "1"
       },
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
+      },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
       },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
@@ -464,7 +508,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -490,12 +534,16 @@
       "DiskNoRoots::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::op": "stop",
       "DiskNoRoots::DiskModel::output": {
         "#bigint": "1"
       },
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
+      },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
       },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
@@ -506,7 +554,7 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     },
     {
       "#meta": {
@@ -532,12 +580,16 @@
       "DiskNoRoots::DiskModel::monitor": {
         "#bigint": "1"
       },
-      "DiskNoRoots::DiskModel::op": "finish",
+      "DiskNoRoots::DiskModel::op": "stop",
       "DiskNoRoots::DiskModel::output": {
         "#bigint": "1"
       },
       "DiskNoRoots::DiskModel::owned": {
         "#set": []
+      },
+      "DiskNoRoots::DiskModel::primary": {
+        "code": "",
+        "message": ""
       },
       "DiskNoRoots::DiskModel::process": {
         "#bigint": "1"
@@ -548,16 +600,10 @@
       "DiskNoRoots::DiskModel::root": {
         "#bigint": "0"
       },
-      "DiskNoRoots::DiskModel::stopped": false
+      "DiskNoRoots::DiskModel::secondary": []
     }
   ],
   "vars": [
-    "DiskNoRoots::DiskModel::output",
-    "DiskNoRoots::DiskModel::owned",
-    "DiskNoRoots::DiskModel::op",
-    "DiskNoRoots::DiskModel::monitor",
-    "DiskNoRoots::DiskModel::stopped",
-    "DiskNoRoots::DiskModel::arg",
     "DiskNoRoots::DiskModel::report",
     "DiskNoRoots::DiskModel::active",
     "DiskNoRoots::DiskModel::root",
@@ -565,7 +611,14 @@
     "DiskNoRoots::DiskModel::dispatched",
     "DiskNoRoots::DiskModel::accepted",
     "DiskNoRoots::DiskModel::deliveryCleanup",
+    "DiskNoRoots::DiskModel::owned",
     "DiskNoRoots::DiskModel::process",
-    "DiskNoRoots::DiskModel::finished"
+    "DiskNoRoots::DiskModel::finished",
+    "DiskNoRoots::DiskModel::primary",
+    "DiskNoRoots::DiskModel::output",
+    "DiskNoRoots::DiskModel::op",
+    "DiskNoRoots::DiskModel::monitor",
+    "DiskNoRoots::DiskModel::secondary",
+    "DiskNoRoots::DiskModel::arg"
   ]
 }

@@ -143,9 +143,13 @@ The cleanup and ownership extension adds five finite configurations to the four 
 The disk model initially allowed two dispatches but hit the outer 20-second limit;
 that run is not counted as success. The finite workload uses one dispatch, while
 PBT/fuzz checks longer histories and arbitrary u64 observation values. The public
-adapter compares state fields and acceptance directly with generated expectations.
-PBT additionally checks rejected-input snapshot atomicity, terminal freeze, primary
-failure stability, diagnostic deduplication and cleanup/finish prerequisites.
+adapter compares admission, the complete primary failure, and ordered diagnostics
+against generated expectations. `processEvidenceStep` keeps a measurement failure
+primary when the process drain fails and delivery cleanup is deferred.
+`cleanupDiagnosticStep` records identical failures from two roots once and then
+records a measurement stop. `cleanStep` submits a late measurement failure after
+finish and checks that the terminal snapshot is preserved. PBT extends these checks
+to longer histories and verifies cleanup and finish prerequisites.
 
 Finalization checks that an unjoined measurement cannot be repaired by a later
 joined success, a refused removal attempt remains terminal, failed joined readings
@@ -164,7 +168,7 @@ successful detection of contention. Handles close before temporary directory
 removal. These tests exercise descriptors on the current host; they do not prove
 SQLite recovery, process-crash handling or all possible host failures.
 
-The corpus through the cleanup and ownership extension contains 52 histories, including `cleanStep`/`deferredStep`
+The corpus through the cleanup and ownership extension contains 54 histories, including `cleanStep`/`deferredStep`
 for disk, `cleanStep`/`refusedStep`/`unjoinedStep`/`availableStep` for finalization,
 and `reacquireStep` for ownership. Six negative-control models check detection of
 unsafe transitions. Every generated history participates in freshness checking.
@@ -276,7 +280,7 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 ## Active workers and Quint Connect
 
 The registry checks seventeen finite configurations, eleven negative controls and
-114 committed histories. `Workers` and `WorkersSession` add two workers and two
+116 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;

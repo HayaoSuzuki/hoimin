@@ -121,7 +121,7 @@ MODELS = (
         "DiskLifecycle",
         "disk",
         "DiskBadDelivery",
-        ("cleanStep", "deferredStep"),
+        ("cleanStep", "deferredStep", "processEvidenceStep", "cleanupDiagnosticStep"),
         verification_step="verifyStep",
     ),
     Model(
