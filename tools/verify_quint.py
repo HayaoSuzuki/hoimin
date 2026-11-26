@@ -35,6 +35,20 @@ class Model:
 
 MODELS = (
     Model(
+        "process_result.qnt",
+        "ProcessResult",
+        "process_result",
+        "ProcessResultIgnoresOutputTimeout",
+        (
+            "outputTimeoutStep",
+            "processTimeoutStep",
+            "memoryStep",
+            "identitiesStep",
+            "cancelPersistStep",
+            "cancelFinishStep",
+        ),
+    ),
+    Model(
         "worker_failure.qnt",
         "WorkerFailure",
         "worker_failure",

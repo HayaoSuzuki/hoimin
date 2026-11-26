@@ -32,6 +32,8 @@ mod quint_explicit;
 mod quint_ordered;
 #[path = "machine/quint_ordered_drain.rs"]
 mod quint_ordered_drain;
+#[path = "machine/quint_process_result.rs"]
+mod quint_process_result;
 #[path = "machine/quint_resume.rs"]
 mod quint_resume;
 #[path = "machine/quint_spool.rs"]

@@ -477,10 +477,33 @@ Ten ITF histories compare effects, counts, exit status, and exact duplicate
 errors for retries of failed effects. They end at the next read on the
 normal path or after cleanup and reporting on the failure paths.
 
+## Session process results
+
+`ProcessResult` starts with one running session candidate. It models
+successful and unsuccessful process exits, process timeout, and memory
+exhaustion, each with complete output or an output-close timeout. An
+output-close timeout classifies the result as `Error` and retains the
+original termination and an output diagnostic. One matching persistence
+acknowledgement records the result. A cancellation during persistence or
+finish reporting preserves the classified result exactly once. A callback
+for a retired persistence request returns the retired-effect error.
+The negative model classifies with the process termination alone.
+
+Ten ITF histories compare persisted and reported evidence, bad run and
+candidate IDs, retired or duplicate acknowledgements, summary counts,
+and exit status through public transitions. They end at pending
+pre-report verification. Persistence is represented by its request and
+acknowledgement.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_worker_failure
+cargo test --locked -p hoimin-core --test machine quint_process_result
+```
+
 ## Active workers and Quint Connect
 
-The registry checks twenty-eight finite configurations, twenty-two
-negative controls and 217 committed histories. `Workers` and `WorkersSession` add
+The registry checks twenty-nine finite configurations, twenty-three
+negative controls and 227 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
