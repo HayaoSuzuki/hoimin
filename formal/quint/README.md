@@ -335,10 +335,20 @@ replacement is acknowledged. Cancellation during lookup produces `NotRun`.
 Cancellation during a synthetic output preserves the reused outcome. The
 negative model reruns a conclusive result and violates `Safety`.
 
+`failedStartStep` and `failedFinishStep` inject a generic effect failure.
+The replacement retains the reused outcome, and an acknowledgement for the
+failed request is rejected as a duplicate. After the replacement finish is
+acknowledged, the run emits the failure diagnostic, cleans up, then sends its
+incomplete report and finishes the session. `reportIoStep` injects a report
+write failure and reaches a terminal state after the diagnostic and cleanup,
+with zero committed results and no final report or session finish request.
+Each history injects at most one cancellation or output failure.
+
 The Rust replay reaches lookup via public `transition` calls, compares emitted
-effects and exact errors, and checks counters after every transition. Each
-history ends at a pending apply or the next sequential read. The SQLite
-models check durable lookup content separately.
+effects and exact errors, and checks counters after every transition. Lookup
+and cancellation histories end at a pending apply or the next sequential read.
+Output failure histories continue to termination. The SQLite models check
+durable lookup content separately.
 
 ```sh
 cargo test --locked -p hoimin-core --test machine quint_resume
@@ -347,7 +357,7 @@ cargo test --locked -p hoimin-core --test machine quint_resume
 ## Active workers and Quint Connect
 
 The registry checks twenty-one finite configurations, fifteen negative controls and
-151 committed histories. `Workers` and `WorkersSession` add two workers and two
+154 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

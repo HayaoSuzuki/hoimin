@@ -19,6 +19,12 @@
         "count": {
           "#bigint": "0"
         },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
         "lateChecked": false,
         "outcome": {
           "tag": "NoOutcome",
@@ -52,6 +58,12 @@
         "cancelled": true,
         "count": {
           "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
         },
         "lateChecked": false,
         "outcome": {
@@ -87,6 +99,12 @@
         "count": {
           "#bigint": "0"
         },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
         "lateChecked": true,
         "outcome": {
           "tag": "NotRun",
@@ -121,6 +139,12 @@
         "count": {
           "#bigint": "0"
         },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
         "lateChecked": true,
         "outcome": {
           "tag": "NotRun",
@@ -154,6 +178,12 @@
         "cancelled": true,
         "count": {
           "#bigint": "1"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
         },
         "lateChecked": true,
         "outcome": {

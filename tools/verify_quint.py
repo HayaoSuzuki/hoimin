@@ -65,6 +65,9 @@ MODELS = (
             "cancelledLookupStep",
             "cancelledStartStep",
             "cancelledFinishStep",
+            "failedStartStep",
+            "failedFinishStep",
+            "reportIoStep",
         ),
     ),
     Model(

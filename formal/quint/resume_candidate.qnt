@@ -1,14 +1,16 @@
 // One worker and one loaded candidate in a resumed session.
-// The scope ends at ApplyMutation or after the synthetic finish is acknowledged.
+// Output-failure paths continue through cleanup and, when deliverable, session finish.
 module ResumeCandidateModel {
   const RERUN_REUSED: bool
 
   type Stage = LookupPending | ApplyPending | StartPending | FinishPending | NextCandidate
+    | DiagnosticPending | CleanupPending | ReportPending | SessionPending | Finished
   type Outcome = NoOutcome | CachedKilled | CachedSurvived | NotRun
-  type Command = Init | Reply({ status: int, identityOk: bool }) | Ack | Cancel | Late
+  type Failure = NoFailure | EffectFailure | DeliveryFailure
+  type Command = Init | Reply({ status: int, identityOk: bool }) | Ack | Cancel | Fail(bool) | Late
   type State = {
     stage: Stage, stored: int, outcome: Outcome, count: int,
-    cancelled: bool, lateChecked: bool, result: str,
+    cancelled: bool, failure: Failure, lateChecked: bool, result: str,
   }
   var s: State
   var dispatch: Command
@@ -21,7 +23,7 @@ module ResumeCandidateModel {
 
   action init = all {
     s' = { stage: LookupPending, stored: 8, outcome: NoOutcome, count: 0,
-      cancelled: false, lateChecked: false, result: "init" },
+      cancelled: false, failure: NoFailure, lateChecked: false, result: "init" },
     dispatch' = Init,
   }
 
@@ -37,31 +39,50 @@ module ResumeCandidateModel {
     }
   }
 
+  pure def acknowledge(current: State): State = match current.stage {
+    | StartPending => { ...current, stage: FinishPending }
+    | FinishPending => { ...current, count: current.count + 1,
+        stage: if (current.failure == EffectFailure) DiagnosticPending else NextCandidate }
+    | DiagnosticPending => { ...current, stage: CleanupPending }
+    | CleanupPending => { ...current,
+        stage: if (current.failure == DeliveryFailure) Finished else ReportPending }
+    | ReportPending => { ...current, stage: SessionPending }
+    | SessionPending => { ...current, stage: Finished }
+    | _ => current
+  }
+
   action ack = all {
-    Set(StartPending, FinishPending).contains(s.stage),
-    s' = if (s.stage == StartPending) { ...s, stage: FinishPending, result: "accepted" }
-      else { ...s, stage: NextCandidate, count: s.count + 1, result: "accepted" },
+    Set(StartPending, FinishPending, DiagnosticPending, CleanupPending, ReportPending, SessionPending).contains(s.stage),
+    s' = { ...acknowledge(s), result: "accepted" },
     dispatch' = Ack,
   }
 
   action cancel = all {
-    not(s.cancelled), Set(LookupPending, StartPending, FinishPending).contains(s.stage),
+    not(s.cancelled), s.failure == NoFailure, Set(LookupPending, StartPending, FinishPending).contains(s.stage),
     s' = if (s.stage == LookupPending)
         { ...s, cancelled: true, stage: StartPending, outcome: NotRun, result: "accepted" }
       else { ...s, cancelled: true, result: "accepted" },
     dispatch' = Cancel,
   }
 
+  action failOutput(delivery: bool): bool = all {
+    not(s.cancelled), s.failure == NoFailure, Set(StartPending, FinishPending).contains(s.stage),
+    s' = if (delivery) { ...s, failure: DeliveryFailure, stage: DiagnosticPending, result: "accepted" }
+      else { ...s, failure: EffectFailure, result: "accepted" },
+    dispatch' = Fail(delivery),
+  }
+
   action late = all {
-    s.cancelled, not(s.lateChecked),
-    s' = { ...s, lateChecked: true, result: "retired" },
+    s.cancelled or s.failure != NoFailure, not(s.lateChecked),
+    s' = { ...s, lateChecked: true, result: if (s.cancelled) "retired" else "duplicate" },
     dispatch' = Late,
   }
 
   action step = {
     nondet status = 0.to(7).oneOf()
     nondet identityOk = Set(false, true).oneOf()
-    any { reply(status, identityOk), ack, cancel, late }
+    nondet delivery = Set(false, true).oneOf()
+    any { reply(status, identityOk), ack, cancel, failOutput(delivery), late }
   }
 
   action reuseStep = if (s.stage == LookupPending) reply(1, true) else ack
@@ -75,19 +96,32 @@ module ResumeCandidateModel {
   action cancelledStartStep = cancelReuseAt(StartPending)
   action cancelledFinishStep = cancelReuseAt(FinishPending)
 
+  action failReuseAt(stage: Stage, delivery: bool): bool =
+    if (s.stage == LookupPending) reply(2, true)
+    else if (s.failure == NoFailure) { if (s.stage == stage) failOutput(delivery) else ack }
+    else if (not(s.lateChecked) and (not(delivery) or s.stage == Finished)) late else ack
+  action failedStartStep = failReuseAt(StartPending, false)
+  action failedFinishStep = failReuseAt(FinishPending, false)
+  action reportIoStep = failReuseAt(FinishPending, true)
+
   val killedCounted = s.stage == NextCandidate and s.outcome == CachedKilled and s.count == 1
   val timeoutRerun = s.stage == ApplyPending and s.stored == 3
   val wrongIdentityRejected = s.result == "identity" and s.stage == LookupPending
   val stoppedLookupCounted = s.stage == NextCandidate and s.outcome == NotRun and s.lateChecked
   val stoppedReuseCounted = s.stage == NextCandidate and s.outcome == CachedSurvived and s.lateChecked
+  val genericFailureDrained = s.stage == Finished and s.failure == EffectFailure and s.count == 1 and s.lateChecked
+  val reportIoAbandoned = s.stage == Finished and s.failure == DeliveryFailure and s.count == 0 and s.lateChecked
+  val failureStages = Set(DiagnosticPending, CleanupPending, ReportPending, SessionPending, Finished)
 
   val Safety = all {
-    s.count == (if (s.stage == NextCandidate) 1 else 0),
+    s.count == (if (s.stage == NextCandidate or (s.failure == EffectFailure and failureStages.contains(s.stage))) 1 else 0),
     s.stage == LookupPending implies (s.stored == 8 and s.outcome == NoOutcome),
     s.stage == ApplyPending implies (s.stored != 8 and not(reusable(s.stored)) and s.outcome == NoOutcome),
-    Set(StartPending, FinishPending, NextCandidate).contains(s.stage) implies
+    Set(StartPending, FinishPending, NextCandidate).union(failureStages).contains(s.stage) implies
       ((reusable(s.stored) or (s.cancelled and s.stored == 8)) and s.outcome == syntheticFor(s.stored)),
-    s.lateChecked implies s.cancelled,
+    s.lateChecked implies (s.cancelled or s.failure != NoFailure),
+    failureStages.contains(s.stage) implies s.failure != NoFailure,
+    s.failure == DeliveryFailure implies Set(DiagnosticPending, CleanupPending, Finished).contains(s.stage),
   }
 }
 module ResumeCandidate { import ResumeCandidateModel(RERUN_REUSED = false).* }

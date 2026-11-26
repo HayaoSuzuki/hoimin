@@ -1,0 +1,293 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "NoOutcome",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "init",
+        "stage": {
+          "tag": "LookupPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "8"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Reply",
+        "value": {
+          "identityOk": true,
+          "status": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedSurvived",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "StartPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedSurvived",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "FinishPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Fail",
+        "value": true
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "DeliveryFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedSurvived",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "DiagnosticPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "DeliveryFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedSurvived",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "CleanupPending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "DeliveryFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
+        "outcome": {
+          "tag": "CachedSurvived",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "accepted",
+        "stage": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "ResumeCandidate::ResumeCandidateModel::dispatch": {
+        "tag": "Late",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ResumeCandidate::ResumeCandidateModel::s": {
+        "cancelled": false,
+        "count": {
+          "#bigint": "0"
+        },
+        "failure": {
+          "tag": "DeliveryFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": true,
+        "outcome": {
+          "tag": "CachedSurvived",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": "duplicate",
+        "stage": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stored": {
+          "#bigint": "2"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "ResumeCandidate::ResumeCandidateModel::s",
+    "ResumeCandidate::ResumeCandidateModel::dispatch"
+  ]
+}

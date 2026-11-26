@@ -1,9 +1,10 @@
 //! The public lookup and synthetic output transitions of a resumed candidate.
 use super::{fixture_candidate, quint, waiting_for_session_candidate};
 use hoimin_core::{
-    CandidateLoaded, CandidateReadTarget, MachineError, MutationOutcome, MutationStatus,
-    OutputEmitted, OutputEvent, ReusedMutationStatus, RunEffect, RunEvent, RunPhase, RunState,
-    StoredResult, StoredResultLoaded, transition,
+    CandidateLoaded, CandidateReadTarget, CleanupFinished, EffectFailed, EffectFailure,
+    MachineError, MutationOutcome, MutationStatus, OutputEmitted, OutputEvent,
+    ReusedMutationStatus, RunEffect, RunEvent, RunPhase, RunState, SessionFinished, StoredResult,
+    StoredResultLoaded, transition,
 };
 use serde_json::Value;
 
@@ -55,58 +56,101 @@ fn lookup_reply(effect: &RunEffect, status: u64, identity_ok: bool) -> RunEvent 
 }
 
 fn acknowledgement(effect: &RunEffect) -> RunEvent {
-    let RunEffect::EmitOutput(output) = effect else {
-        panic!("expected a pending output: {effect:?}");
-    };
-    RunEvent::OutputEmitted(OutputEmitted { id: output.id })
+    match effect {
+        RunEffect::EmitOutput(output) => RunEvent::OutputEmitted(OutputEmitted { id: output.id }),
+        RunEffect::Cleanup(request) => RunEvent::CleanupFinished(CleanupFinished {
+            id: request.id,
+            released_reservations: request.reservations.clone(),
+        }),
+        RunEffect::FinishSession(request) => RunEvent::SessionFinished(SessionFinished {
+            id: request.id,
+            run_id: request.run_id.clone(),
+            complete: request.complete,
+        }),
+        other => panic!("unexpected acknowledgement: {other:?}"),
+    }
 }
 
-fn check_state(state: &RunState, pending: &RunEffect, expected: &Value) {
-    assert_eq!(state.phase(), RunPhase::Mutants);
-    assert_eq!(state.pending_count(), 1);
-    assert!(state.is_effect_pending(pending.id()));
+fn check_output(
+    state: &RunState,
+    event: &OutputEvent,
+    outcome: &str,
+    failure: &str,
+) -> (&'static str, RunPhase) {
+    assert_eq!(event.run_id(), state.run_id());
+    match event {
+        OutputEvent::MutantStarted(started) => {
+            assert_eq!(started.mutant_id, "m1");
+            ("StartPending", RunPhase::Mutants)
+        }
+        OutputEvent::MutantFinished(finished) => {
+            assert_eq!(finished.candidate.id, "m1");
+            let expected_outcome = match outcome {
+                "CachedKilled" => MutationOutcome::Reused {
+                    status: ReusedMutationStatus::Killed,
+                },
+                "CachedSurvived" => MutationOutcome::Reused {
+                    status: ReusedMutationStatus::Survived,
+                },
+                "NotRun" => MutationOutcome::NotRun,
+                other => panic!("unknown synthetic outcome {other}"),
+            };
+            assert_eq!(finished.outcome, expected_outcome);
+            ("FinishPending", RunPhase::Mutants)
+        }
+        OutputEvent::Diagnostic(diagnostic) => {
+            let (code, message) = match failure {
+                "EffectFailure" => ("synthetic.fixture", "synthetic output failed"),
+                "DeliveryFailure" => ("report.io", "write: synthetic output failed"),
+                other => panic!("diagnostic without a modeled failure: {other}"),
+            };
+            assert_eq!(diagnostic.code, code);
+            assert_eq!(diagnostic.message, message);
+            assert_eq!(diagnostic.level, "error");
+            ("DiagnosticPending", RunPhase::Finalize)
+        }
+        OutputEvent::RunFinished(report) => {
+            assert_eq!(&report.counts, state.summary());
+            assert_eq!(report.exit_code, 2);
+            assert!(!report.complete);
+            ("ReportPending", RunPhase::Finalize)
+        }
+        other => panic!("unexpected candidate output: {other:?}"),
+    }
+}
+
+fn check_state(state: &RunState, pending: Option<&RunEffect>, expected: &Value) {
+    assert_eq!(state.pending_count(), usize::from(pending.is_some()));
+    if let Some(effect) = pending {
+        assert!(state.is_effect_pending(effect.id()));
+    }
     let outcome = expected["outcome"]["tag"].as_str().unwrap();
-    let pending_kind = match pending {
-        RunEffect::LookupStoredResult(lookup) => {
+    let failure = expected["failure"]["tag"].as_str().unwrap();
+    let (pending_kind, machine_phase) = match pending {
+        Some(RunEffect::LookupStoredResult(lookup)) => {
             assert_eq!(lookup.mutant_id, "m1");
             assert_eq!(lookup.run_id, state.run_id());
-            "LookupPending"
+            ("LookupPending", RunPhase::Mutants)
         }
-        RunEffect::ApplyMutation(apply) => {
+        Some(RunEffect::ApplyMutation(apply)) => {
             assert_eq!(apply.candidate.id, "m1");
-            "ApplyPending"
+            ("ApplyPending", RunPhase::Mutants)
         }
-        RunEffect::EmitOutput(output) => {
-            assert_eq!(output.event.run_id(), state.run_id());
-            match &output.event {
-                OutputEvent::MutantStarted(started) => {
-                    assert_eq!(started.mutant_id, "m1");
-                    "StartPending"
-                }
-                OutputEvent::MutantFinished(finished) => {
-                    assert_eq!(finished.candidate.id, "m1");
-                    let expected_outcome = match outcome {
-                        "CachedKilled" => MutationOutcome::Reused {
-                            status: ReusedMutationStatus::Killed,
-                        },
-                        "CachedSurvived" => MutationOutcome::Reused {
-                            status: ReusedMutationStatus::Survived,
-                        },
-                        "NotRun" => MutationOutcome::NotRun,
-                        other => panic!("unknown synthetic outcome {other}"),
-                    };
-                    assert_eq!(finished.outcome, expected_outcome);
-                    "FinishPending"
-                }
-                other => panic!("unexpected candidate output: {other:?}"),
-            }
-        }
-        RunEffect::ReadCandidate(read) => {
+        Some(RunEffect::EmitOutput(output)) => check_output(state, &output.event, outcome, failure),
+        Some(RunEffect::ReadCandidate(read)) => {
             assert_eq!(read.target, CandidateReadTarget::Next);
-            "NextCandidate"
+            ("NextCandidate", RunPhase::Mutants)
         }
+        Some(RunEffect::Cleanup(_)) => ("CleanupPending", RunPhase::Cleaning),
+        Some(RunEffect::FinishSession(request)) => {
+            assert_eq!(request.run_id, state.run_id());
+            assert!(!request.complete);
+            ("SessionPending", RunPhase::Finalize)
+        }
+        None => ("Finished", RunPhase::Finished),
         other => panic!("unexpected candidate effect: {other:?}"),
     };
+    assert_eq!(state.phase(), machine_phase);
     assert_eq!(pending_kind, expected["stage"]["tag"].as_str().unwrap());
     let count = quint::number(&expected["count"]);
     let counts = ["CachedKilled", "CachedSurvived", "NotRun"]
@@ -118,6 +162,8 @@ fn check_state(state: &RunState, pending: &RunEffect, expected: &Value) {
         state.exit_code(),
         if expected["cancelled"] == true {
             130
+        } else if failure != "NoFailure" {
+            2
         } else {
             0
         }
@@ -125,8 +171,9 @@ fn check_state(state: &RunState, pending: &RunEffect, expected: &Value) {
 }
 
 fn replay(history: &[Value]) {
-    let (mut state, mut pending) = bootstrap();
-    let mut retired = None;
+    let (mut state, initial) = bootstrap();
+    let mut pending = Some(initial);
+    let mut obsolete = None;
     for row in history {
         let expected = &row["s"];
         let dispatch = &row["dispatch"];
@@ -134,20 +181,36 @@ fn replay(history: &[Value]) {
         let input = match dispatch["tag"].as_str().unwrap() {
             "Init" => None,
             "Reply" => Some(lookup_reply(
-                &pending,
+                pending.as_ref().unwrap(),
                 quint::number(&value["status"]),
                 value["identityOk"].as_bool().unwrap(),
             )),
-            "Ack" => Some(acknowledgement(&pending)),
+            "Ack" => Some(acknowledgement(pending.as_ref().unwrap())),
             "Cancel" => {
-                retired = Some(pending.clone());
+                obsolete.clone_from(&pending);
                 Some(RunEvent::CancellationRequested)
             }
+            "Fail" => {
+                obsolete.clone_from(&pending);
+                let id = pending.as_ref().unwrap().id();
+                let failure = if value.as_bool().unwrap() {
+                    EffectFailure::ReportIo {
+                        operation: "write".into(),
+                        message: "synthetic output failed".into(),
+                    }
+                } else {
+                    EffectFailure::Other {
+                        code: "synthetic.fixture".into(),
+                        message: "synthetic output failed".into(),
+                    }
+                };
+                Some(RunEvent::EffectFailed(EffectFailed { id, failure }))
+            }
             "Late" => {
-                let retired_request = retired.as_ref().expect("cancelled request");
-                let callback = match retired_request {
-                    RunEffect::LookupStoredResult(_) => lookup_reply(retired_request, 1, true),
-                    _ => acknowledgement(retired_request),
+                let previous = obsolete.as_ref().expect("cancelled or failed request");
+                let callback = match previous {
+                    RunEffect::LookupStoredResult(_) => lookup_reply(previous, 1, true),
+                    _ => acknowledgement(previous),
                 };
                 Some(callback)
             }
@@ -156,9 +219,10 @@ fn replay(history: &[Value]) {
         if let Some(event) = input {
             match expected["result"].as_str().unwrap() {
                 "accepted" => {
-                    let (next, effects) = transition(state, event).unwrap();
+                    let (next, mut effects) = transition(state, event).unwrap();
                     state = next;
-                    pending = one(effects);
+                    assert!(effects.len() <= 1, "one candidate continuation");
+                    pending = effects.pop();
                 }
                 "identity" => assert_eq!(
                     transition(state.clone(), event).unwrap_err(),
@@ -171,15 +235,23 @@ fn replay(history: &[Value]) {
                 ),
                 "retired" => assert_eq!(
                     transition(state.clone(), event).unwrap_err(),
-                    MachineError::RetiredEffect(retired.as_ref().unwrap().id()),
+                    MachineError::RetiredEffect(obsolete.as_ref().unwrap().id()),
+                ),
+                "duplicate" => assert_eq!(
+                    transition(state.clone(), event).unwrap_err(),
+                    MachineError::DuplicateEffect(obsolete.as_ref().unwrap().id()),
                 ),
                 other => panic!("unknown resume verdict {other}"),
             }
         }
-        if let Some(retired) = &retired {
-            assert!(state.is_effect_retired(retired.id()));
+        if let Some(previous) = &obsolete {
+            assert!(!state.is_effect_pending(previous.id()));
+            assert_eq!(
+                state.is_effect_retired(previous.id()),
+                expected["cancelled"] == true
+            );
         }
-        check_state(&state, &pending, expected);
+        check_state(&state, pending.as_ref(), expected);
     }
 }
 
@@ -193,6 +265,9 @@ fn replay(history: &[Value]) {
 #[case::cancelled_lookup(include_str!("../../../../formal/quint/traces/resume_candidate_cancelledLookupStep_0.itf.json"))]
 #[case::cancelled_start(include_str!("../../../../formal/quint/traces/resume_candidate_cancelledStartStep_0.itf.json"))]
 #[case::cancelled_finish(include_str!("../../../../formal/quint/traces/resume_candidate_cancelledFinishStep_0.itf.json"))]
+#[case::failed_start(include_str!("../../../../formal/quint/traces/resume_candidate_failedStartStep_0.itf.json"))]
+#[case::failed_finish(include_str!("../../../../formal/quint/traces/resume_candidate_failedFinishStep_0.itf.json"))]
+#[case::report_io(include_str!("../../../../formal/quint/traces/resume_candidate_reportIoStep_0.itf.json"))]
 fn resume_history_matches_public_candidate_transition(#[case] trace: &str) {
     let history = quint::states(trace);
     assert!(history.len() > 1);

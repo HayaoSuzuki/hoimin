@@ -19,6 +19,12 @@
         "count": {
           "#bigint": "0"
         },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
         "lateChecked": false,
         "outcome": {
           "tag": "NoOutcome",
@@ -47,7 +53,7 @@
         "value": {
           "identityOk": false,
           "status": {
-            "#bigint": "4"
+            "#bigint": "2"
           }
         }
       },
@@ -55,6 +61,12 @@
         "cancelled": false,
         "count": {
           "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
         },
         "lateChecked": false,
         "outcome": {
@@ -84,7 +96,7 @@
         "value": {
           "identityOk": false,
           "status": {
-            "#bigint": "3"
+            "#bigint": "7"
           }
         }
       },
@@ -92,6 +104,12 @@
         "cancelled": false,
         "count": {
           "#bigint": "0"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
         },
         "lateChecked": false,
         "outcome": {
@@ -127,6 +145,12 @@
         "count": {
           "#bigint": "0"
         },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
         "lateChecked": false,
         "outcome": {
           "tag": "NotRun",
@@ -151,7 +175,7 @@
         "index": 4
       },
       "ResumeCandidate::ResumeCandidateModel::dispatch": {
-        "tag": "Late",
+        "tag": "Ack",
         "value": {
           "#tup": []
         }
@@ -161,16 +185,22 @@
         "count": {
           "#bigint": "0"
         },
-        "lateChecked": true,
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
+        "lateChecked": false,
         "outcome": {
           "tag": "NotRun",
           "value": {
             "#tup": []
           }
         },
-        "result": "retired",
+        "result": "accepted",
         "stage": {
-          "tag": "StartPending",
+          "tag": "FinishPending",
           "value": {
             "#tup": []
           }
@@ -185,7 +215,7 @@
         "index": 5
       },
       "ResumeCandidate::ResumeCandidateModel::dispatch": {
-        "tag": "Ack",
+        "tag": "Late",
         "value": {
           "#tup": []
         }
@@ -195,6 +225,12 @@
         "count": {
           "#bigint": "0"
         },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
+        },
         "lateChecked": true,
         "outcome": {
           "tag": "NotRun",
@@ -202,7 +238,7 @@
             "#tup": []
           }
         },
-        "result": "accepted",
+        "result": "retired",
         "stage": {
           "tag": "FinishPending",
           "value": {
@@ -228,6 +264,12 @@
         "cancelled": true,
         "count": {
           "#bigint": "1"
+        },
+        "failure": {
+          "tag": "NoFailure",
+          "value": {
+            "#tup": []
+          }
         },
         "lateChecked": true,
         "outcome": {
