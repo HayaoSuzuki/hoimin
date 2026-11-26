@@ -22,6 +22,8 @@ use proptest::prelude::*;
 mod quint;
 #[path = "machine/quint_ordered.rs"]
 mod quint_ordered;
+#[path = "machine/quint_ordered_drain.rs"]
+mod quint_ordered_drain;
 #[path = "machine/quint_resume.rs"]
 mod quint_resume;
 

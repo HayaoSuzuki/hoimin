@@ -1,0 +1,653 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": []
+        },
+        "failed": false,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [],
+        "scanned": {
+          "#bigint": "0"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Discover",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        },
+        "failed": false,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [],
+        "scanned": {
+          "#bigint": "1"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Discover",
+        "value": {
+          "#bigint": "3"
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": false,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [],
+        "scanned": {
+          "#bigint": "2"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Discover",
+        "value": {
+          "#bigint": "2"
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": false,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "FailRead",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Loading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "LoadBody",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Starting",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Finishing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": false,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Loading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Stop",
+        "value": true
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": true,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Loading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "LoadBody",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": true,
+        "lateChecks": {
+          "#bigint": "0"
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Starting",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Late",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": true,
+        "lateChecks": {
+          "#bigint": "1"
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Starting",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": true,
+        "lateChecks": {
+          "#bigint": "1"
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Finishing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "OrderedDrain::OrderedDrainModel::dispatch": {
+        "tag": "Ack",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDrain::OrderedDrainModel::s": {
+        "discovered": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "failed": true,
+        "failedId": {
+          "#bigint": "0"
+        },
+        "interrupted": true,
+        "lateChecks": {
+          "#bigint": "1"
+        },
+        "pending": [],
+        "phase": {
+          "tag": "FailureDiagnostic",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reported": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "scanned": {
+          "#bigint": "3"
+        },
+        "stops": {
+          "#bigint": "1"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "OrderedDrain::OrderedDrainModel::s",
+    "OrderedDrain::OrderedDrainModel::dispatch"
+  ]
+}

@@ -309,6 +309,14 @@ requests. It compares pending read targets, apply order, and exact callback
 errors. The fixture retains a clone of the input for corrected replies after
 an identity error. Existing worker and stop tests cover execution after handoff.
 
+`OrderedDrain` uses the same public setup and stops during discovery or an
+indexed read. Its four schedules cover partial discovery, repeated stops
+and retired reads, failure of an indexed read, and a trailing discovery
+failure. Surviving candidates are reported once as `NotRun` in requested
+order. Failed indexed bodies are skipped. Each history hands off to final
+verification or the failure diagnostic after these reports. The negative
+model tries to drain an undiscovered candidate.
+
 ```sh
 cargo test --locked -p hoimin-core --test machine quint_ordered
 ```
@@ -338,8 +346,8 @@ cargo test --locked -p hoimin-core --test machine quint_resume
 
 ## Active workers and Quint Connect
 
-The registry checks twenty finite configurations, fourteen negative controls and
-143 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks twenty-one finite configurations, fifteen negative controls and
+151 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

@@ -18,7 +18,7 @@ fn read_target(value: &Value) -> Option<CandidateReadTarget> {
     }
 }
 
-fn bootstrap() -> (RunState, Vec<RunEffect>) {
+pub(super) fn bootstrap() -> (RunState, Vec<RunEffect>) {
     let (state, pending) =
         waiting_for_ordered_analysis_with_jobs(vec!["m3".into(), "m1".into()], 2);
     let [RunEffect::AnalyzeFile(request)] = pending.as_slice() else {

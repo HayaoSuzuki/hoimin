@@ -42,6 +42,19 @@ MODELS = (
         ("orderedStep", "missingStep"),
     ),
     Model(
+        "ordered_drain.qnt",
+        "OrderedDrain",
+        "ordered_drain",
+        "OrderedDrainInventsCandidate",
+        (
+            "partialStopStep",
+            "repeatedIndexedStopStep",
+            "indexedFailureStep",
+            "trailingFailureStep",
+        ),
+        scenario_steps=16,
+    ),
+    Model(
         "resume_candidate.qnt",
         "ResumeCandidate",
         "resume_candidate",
