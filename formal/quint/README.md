@@ -179,14 +179,15 @@ cargo test --locked -p hoimin-cli --lib shell::finalization::quint
 cargo test --locked -p hoimin-cli --lib session::ownership::quint
 ```
 
-## SQLite persistence and resume selection
+## SQLite persistence, resume selection and ownership
 
-The SQLite extension adds two independent domains to the earlier configurations:
+The SQLite extension adds three domains to the earlier configurations:
 
 | Model | Finite scope | Implementation correspondence | Negative control |
 | --- | --- | --- | --- |
 | Session | One run, two mutants, all seven result statuses, owner release/reacquisition and completion | Public `SessionHandler::begin/persist/lookup/load/finish` on a real temporary SQLite database; `resume_policy` on recovered results | Replace a determinate result |
 | SessionSelection | Two chronological runs, two fingerprints, budgets 1 and 2, complete/incomplete rows | Public handler outcomes, fresh-start reasons and stored rows after every close/reopen, including budget promotion | Choose the oldest eligible run |
+| SessionOwnership | Two independent handles, one saved run, budgets 1 and 2 | Two `SessionHandler` instances on the same SQLite database using native locks, with public ownership probes and durable row comparison | Share ownership between handlers |
 
 `Session.recoveryStep` saves a timeout, reopens and resumes the DB, replaces it
 with a killed result, and rejects a later survived replacement. Selection's
@@ -195,6 +196,15 @@ newer run whose budget is too large. `freshPriorityStep` starts with empty histo
 finds a matching complete run, then prefers the budget-decrease reason once a
 matching incomplete run with a larger budget exists. All five ordinary fresh
 reasons participate in the safety invariant and in SQLite outcome comparison.
+
+`SessionOwnership.handoffStep` starts with a saved timeout. It repeats the run's
+creation, then acquires the run and rejects another handle's promotion request
+while the run is owned. The failed promotion leaves the stored budget intact.
+Reopening the first handle releases the lock. The second handle can then resume
+and promote the budget, and a smaller request gets the budget-decrease reason.
+The schedule exercises both incomplete and complete finish. The driver also
+checks durable rows and looks up the saved timeout through each handle after
+every operation. Interleavings occur between completed public calls.
 
 The Rust driver compares operation outcomes, every stored result and run row,
 and probes ownership and reuse with public lookups after every lifecycle step.
@@ -279,8 +289,8 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 
 ## Active workers and Quint Connect
 
-The registry checks seventeen finite configurations, eleven negative controls and
-116 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks eighteen finite configurations, twelve negative controls and
+121 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;

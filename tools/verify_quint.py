@@ -100,6 +100,13 @@ MODELS = (
         "SessionSelectionOldest",
         ("latestStep", "fallbackStep", "freshPriorityStep"),
     ),
+    Model(
+        "session_ownership.qnt",
+        "SessionOwnership",
+        "session_ownership",
+        "SessionOwnershipShared",
+        ("handoffStep",),
+    ),
     Model("budget.qnt", "Budget", "trace", "BudgetOverdraft"),
     Model("budget.qnt", "BudgetExtended", "extended"),
     Model(

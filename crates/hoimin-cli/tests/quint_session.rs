@@ -16,8 +16,10 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 #[path = "../../hoimin-core/tests/support/quint.rs"]
-#[allow(dead_code)] // The shared ITF set reader is unused by these list-based models.
 mod quint;
+
+#[path = "quint_session/ownership.rs"]
+mod ownership;
 
 fn fingerprint(value: u8) -> RunFingerprint {
     RunFingerprint::from_bytes([value; 32])
@@ -174,17 +176,22 @@ struct Database {
 }
 impl Database {
     fn new() -> Self {
-        let directory = tempfile::tempdir().unwrap();
-        let handler = Some(SessionHandler::open(directory.path().join("session.sqlite3")).unwrap());
-        Self { handler, directory }
+        let mut database = Self {
+            handler: None,
+            directory: tempfile::tempdir().unwrap(),
+        };
+        database.handler = Some(database.open_handler());
+        database
     }
     fn handler(&mut self) -> &mut SessionHandler {
         self.handler.as_mut().unwrap()
     }
+    fn open_handler(&self) -> SessionHandler {
+        SessionHandler::open(self.directory.path().join("session.sqlite3")).unwrap()
+    }
     fn reopen(&mut self) {
         drop(self.handler.take());
-        self.handler =
-            Some(SessionHandler::open(self.directory.path().join("session.sqlite3")).unwrap());
+        self.handler = Some(self.open_handler());
     }
     fn connection(&self) -> Connection {
         Connection::open_with_flags(

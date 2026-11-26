@@ -1,0 +1,600 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": false,
+        "owners": {
+          "#set": []
+        },
+        "result": "init"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Reopen",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": false,
+        "owners": {
+          "#set": []
+        },
+        "result": "reopened"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "BeginAgain",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": false,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.begin"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Reopen",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": false,
+        "owners": {
+          "#set": []
+        },
+        "result": "reopened"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "BeginAgain",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": false,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.begin"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "actor": {
+            "#bigint": "1"
+          },
+          "limit": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": false,
+        "owners": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        },
+        "result": "resumed"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "1"
+          },
+          "complete": true
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "finished"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "actor": {
+            "#bigint": "1"
+          },
+          "limit": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "matching_run_complete"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "limit": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "matching_run_complete"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "complete": true
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.finish.owner"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "complete": false
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.finish.owner"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Reopen",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "reopened"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "BeginAgain",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.begin"
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "limit": {
+            "#bigint": "2"
+          }
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "matching_run_complete"
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "1"
+          },
+          "complete": true
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.finish.owner"
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "actor": {
+            "#bigint": "1"
+          },
+          "limit": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "matching_run_complete"
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "actor": {
+            "#bigint": "1"
+          },
+          "limit": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "matching_run_complete"
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Reopen",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "reopened"
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "complete": false
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.finish.owner"
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "1"
+          },
+          "complete": false
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.finish.owner"
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Reopen",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "reopened"
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Reopen",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "reopened"
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "complete": false
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.finish.owner"
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "complete": false
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "session.finish.owner"
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "SessionOwnership::SessionOwnershipModel::dispatch": {
+        "tag": "Load",
+        "value": {
+          "actor": {
+            "#bigint": "0"
+          },
+          "limit": {
+            "#bigint": "1"
+          }
+        }
+      },
+      "SessionOwnership::SessionOwnershipModel::s": {
+        "budget": {
+          "#bigint": "1"
+        },
+        "complete": true,
+        "owners": {
+          "#set": []
+        },
+        "result": "matching_run_complete"
+      }
+    }
+  ],
+  "vars": [
+    "SessionOwnership::SessionOwnershipModel::s",
+    "SessionOwnership::SessionOwnershipModel::dispatch"
+  ]
+}
