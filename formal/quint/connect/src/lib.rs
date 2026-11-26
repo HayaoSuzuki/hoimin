@@ -129,3 +129,6 @@ mod tests {
 
 #[cfg(test)]
 mod disk_observation;
+
+#[cfg(test)]
+mod budget;

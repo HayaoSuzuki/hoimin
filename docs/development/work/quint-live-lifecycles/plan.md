@@ -26,7 +26,7 @@ Keep existing 20s/2048MiB model and 300s/2048MiB Connect guards. Build with two 
 
 ## Item 2: Budget ledger
 
-- [ ] Add failing live cases; introduce typed live wrapper sharing the existing model transitions.
-- [ ] Implement state projection and real reserve/release calls; add focused schedules, seed PBT and semantic negative control.
-- [ ] Check existing fixed traces unchanged, full registry, both contract profiles and relevant tests.
-- [ ] Record five implementation/test review passes, commit; run cargo clean after builds stop.
+- [x] Add failing live cases; introduce typed live wrapper sharing the existing model transitions.
+- [x] Implement state projection and real reserve/release calls; add focused schedules, seed PBT and semantic negative control.
+- [x] Check existing fixed traces unchanged, full registry, both contract profiles and relevant tests.
+- [x] Record five implementation/test review passes, commit; run cargo clean after builds stop.

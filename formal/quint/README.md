@@ -75,6 +75,23 @@ See the [design](../../docs/development/work/quint-live-lifecycles/design.md),
 [plan](../../docs/development/work/quint-live-lifecycles/plan.md), and
 [review evidence](../../docs/development/work/quint-live-lifecycles/review.md).
 
+`BudgetConnect` supplies typed live commands to the same `BudgetModel` transitions
+used by `BudgetExtended` (four successful reservations, capacity two per kind).
+It generates at most eight commands. `reuseStep` covers a rejected reservation,
+release, duplicate release, unknown ID, zero-sized reservation and allocation
+after rejection; `zeroStep` fills the workload with zero-sized reservations and
+releases them out of order. The existing TLC checks establish the underlying
+finite model's invariants; Connect also checks `Safety` on generated histories.
+The command wrapper is not a separate exhaustive Rust proof.
+
+The Connect state compares real returned IDs, reservations visible through public
+ID queries, inferred released IDs, totals for all three budget kinds, and actual
+result codes. IDs 0–4 and all returned IDs are queried; no private ledger fields
+are exposed. A negative control reports a successful release without calling
+the real API and must fail the framework's state comparison. Seed PBT adds live
+histories alongside the existing fixed ITF, independent journal PBT, and
+`budget_ledger` fuzz target. Ordinary tests remain offline.
+
 | Model | Finite domain | Rust correspondence | Negative control |
 | --- | --- | --- | --- |
 | Budget | Capacity 2 per kind, 3 kinds, amounts 0–3, 2 successful reservations | Public `BudgetLedger::reserve/release`, returned IDs, contents and totals | Overdraft |
