@@ -301,7 +301,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.formal == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The finite registry takes about 10 minutes before Connect and Rust replay.
+    timeout-minutes: 25
     env:
       QUINT_HOME: ${{ github.workspace }}/formal/quint/_build/toolchain
     steps:
@@ -339,7 +340,7 @@ jobs:
           mkdir -p "$QUINT_HOME/apalache-dist-0.62.4"
           tar -xzf "$archive" -C "$QUINT_HOME/apalache-dist-0.62.4"
       - name: Check finite model, negative control, and oracle freshness
-        run: python tools/verify_quint.py
+        run: python -u tools/verify_quint.py
       - name: Check live Quint Connect correspondence and generated seeds
         run: python tools/verify_quint_connect.py
       - name: Replay SQLite lifecycle and resume selection histories
