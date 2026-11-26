@@ -215,6 +215,7 @@ pub struct Driver {
     finish_code: Option<i32>,
     report_ack: bool,
     session_finishes: usize,
+    finished_cleanup: Option<EffectId>,
 }
 impl Driver {
     pub fn new(entry: Entry) -> Self {
@@ -237,6 +238,7 @@ impl Driver {
             finish_code: None,
             report_ack: false,
             session_finishes: 0,
+            finished_cleanup: None,
         }
     }
     fn pending_kind(&self) -> u8 {
@@ -265,6 +267,10 @@ impl Driver {
         );
         let k = kind(effect);
         assert_ne!(k, 0, "stopped preparation cannot restart");
+        assert!(
+            k != 4 || self.finished_cleanup.is_none(),
+            "cleanup cannot be reissued"
+        );
         if let RunEffect::EmitOutput(request) = effect {
             assert!(
                 self.finish_code.is_none(),
@@ -343,6 +349,10 @@ impl Driver {
         }
         let disk = self.state.disk_summary();
         assert_eq!(
+            disk.cleanup.len(),
+            usize::from(self.finished_cleanup.is_some())
+        );
+        assert_eq!(
             disk.stop, self.first_disk,
             "first disk reason and later diagnostics match the event journal"
         );
@@ -350,8 +360,11 @@ impl Driver {
             assert_eq!(self.state.phase(), RunPhase::Finished);
         }
     }
+    fn stops_are_frozen(&self) -> bool {
+        matches!(self.pending_kind(), 4 | 6 | 7 | 8) || self.finished_cleanup.is_some()
+    }
     fn record_stop(&mut self, event: RunEvent) -> RunEvent {
-        if matches!(self.pending_kind(), 4 | 6 | 7 | 8) {
+        if self.stops_are_frozen() {
             return event;
         }
         self.stopped = true;
@@ -476,7 +489,7 @@ impl Driver {
     }
     pub fn apply(&mut self, command: Command) -> Verdict {
         let k = self.pending_kind();
-        let frozen = matches!(k, 4 | 6 | 7 | 8);
+        let frozen = self.stops_are_frozen();
         let previous = self.pending.clone();
         let Some((event, expected, completing)) = self.event(command) else {
             return Verdict::Skipped;
@@ -508,7 +521,11 @@ impl Driver {
         assert!(effects.len() <= 1, "one bootstrap continuation");
         self.state = state;
         if completing {
-            self.completed.push(previous.as_ref().unwrap().id());
+            let id = previous.as_ref().unwrap().id();
+            self.completed.push(id);
+            if k == 4 {
+                self.finished_cleanup = Some(id);
+            }
         }
         self.pending = effects.first().cloned().or_else(|| {
             previous
@@ -522,11 +539,8 @@ impl Driver {
         {
             self.retired.insert(old.id());
         }
-        for effect in &effects {
-            self.observe(effect);
-        }
         if matches!(command, Command::Stop(..) | Command::DiskMeasurementFailed) && frozen {
-            assert_eq!(effects, Vec::new());
+            assert_eq!(effects, Vec::new(), "terminal stop cannot emit effects");
             assert_eq!(
                 (
                     self.state.phase(),
@@ -537,11 +551,15 @@ impl Driver {
                 "terminal stop is inert"
             );
         }
+        for effect in &effects {
+            self.observe(effect);
+        }
         self.check();
         Verdict::Accepted
     }
     pub fn assert_model(&self, model: &Value) {
         let s = &model["s"];
+        assert_eq!(s["cleanupDone"], self.finished_cleanup.is_some());
         assert_eq!(u64::from(self.pending_kind()), integer(&s["pending"]));
         let phase = match self.state.phase() {
             RunPhase::Preflight => 0,

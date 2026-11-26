@@ -1571,6 +1571,7 @@ pub fn transition(
         .any(|pending| pending.output_continuation() == Some(OutputContinuation::RunFinished));
     if is_stop
         && (final_report_pending
+            || state.flags.cleanup.cleanup_done
             || state.flags.cleanup.session_finish_attempted
             || state.phase == RunPhase::Finished
             || state.phase == RunPhase::Cleaning)

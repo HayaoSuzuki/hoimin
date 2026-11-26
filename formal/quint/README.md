@@ -254,8 +254,8 @@ compared with model expectations or an independent event journal.
 The finite model allows two stop requests. PBT runs 256 histories of up to 127
 commands, with arbitrary u64 disk readings, then eight successful acknowledgements
 to check recovery progress under that explicit assumption. It preserves the first
-disk reason, freezes stop causes during cleanup/final-report/session completion,
-and requires session finish to follow the final-report acknowledgement.
+disk reason, freezes stop causes during and after cleanup, and requires
+session finish to follow the final-report acknowledgement.
 `reserveEvidenceStep` keeps a zero free-space reading when a measurement error
 arrives later. `measurementEvidenceStep` keeps the measurement error message when
 a reserve notification follows. The Rust replay checks the emitted diagnostic
@@ -264,6 +264,14 @@ failures add unique secondary diagnostics in arrival order. The
 negative model deliberately violates the last ordering. `terminalStep` forces a
 stop while the final report is pending; `finalFailureStep` forces the discovered
 unacknowledged-start/final-output-failure regression.
+
+`cleanupCancelStep` and `cleanupDiskStep` deliver a stop while the
+diagnostic from a failed cleanup awaits acknowledgement. Rust had issued
+a second cleanup on cancellation and replaced the pending diagnostic on a
+disk stop. Both schedules now preserve the diagnostic, single cleanup
+record, and exit status before completing the final report. The
+`StopReopensCleanup` negative control enables the original stop behavior
+and violates the post-cleanup invariant.
 
 A discovered regression is fixed: after an unacknowledged run-start failure,
 failure of the eventual final report terminates the protocol instead of issuing
@@ -584,13 +592,14 @@ verification and now checks `machine.worker.reservation_mismatch`.
 
 ```sh
 cargo test --locked -p hoimin-core --test machine quint_session_startup
+cargo test --locked -p hoimin-core --test machine quint_copy_preflight
 cargo test --locked -p hoimin-core --test machine quint_worker_grant
 ```
 
 ## Active workers and Quint Connect
 
-The registry checks thirty-four finite configurations, twenty-eight
-negative controls and 271 committed histories. `Workers` and `WorkersSession` add
+The registry checks thirty-four finite configurations, twenty-nine
+negative controls and 273 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish

@@ -274,12 +274,14 @@ MODELS = (
         "stop.qnt",
         "StopCopy",
         "stop_copy",
+        "StopReopensCleanup",
         scenarios=(
             "cleanStep",
             "diskStep",
             "failureStep",
             "terminalStep",
             "finalFailureStep",
+            "cleanupCancelStep",
         ),
     ),
     Model(
@@ -296,6 +298,7 @@ MODELS = (
             "reserveEvidenceStep",
             "measurementEvidenceStep",
             "diagnosticEvidenceStep",
+            "cleanupDiskStep",
         ),
     ),
     Model("session.qnt", "Session", "session", "SessionOverwrite", ("recoveryStep",)),

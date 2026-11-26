@@ -5,6 +5,7 @@ module StopModel {
   const COPY: bool
   const SESSION: bool
   const EARLY_SESSION: bool
+  const REOPEN_CLEANUP: bool
   type DiskEvidence = { code:str, owned:int, available:int, message:str }
   type Diagnostic = { code:str, message:str }
   type State = {pending:int, phase:int, copy:bool, reported:bool, disk:int,
@@ -41,7 +42,7 @@ module StopModel {
     else if(t.disk==1 and t.reported) emit(t,2,t.phase)
     else if(not(t.reported)) emit(t,1,t.phase).with("stopAfterStart",true)
     else if(t.copy) emit(t,3,1) else cleanup(t)
-  val frozen = Set(4,6,7,8).contains(s.pending)
+  val frozen = Set(4,6,7,8).contains(s.pending) or (s.cleanupDone and not(REOPEN_CLEANUP))
   action init = all {
     s'={pending:if(COPY) 1 else 0,phase:0,copy:COPY,reported:false,disk:0,firstDisk:0,diskEvidence:evidence(0),diskSecondary:List(),
       interrupted:false,fatal:false,incomplete:false,deliveryFailed:false,
@@ -114,6 +115,16 @@ module StopModel {
     all {s.pending==6,failure(true)},
     all {s.pending==8,probe("retired")},
   }
+  action cleanupStop(cause:int): bool = any {
+    all {stops==0,stop(1)},
+    all {stops==1,Set(1,3).contains(s.pending),ack},
+    all {stops==1,s.pending==4,failure(false)},
+    all {stops==1,s.pending==5,stop(cause)},
+    all {stops==2,s.pending!=8,ack},
+    all {s.pending==8,probe("retired")},
+  }
+  action cleanupCancelStep = cleanupStop(0)
+  action cleanupDiskStep = cleanupStop(2)
   action diskEvidenceOrder(first:int, later:int): bool = any {
     all {stops==0,stop(first)},
     all {stops==1,s.pending==1,ack},
@@ -147,9 +158,11 @@ module StopModel {
     not(s.finishPublished and Set(6,7).contains(s.pending)) or s.finishCode==code(s),
     not(s.started) or s.pending!=0,
     not(s.finishPublished) or s.cleanupDone,
+    s.cleanupDone implies Set(5,6,7,8).contains(s.pending),
   }
 }
-module StopEarly { import StopModel(COPY=false,SESSION=false,EARLY_SESSION=false).* }
-module StopCopy { import StopModel(COPY=true,SESSION=false,EARLY_SESSION=false).* }
-module StopSession { import StopModel(COPY=true,SESSION=true,EARLY_SESSION=false).* }
-module StopPrematureSession { import StopModel(COPY=true,SESSION=true,EARLY_SESSION=true).* }
+module StopEarly { import StopModel(COPY=false,SESSION=false,EARLY_SESSION=false,REOPEN_CLEANUP=false).* }
+module StopCopy { import StopModel(COPY=true,SESSION=false,EARLY_SESSION=false,REOPEN_CLEANUP=false).* }
+module StopSession { import StopModel(COPY=true,SESSION=true,EARLY_SESSION=false,REOPEN_CLEANUP=false).* }
+module StopPrematureSession { import StopModel(COPY=true,SESSION=true,EARLY_SESSION=true,REOPEN_CLEANUP=false).* }
+module StopReopensCleanup { import StopModel(COPY=true,SESSION=false,EARLY_SESSION=false,REOPEN_CLEANUP=true).* }
