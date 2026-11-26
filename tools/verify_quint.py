@@ -53,6 +53,14 @@ MODELS = (
         simulation_mutant_step="acknowledgementLostStep",
     ),
     Model(
+        "janitor_retry.qnt",
+        "JanitorRetry",
+        "janitor_retry",
+        scenarios=("stalledStep", "progressStep", "deadlineStep"),
+        simulation_only=True,
+        simulation_mutant_step="stalledRetryStep",
+    ),
+    Model(
         "copy_preflight.qnt",
         "CopyPreflight",
         "copy_preflight",

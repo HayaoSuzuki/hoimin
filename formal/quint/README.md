@@ -235,6 +235,34 @@ observable truncation semantics change.
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_diagnostics
 ```
 
+## Startup janitor deferred cleanup
+
+`janitor_retry.qnt` starts with two roots deferred by initial cleanup and
+models up to six visits. A round visits its starting queue in order, once per
+root. A root is queued again only when its slice is deferred. A new round needs
+at least one deferred slice that removed an entry. A completed or failed slice
+does not count toward that condition. The deadline stops visits and preserves
+the queue order for incomplete cleanup reporting.
+
+`stalledStep` completes one root and defers the other without progress.
+`progressStep` retries both roots in the following round, and `deadlineStep`
+stops with an unvisited root ahead of the root deferred during that round.
+`stalledRetryStep` starts a new round despite the absence of progress and
+must violate `Safety`.
+
+The Rust replay invokes `retry_deferred` in
+`crates/hoimin-cli/src/workspace/owned/janitor.rs`, the scheduler used by
+`reclaim_abandoned_with_clock_and_selection` in `owned.rs`. It supplies slice
+results and a monotonic deadline, then checks the sequence of calls and the
+pending queue at exit. The bounded model represents clock observations and
+cleanup results as inputs. Filesystem locks, deletion, and wall-clock timing
+are exercised by the separate janitor tests. Update the model and regenerate its
+ITF fixtures when the retry or stop policy changes.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_retry
+```
+
 ## SQLite persistence, resume selection and ownership
 
 The SQLite extension adds three domains to the earlier configurations:

@@ -3123,7 +3123,7 @@ use super::WorkspaceError;
 use hoimin_core::{DiskCleanupStatus, JanitorReason, JanitorScan};
 #[path = "owned/janitor.rs"]
 mod janitor;
-use janitor::{DeletionProgress, ReclaimLedger};
+use janitor::{DeletionProgress, ReclaimLedger, retry_deferred};
 
 #[cfg(test)]
 pub(super) use crate::io_faults;
@@ -6548,50 +6548,36 @@ impl ManagedRunRoot {
                 &elapsed,
             );
         }
-        while !pending_cleanup.is_empty() && elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET {
-            let round_len = pending_cleanup.len();
-            let mut round_removed = 0_u64;
-            for _ in 0..round_len {
-                if elapsed(cleanup_started) >= JANITOR_CLEANUP_BUDGET {
-                    break;
+        retry_deferred(
+            &mut pending_cleanup,
+            || elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET,
+            |pending| match reclaim_removal(
+                coordinator,
+                &pending.deleting_name,
+                pending.expected_identity,
+                cleanup_started,
+                &mut pending.capabilities,
+                &elapsed,
+            ) {
+                ReclaimRemoval::Complete => {
+                    report.removal(pending.index, pending.capabilities.progress, true);
+                    None
                 }
-                // Each iteration pops once and only optionally pushes back; round_len is the initial queue length.
-                let mut pending = pending_cleanup
-                    .pop_front()
-                    .expect("a round retains its unvisited entries");
-                match reclaim_removal(
-                    coordinator,
-                    &pending.deleting_name,
-                    pending.expected_identity,
-                    cleanup_started,
-                    &mut pending.capabilities,
-                    &elapsed,
-                ) {
-                    ReclaimRemoval::Complete => {
-                        report.removal(pending.index, pending.capabilities.progress, true);
-                    }
-                    ReclaimRemoval::Deferred { removed } => {
-                        // Scheduling uses ONLY deferred-slice progress, as before.
-                        round_removed = round_removed.saturating_add(removed);
-                        pending_cleanup.push_back(pending);
-                    }
-                    ReclaimRemoval::Failed(error) => {
-                        report.hold(
-                            pending.index,
-                            JanitorReason::DeleteFailed,
-                            format!(
-                                "cleanup failed for {}: {error}",
-                                coordinator.path.join(&pending.deleting_name)
-                            ),
-                        );
-                        report.removal(pending.index, pending.capabilities.progress, false);
-                    }
+                ReclaimRemoval::Deferred { removed } => Some(removed),
+                ReclaimRemoval::Failed(error) => {
+                    report.hold(
+                        pending.index,
+                        JanitorReason::DeleteFailed,
+                        format!(
+                            "cleanup failed for {}: {error}",
+                            coordinator.path.join(&pending.deleting_name)
+                        ),
+                    );
+                    report.removal(pending.index, pending.capabilities.progress, false);
+                    None
                 }
-            }
-            if round_removed == 0 {
-                break;
-            }
-        }
+            },
+        );
         for pending in pending_cleanup {
             report.hold(
                 pending.index,

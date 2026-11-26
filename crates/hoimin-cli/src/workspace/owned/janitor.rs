@@ -1,5 +1,6 @@
 use super::{MAX_DIAGNOSTIC_DETAILS, truncate_diagnostic_detail};
 use hoimin_core::{JanitorDetail, JanitorReason, JanitorSummary};
+use std::collections::VecDeque;
 
 #[cfg(test)]
 #[path = "janitor/quint_diagnostics.rs"]
@@ -7,6 +8,37 @@ mod quint_diagnostics;
 #[cfg(test)]
 #[path = "janitor/quint_reclaim.rs"]
 mod quint_reclaim;
+#[cfg(test)]
+#[path = "janitor/quint_retry.rs"]
+mod quint_retry;
+
+/// Visits the roots present at the beginning of each round in FIFO order.
+/// A slice returns its removal count if deferred, or `None` if it reached an outcome.
+pub(super) fn retry_deferred<T>(
+    pending: &mut VecDeque<T>,
+    mut has_time: impl FnMut() -> bool,
+    mut attempt: impl FnMut(&mut T) -> Option<u64>,
+) {
+    while !pending.is_empty() && has_time() {
+        let round_len = pending.len();
+        let mut progressed = false;
+        for _ in 0..round_len {
+            if !has_time() {
+                break;
+            }
+            let mut root = pending
+                .pop_front()
+                .expect("a round retains its unvisited entries");
+            if let Some(removed) = attempt(&mut root) {
+                progressed |= removed > 0;
+                pending.push_back(root);
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+}
 
 /// One ledger entry per inspected candidate. Pending rounds retain its index.
 #[derive(Default)]
