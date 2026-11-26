@@ -1,0 +1,482 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
+      "SessionSelection::SessionSelectionModel::op": "init",
+      "SessionSelection::SessionSelectionModel::rows": [],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "no_prior_run",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": true,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
+      "SessionSelection::SessionSelectionModel::op": "append",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "matching_run_complete",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "2"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "",
+      "SessionSelection::SessionSelectionModel::op": "append",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "SessionSelection::SessionSelectionModel::budget": {
+        "#bigint": "1"
+      },
+      "SessionSelection::SessionSelectionModel::complete": false,
+      "SessionSelection::SessionSelectionModel::expected": {
+        "#bigint": "-1"
+      },
+      "SessionSelection::SessionSelectionModel::fingerprint": {
+        "#bigint": "0"
+      },
+      "SessionSelection::SessionSelectionModel::freshReason": "budget_decreased",
+      "SessionSelection::SessionSelectionModel::op": "load",
+      "SessionSelection::SessionSelectionModel::rows": [
+        {
+          "budget": {
+            "#bigint": "1"
+          },
+          "complete": true,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        },
+        {
+          "budget": {
+            "#bigint": "2"
+          },
+          "complete": false,
+          "fingerprint": {
+            "#bigint": "0"
+          }
+        }
+      ],
+      "SessionSelection::SessionSelectionModel::selected": {
+        "#bigint": "-1"
+      }
+    }
+  ],
+  "vars": [
+    "SessionSelection::SessionSelectionModel::rows",
+    "SessionSelection::SessionSelectionModel::op",
+    "SessionSelection::SessionSelectionModel::fingerprint",
+    "SessionSelection::SessionSelectionModel::budget",
+    "SessionSelection::SessionSelectionModel::complete",
+    "SessionSelection::SessionSelectionModel::selected",
+    "SessionSelection::SessionSelectionModel::expected",
+    "SessionSelection::SessionSelectionModel::freshReason"
+  ]
+}

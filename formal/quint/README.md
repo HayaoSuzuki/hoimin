@@ -169,13 +169,15 @@ The SQLite extension adds two independent domains to the earlier configurations:
 | Model | Finite scope | Implementation correspondence | Negative control |
 | --- | --- | --- | --- |
 | Session | One run, two mutants, all seven result statuses, owner release/reacquisition and completion | Public `SessionHandler::begin/persist/lookup/load/finish` on a real temporary SQLite database; `resume_policy` on recovered results | Replace a determinate result |
-| SessionSelection | Two chronological runs, two fingerprints, budgets 1 and 2, complete/incomplete rows | Public handler operations and stored rows after every close/reopen, including budget promotion | Choose the oldest eligible run |
+| SessionSelection | Two chronological runs, two fingerprints, budgets 1 and 2, complete/incomplete rows | Public handler outcomes, fresh-start reasons and stored rows after every close/reopen, including budget promotion | Choose the oldest eligible run |
 
 `Session.recoveryStep` saves a timeout, reopens and resumes the DB, replaces it
 with a killed result, and rejects a later survived replacement. Selection's
 `latestStep` and `fallbackStep` force multiple eligible rows and fallback past a
-newer run whose budget is too large. These are input schedules, sharing the same
-model actions as exhaustive checking.
+newer run whose budget is too large. `freshPriorityStep` starts with empty history,
+finds a matching complete run, then prefers the budget-decrease reason once a
+matching incomplete run with a larger budget exists. All five ordinary fresh
+reasons participate in the safety invariant and in SQLite outcome comparison.
 
 The Rust driver compares operation outcomes, every stored result and run row,
 and probes ownership and reuse with public lookups after every lifecycle step.
@@ -197,9 +199,10 @@ cargo test --locked -p hoimin-cli --test quint_session --all-features
 ```
 
 A close/reopen is orderly handle release, not a simulated process crash or power
-failure. The models do not cover concurrent database transactions, schema
-corruption, exact fresh-reason diagnostic priority, or the public `transition`
-protocol. Existing Lean session oracles and native-lock tests continue separately.
+failure. The models assume valid rows, orderly ownership release and no concurrent
+writers. `CandidateChanged` belongs to the selection/recheck race, which is
+covered separately by the SQLite fault tests. Existing Lean session oracles and
+native-lock tests continue separately.
 See the [design](../../docs/development/work/quint-session-protocol/design.md),
 [plan](../../docs/development/work/quint-session-protocol/plan.md), and
 [review evidence](../../docs/development/work/quint-session-protocol/review.md).
@@ -259,8 +262,8 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 
 ## Active workers and Quint Connect
 
-The registry checks sixteen finite configurations, ten negative controls and
-102 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks seventeen finite configurations, eleven negative controls and
+110 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;

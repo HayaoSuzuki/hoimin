@@ -98,7 +98,7 @@ MODELS = (
         "SessionSelection",
         "session_selection",
         "SessionSelectionOldest",
-        ("latestStep", "fallbackStep"),
+        ("latestStep", "fallbackStep", "freshPriorityStep"),
     ),
     Model("budget.qnt", "Budget", "trace", "BudgetOverdraft"),
     Model("budget.qnt", "BudgetExtended", "extended"),
