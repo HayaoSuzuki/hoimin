@@ -206,6 +206,32 @@ fixtures for freshness.
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_reclaim
 ```
 
+## Startup janitor diagnostic retention
+
+`janitor_diagnostics.qnt` uses two remaining slots and up to six arrivals.
+It selects the earliest issue details, fills the remaining slots with the
+earliest normal details, and retains the arrival order across both classes.
+`priorityStep` covers eviction of the most recently retained normal detail,
+first by an issue that leaves one normal detail and then by an issue that
+displaces that last normal detail. `issueOnlyStep` checks overflow when the
+slots are already occupied by issues. Omission counts include evictions.
+Truncation counts retain the evidence of an admitted detail that was shortened
+and subsequently evicted. An input omitted at admission contributes only to
+its omission count.
+
+The Rust adapter fills the other 254 slots with earlier issues and calls
+`ReclaimLedger::detail` for each simulated arrival. It compares the retained
+order, exact messages and all omission counts. An oversized UTF-8 message
+exercises truncation across a character boundary. A negative control drops the
+priority issue and detects the changed retained details. The two models use
+simulated observations and keep filesystem operations outside the replay.
+Update the model and its fixtures when detail priority, accounting, or
+observable truncation semantics change.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_diagnostics
+```
+
 ## SQLite persistence, resume selection and ownership
 
 The SQLite extension adds three domains to the earlier configurations:

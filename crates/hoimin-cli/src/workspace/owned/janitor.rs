@@ -2,6 +2,9 @@ use super::{MAX_DIAGNOSTIC_DETAILS, truncate_diagnostic_detail};
 use hoimin_core::{JanitorDetail, JanitorReason, JanitorSummary};
 
 #[cfg(test)]
+#[path = "janitor/quint_diagnostics.rs"]
+mod quint_diagnostics;
+#[cfg(test)]
 #[path = "janitor/quint_reclaim.rs"]
 mod quint_reclaim;
 

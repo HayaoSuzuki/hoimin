@@ -36,6 +36,13 @@ class Model:
 
 MODELS = (
     Model(
+        "janitor_diagnostics.qnt",
+        "JanitorDiagnostics",
+        "janitor_diagnostics",
+        scenarios=("priorityStep", "issueOnlyStep"),
+        simulation_only=True,
+    ),
+    Model(
         "janitor_reclaim.qnt",
         "JanitorReclaim",
         "janitor_reclaim",
