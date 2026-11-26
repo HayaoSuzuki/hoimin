@@ -35,6 +35,13 @@ class Model:
 
 MODELS = (
     Model(
+        "ordered_discovery.qnt",
+        "OrderedDiscovery",
+        "ordered_discovery",
+        "OrderedDiscoveryWrongOrder",
+        ("orderedStep", "missingStep"),
+    ),
+    Model(
         "disk_observation.qnt",
         "DiskObservation",
         "disk_observation",

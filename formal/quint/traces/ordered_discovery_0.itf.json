@@ -1,0 +1,481 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [],
+        "found": {
+          "#set": []
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Scan",
+          "value": {
+            "#tup": []
+          }
+        },
+        "scanned": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Discover",
+        "value": {
+          "#bigint": "3"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Scan",
+          "value": {
+            "#tup": []
+          }
+        },
+        "scanned": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Discover",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Scan",
+          "value": {
+            "#tup": []
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "EndOfSpool",
+        "value": {
+          "#tup": []
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "3"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "3"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "2"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": true,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "3"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": true,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": true,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": true,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": true,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "3"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": true,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "Fetch",
+          "value": {
+            "#bigint": "1"
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::dispatch": {
+        "tag": "Body",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "OrderedDiscovery::OrderedDiscoveryModel::s": {
+        "applied": [
+          {
+            "#bigint": "3"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "found": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "mismatch": false,
+        "missing": {
+          "#bigint": "0"
+        },
+        "read": {
+          "tag": "NoRead",
+          "value": {
+            "#tup": []
+          }
+        },
+        "scanned": {
+          "#bigint": "2"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "OrderedDiscovery::OrderedDiscoveryModel::s",
+    "OrderedDiscovery::OrderedDiscoveryModel::dispatch"
+  ]
+}

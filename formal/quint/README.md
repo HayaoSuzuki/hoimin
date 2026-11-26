@@ -292,10 +292,31 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 [plan](../../docs/development/work/quint-public-stop/plan.md), and
 [review evidence](../../docs/development/work/quint-public-stop/review.md).
 
+## Ordered candidate discovery
+
+`OrderedDiscovery` starts with two idle workers awaiting a sequential spool
+read. It requests IDs `[3, 1]`, accepts up to four discovery replies, and uses
+ID `2` as an unselected candidate. Each sequential reply can only request
+another sequential read. EOF rejects the first missing requested ID, or starts
+indexed reads in request order. `orderedStep` discovers a duplicate, then
+rejects an absent and a wrong indexed body before retrying both requests.
+`missingStep` reaches EOF with an incomplete selection. The negative model
+requests the first body in ascending ID order and violates `Safety`.
+
+The Rust fixture uses public `RunState::with_selection` and `transition` and
+ends at the missing-selection error or the handoff to two pending apply
+requests. It compares pending read targets, apply order, and exact callback
+errors. The fixture retains a clone of the input for corrected replies after
+an identity error. Existing worker and stop tests cover execution after handoff.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_ordered
+```
+
 ## Active workers and Quint Connect
 
-The registry checks eighteen finite configurations, twelve negative controls and
-128 committed histories. `Workers` and `WorkersSession` add two workers and two
+The registry checks nineteen finite configurations, thirteen negative controls and
+134 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results include Killed, Survived and Timeout;

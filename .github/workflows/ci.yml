@@ -348,6 +348,8 @@ jobs:
         run: cargo test --locked -p hoimin-core --test quint_budget --test budget_model --test quint_itf --test quint_report --test report_model --test quint_disk --test quint_disk_observation --test disk_model --test quint_stop --test stop_model --test quint_workers --test workers_model
       - name: Check internal completion-ledger correspondence
         run: cargo test --locked -p hoimin-core --lib machine::quint_completion
+      - name: Replay public candidate-loading protocols
+        run: cargo test --locked -p hoimin-core --test machine quint_
       - name: Check cleanup admission and actual OS ownership
         run: |
           cargo test --locked -p hoimin-cli --lib shell::finalization::quint

@@ -17,6 +17,12 @@ use hoimin_core::{
 };
 use proptest::prelude::*;
 
+#[path = "support/quint.rs"]
+#[allow(dead_code)] // These public transition adapters read records and lists.
+mod quint;
+#[path = "machine/quint_ordered.rs"]
+mod quint_ordered;
+
 #[test]
 fn baseline_success_requires_owned_restoration_before_dispatch() {
     // Arrange.
