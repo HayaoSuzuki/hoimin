@@ -11,6 +11,9 @@ mod quint_reclaim;
 #[cfg(test)]
 #[path = "janitor/quint_retry.rs"]
 mod quint_retry;
+#[cfg(test)]
+#[path = "janitor/quint_selection.rs"]
+mod quint_selection;
 
 /// Visits the roots present at the beginning of each round in FIFO order.
 /// A slice returns its removal count if deferred, or `None` if it reached an outcome.

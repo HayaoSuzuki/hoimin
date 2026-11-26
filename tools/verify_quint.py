@@ -66,6 +66,20 @@ MODELS = (
         simulation_mutant_step="stalledRetryStep",
     ),
     Model(
+        "janitor_selection.qnt",
+        "JanitorSelection",
+        "janitor_selection",
+        scenarios=(
+            "wrapStep",
+            "emptyPageStep",
+            "eofDeadlineStep",
+            "persistDeadlineStep",
+        ),
+        scenario_steps=24,
+        simulation_only=True,
+        simulation_mutant_step="prematureCursorStep",
+    ),
+    Model(
         "copy_preflight.qnt",
         "CopyPreflight",
         "copy_preflight",

@@ -265,6 +265,34 @@ ITF fixtures when the retry or stop policy changes.
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_retry
 ```
 
+## Startup janitor candidate selection and cursor
+
+`janitor_selection.qnt` gives each of four managed names a lexical rank.
+Up to three scans see a stable set of names per scan. A scan returns the sorted
+names strictly after the stored cursor when that page is nonempty. It wraps to
+the full set only after exhausting names beyond the cursor. Each published
+nonempty page stores its last name and increases the generation. The model
+distinguishes enumeration EOF, page selection, and cursor persistence.
+
+`wrapStep` covers the exclusive cursor and wraparound. `emptyPageStep` checks
+that an empty scan preserves an existing cursor and generation.
+`eofDeadlineStep` expires as soon as enumeration completes, and
+`persistDeadlineStep` expires after computing the page but before writing the
+cursor. Both preserve the prior cursor and generation. The negative control
+`prematureCursorStep` advances the cursor on the cancelled scan at EOF.
+
+The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
+in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.
+It compares returned pages and scan evidence, then reads the actual coordinator
+slot and generation. It also checks that a deadline leaves the coordinator
+file byte-for-byte intact. Directory capacity and storage faults are exercised
+by the separate janitor tests. Update the model and its ITF fixtures when
+candidate ordering or the cursor publication boundary changes.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_selection
+```
+
 ## SQLite persistence, resume selection and ownership
 
 The SQLite extension adds three domains to the earlier configurations:
