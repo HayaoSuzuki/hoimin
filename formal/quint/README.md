@@ -128,7 +128,7 @@ The cleanup and ownership extension adds five finite configurations to the four 
 | DiskLifecycle | Both owned roots, up to one dispatch, all drain/report success or failure and cleanup outcomes | Public `DiskLifecycle::apply/snapshot/may_finish/safety_succeeded` |
 | DiskExecutionOnly | Execution root only; failures may retain it while still reaching finish | Same public adapter |
 | DiskNoRoots | No owned roots; attempted cleanup of unowned roots is rejected | Same public adapter |
-| Finalization | Inner/outer drains, joined/failed/unjoined measurement, cleanup admission/results, one-shot free-space query | CLI `ExecutionFinalization` methods and summary projection, internal fixture |
+| Finalization | Inner/outer drains, joined/failed/unjoined measurement, cleanup admission/results, one-shot free-space query for two filesystem keys | CLI `ExecutionFinalization` methods, per-key free-space lookup and summary projection, internal fixture |
 | Ownership | Two actors/two run IDs and independent file handles | Real `RunOwnership::acquire` and handle drop using native OS locks |
 
 The disk model initially allowed two dispatches but hit the outer 20-second limit;
@@ -141,9 +141,13 @@ failure stability, diagnostic deduplication and cleanup/finish prerequisites.
 Finalization checks that an unjoined measurement cannot be repaired by a later
 joined success, a refused removal attempt remains terminal, failed joined readings
 preserve prior evidence, and failed free-space queries do not retry or become zero.
-Zero and full-width readings are tested separately from absent readings. Its PBT
-expectations derive from raw state and history laws rather than the getters being
-tested. This verifies admission/evidence logic, not actual filesystem deletion.
+The free-space model distinguishes a failed query, a successful empty query, and
+readings indexed by filesystem key. `pairedAvailableStep` retains two distinct
+readings after a second query request. `missingAvailableStep` retains a zero
+reading for one key and absence for the other, even when a later request would
+supply the missing key. Rust checks both keys and an unknown key after every step.
+PBT varies key presence and full-width byte counts independently. The query
+callback supplies synthetic readings and counts invocations.
 
 Ownership PBT expands to four actors/three run IDs, and each step probes the real
 OS lock with another independent open. I/O errors are infrastructure failures, not
@@ -151,7 +155,7 @@ successful detection of contention. Handles close before temporary directory
 removal. These tests exercise descriptors on the current host; they do not prove
 SQLite recovery, process-crash handling or all possible host failures.
 
-The cleanup and ownership corpus contains 48 histories, including `cleanStep`/`deferredStep`
+The corpus through the cleanup and ownership extension contains 50 histories, including `cleanStep`/`deferredStep`
 for disk, `cleanStep`/`refusedStep`/`unjoinedStep`/`availableStep` for finalization,
 and `reacquireStep` for ownership. Six negative-control models check detection of
 unsafe transitions. Every generated history participates in freshness checking.
@@ -263,7 +267,7 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 ## Active workers and Quint Connect
 
 The registry checks seventeen finite configurations, eleven negative controls and
-110 committed histories. `Workers` and `WorkersSession` add two workers and two
+112 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;

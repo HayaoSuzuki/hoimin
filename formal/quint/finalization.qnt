@@ -6,20 +6,26 @@ module FinalizationModel {
   var measurement: int
   var cleanup: int
   var rootCleanup: int
+  // 0: not queried, 1: failed, 2: succeeded (possibly with no readings).
   var availability: int
+  var availableReadings: int -> int
   var removedKnown: bool
   var removedBytes: int
-  var availableKnown: bool
-  var availableBytes: int
   var unsafeGrant: bool
   var op: str
   var arg: int
   var result: str
   pure def flag(mask:int,bit:int):int = if ((mask / bit) % 2 == 1) 1 else 2
+  pure def readingsFor(value: int): int -> int =
+    if (value == 1) Map(0 -> 0)
+    else if (value == 2) Map(0 -> 1)
+    else if (value == 3) Map(1 -> 0)
+    else if (value == 4) Map(0 -> 0, 1 -> 1)
+    else Map()
   val safe = process==1 and output==1 and monitor==1 and measurement!=3
   action init = all {
     process'=0,output'=0,monitor'=0,measurement'=0,cleanup'=0,rootCleanup'=0,availability'=0,
-    removedKnown'=false,removedBytes'=0,availableKnown'=false,availableBytes'=0,unsafeGrant'=false,
+    removedKnown'=false,removedBytes'=0,availableReadings'=Map(),unsafeGrant'=false,
     op'="init",arg'=0,result'="init",
   }
   action apply(command:str,value:int):bool = {
@@ -37,9 +43,9 @@ module FinalizationModel {
     val newRoot=if(admission) 1 else if(deferred) 4 else if(completed) value else rootCleanup
     val newCleanup=if(command=="complete") (if(completed) value else 1)
       else if(command=="request" or command=="defer") (if(cleanup!=0) cleanup else if(deferred) 4 else 1) else cleanup
-    val newAvailability=if(command=="available" and availability==0) value+1 else availability
+    val queryAvailable = command == "available" and availability == 0
+    val newAvailability = if (queryAvailable) (if (value == 0) 1 else 2) else availability
     val knownRemoved=newCleanup==2 and Set(1,2).contains(newMeasurement)
-    val knownAvailable=Set(2,3).contains(newAvailability)
     val response=
       if(command=="inner") (if(process!=0 or output!=0 or monitor!=0) "error" else if(newSafe) "yes" else "no")
       else if(command=="outer") (if(value==7 and newSafe) "yes" else "no")
@@ -47,17 +53,17 @@ module FinalizationModel {
       else if(command=="defer") (if(deferred) "yes" else "no")
       else if(command=="complete") (if(completed) "yes" else "no")
       else if(command=="measure") (if(value>=2) "error" else "ok")
-      else if(command=="available" and availability==0 and value==0) "error" else "ok"
+      else if(queryAvailable and value==0) "error" else "ok"
     all {
       process'=newP,output'=newO,monitor'=newM,measurement'=newMeasurement,cleanup'=newCleanup,rootCleanup'=newRoot,availability'=newAvailability,
       removedKnown'=knownRemoved,removedBytes'=if(knownRemoved) newMeasurement-1 else 0,
-      availableKnown'=knownAvailable,availableBytes'=if(knownAvailable) newAvailability-2 else 0,
+      availableReadings' = if (queryAvailable) readingsFor(value) else availableReadings,
       unsafeGrant'=(unsafeGrant or (admission and not(safe))),op'=command,arg'=value,result'=response,
     }
   }
   action step = {
     nondet command=Set("inner","outer","measure","request","defer","complete","available").oneOf()
-    nondet value=(if(Set("inner","outer").contains(command)) 0.to(7) else if(command=="measure") 0.to(3) else if(command=="complete") Set(2,3,4) else if(command=="available") Set(0,1,2) else Set(0)).oneOf()
+    nondet value=(if(Set("inner","outer").contains(command)) 0.to(7) else if(command=="measure") 0.to(3) else if(command=="complete") Set(2,3,4) else if(command=="available") 0.to(5) else Set(0)).oneOf()
     apply(command,value)
   }
   action refusedStep = if(op=="init") apply("request",0) else if(process==0) apply("outer",7) else apply("request",0)
@@ -66,8 +72,18 @@ module FinalizationModel {
   action cleanStep = if(process==0) apply("outer",7) else if(measurement==0) apply("measure",1)
     else if(cleanup==0) apply("request",0) else if(rootCleanup==1) apply("complete",2) else apply("measure",3)
   action availableStep = if(op=="init") apply("available",0) else apply("available",2)
+  action pairedAvailableStep = if (availability == 0) apply("available", 4) else apply("available", 2)
+  action missingAvailableStep = if (availability == 0) apply("available", 3) else apply("available", 1)
+
+  val distinctFilesystems = if (availableReadings.keys() == Set(0, 1))
+    availableReadings.get(0) != availableReadings.get(1) else false
+  val missingFirstFilesystem = availableReadings.keys() == Set(1)
+  val successfulEmptyQuery = availability == 2 and availableReadings.keys() == Set()
+  val failedQueryStaysFailed = availability == 1 and op == "available" and arg > 0
   val Safety = all {not(unsafeGrant),not(removedKnown) or (cleanup==2 and measurement!=3),
-    not(availableKnown) or Set(2,3).contains(availability)}
+    availability == 2 or availableReadings.keys() == Set(),
+    availableReadings.keys().subseteq(Set(0, 1)),
+  }
 }
 module Finalization { import FinalizationModel(ALLOW_UNJOINED=false).* }
 module FinalizationUnjoined { import FinalizationModel(ALLOW_UNJOINED=true).* }

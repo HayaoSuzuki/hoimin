@@ -1,0 +1,735 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "init",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "init",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "4"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "Finalization::FinalizationModel::arg": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availability": {
+        "#bigint": "2"
+      },
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "#bigint": "0"
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "1"
+            }
+          ]
+        ]
+      },
+      "Finalization::FinalizationModel::cleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::measurement": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::monitor": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::op": "available",
+      "Finalization::FinalizationModel::output": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::process": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedBytes": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::removedKnown": false,
+      "Finalization::FinalizationModel::result": "ok",
+      "Finalization::FinalizationModel::rootCleanup": {
+        "#bigint": "0"
+      },
+      "Finalization::FinalizationModel::unsafeGrant": false
+    }
+  ],
+  "vars": [
+    "Finalization::FinalizationModel::monitor",
+    "Finalization::FinalizationModel::output",
+    "Finalization::FinalizationModel::process",
+    "Finalization::FinalizationModel::op",
+    "Finalization::FinalizationModel::availability",
+    "Finalization::FinalizationModel::unsafeGrant",
+    "Finalization::FinalizationModel::rootCleanup",
+    "Finalization::FinalizationModel::removedBytes",
+    "Finalization::FinalizationModel::cleanup",
+    "Finalization::FinalizationModel::removedKnown",
+    "Finalization::FinalizationModel::result",
+    "Finalization::FinalizationModel::measurement",
+    "Finalization::FinalizationModel::availableReadings",
+    "Finalization::FinalizationModel::arg"
+  ]
+}

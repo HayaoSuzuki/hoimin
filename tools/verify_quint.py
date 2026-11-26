@@ -144,7 +144,14 @@ MODELS = (
         "Finalization",
         "finalization",
         "FinalizationUnjoined",
-        ("cleanStep", "refusedStep", "unjoinedStep", "availableStep"),
+        (
+            "cleanStep",
+            "refusedStep",
+            "unjoinedStep",
+            "availableStep",
+            "pairedAvailableStep",
+            "missingAvailableStep",
+        ),
     ),
 )
 

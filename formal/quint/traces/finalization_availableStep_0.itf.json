@@ -14,10 +14,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "0"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -54,10 +53,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -94,10 +92,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -134,10 +131,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -174,10 +170,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -214,10 +209,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -254,10 +248,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -294,10 +287,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -334,10 +326,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -374,10 +365,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -414,10 +404,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -454,10 +443,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -494,10 +482,9 @@
       "Finalization::FinalizationModel::availability": {
         "#bigint": "1"
       },
-      "Finalization::FinalizationModel::availableBytes": {
-        "#bigint": "0"
+      "Finalization::FinalizationModel::availableReadings": {
+        "#map": []
       },
-      "Finalization::FinalizationModel::availableKnown": false,
       "Finalization::FinalizationModel::cleanup": {
         "#bigint": "0"
       },
@@ -529,17 +516,16 @@
     "Finalization::FinalizationModel::monitor",
     "Finalization::FinalizationModel::output",
     "Finalization::FinalizationModel::process",
-    "Finalization::FinalizationModel::removedKnown",
     "Finalization::FinalizationModel::op",
     "Finalization::FinalizationModel::availability",
     "Finalization::FinalizationModel::unsafeGrant",
     "Finalization::FinalizationModel::rootCleanup",
-    "Finalization::FinalizationModel::availableBytes",
+    "Finalization::FinalizationModel::removedBytes",
     "Finalization::FinalizationModel::cleanup",
-    "Finalization::FinalizationModel::availableKnown",
+    "Finalization::FinalizationModel::removedKnown",
     "Finalization::FinalizationModel::result",
     "Finalization::FinalizationModel::measurement",
-    "Finalization::FinalizationModel::removedBytes",
+    "Finalization::FinalizationModel::availableReadings",
     "Finalization::FinalizationModel::arg"
   ]
 }
