@@ -1490,6 +1490,16 @@ pub enum MachineError {
         expected: String,
         received: String,
     },
+    #[error(
+        "session finish {id:?} acknowledged {received_run_id:?} (complete={received_complete}), expected {expected_run_id:?} (complete={expected_complete})"
+    )]
+    SessionFinishMismatch {
+        id: EffectId,
+        expected_run_id: String,
+        received_run_id: String,
+        expected_complete: bool,
+        received_complete: bool,
+    },
 }
 
 impl MachineError {
@@ -1515,6 +1525,7 @@ impl MachineError {
             Self::UnknownWorker(_) => "machine.worker.unknown",
             Self::ProcessWorkerMismatch { .. } => "machine.worker.process_mismatch",
             Self::SessionIdentityMismatch { .. } => "machine.session.identity_mismatch",
+            Self::SessionFinishMismatch { .. } => "machine.session.finish_mismatch",
         }
     }
 }
@@ -2036,7 +2047,18 @@ pub fn transition(
         {
             state.cleanup_effects()?
         }
-        RunEvent::SessionFinished(_) if state.phase == RunPhase::Finalize => {
+        RunEvent::SessionFinished(value) if state.phase == RunPhase::Finalize => {
+            let expected_run_id = state.run_id();
+            let expected_complete = state.complete();
+            if value.run_id != expected_run_id || value.complete != expected_complete {
+                return Err(MachineError::SessionFinishMismatch {
+                    id: value.id,
+                    expected_run_id: expected_run_id.to_owned(),
+                    received_run_id: value.run_id,
+                    expected_complete,
+                    received_complete: value.complete,
+                });
+            }
             state.phase = RunPhase::Finished;
             Vec::new()
         }

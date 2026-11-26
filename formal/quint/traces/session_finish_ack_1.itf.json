@@ -1,0 +1,920 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "0"
+        },
+        "failed": false,
+        "phase": {
+          "tag": "Ready",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": false,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Publish",
+        "value": false
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "4"
+        },
+        "failed": false,
+        "phase": {
+          "tag": "Report",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": false,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "AckReport",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "4"
+        },
+        "failed": false,
+        "phase": {
+          "tag": "Closing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Fail",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": false,
+          "runMatches": true
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": true,
+          "runMatches": false
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": false,
+          "runMatches": false
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": true,
+          "runMatches": true
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": false,
+          "runMatches": true
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": false,
+          "runMatches": false
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 19
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": true,
+          "runMatches": true
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 20
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": false,
+          "runMatches": true
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Deadline",
+        "value": {
+          "#tup": []
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": false,
+          "runMatches": true
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "SessionFinishAck::SessionFinishAckModel::dispatch": {
+        "tag": "Finish",
+        "value": {
+          "complete": true,
+          "runMatches": false
+        }
+      },
+      "SessionFinishAck::SessionFinishAckModel::s": {
+        "complete": false,
+        "exit": {
+          "#bigint": "2"
+        },
+        "failed": true,
+        "phase": {
+          "tag": "Finished",
+          "value": {
+            "#tup": []
+          }
+        },
+        "reply": {
+          "complete": false,
+          "runMatches": false
+        },
+        "reportAck": true,
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sessionAck": false
+      }
+    }
+  ],
+  "vars": [
+    "SessionFinishAck::SessionFinishAckModel::s",
+    "SessionFinishAck::SessionFinishAckModel::dispatch"
+  ]
+}

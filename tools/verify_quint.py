@@ -35,6 +35,20 @@ class Model:
 
 MODELS = (
     Model(
+        "session_finish_ack.qnt",
+        "SessionFinishAck",
+        "session_finish_ack",
+        "SessionFinishAckAcceptsMismatch",
+        (
+            "cleanStep",
+            "wrongFlagStep",
+            "wrongRunStep",
+            "sessionFailureStep",
+            "reportFailureStep",
+            "freezeStep",
+        ),
+    ),
+    Model(
         "integrity_checkpoint.qnt",
         "IntegrityCheckpointProtocol",
         "integrity_checkpoint",

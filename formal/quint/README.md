@@ -516,10 +516,32 @@ was added. They now require the same phase error used at the
 post-materialization checkpoint and compare duplicate and retired
 callback errors.
 
+## Session finish acknowledgements
+
+`SessionFinishAck` starts at the final report of a clean or incomplete
+session. A report delivery failure terminates without closing the
+session. A successful report acknowledgement issues the finish request.
+The finish acknowledgement must identify the same run and carry its
+requested completion flag. A mismatched callback returns
+`machine.session.finish_mismatch`, and a callback for a consumed request
+returns the duplicate-effect error. A generic finish failure remains
+terminal with an infrastructure error. Deadline requests leave the
+pending report or finish unchanged.
+
+Ten histories compare the final report, finish request, callback decisions
+and exit status through public Rust transitions. The model represents
+SQLite operations by their acknowledgements. Durable storage is exercised
+by the SQLite suite above.
+
+```sh
+cargo test --locked -p hoimin-core --test machine quint_integrity
+cargo test --locked -p hoimin-core --test machine quint_finish_ack
+```
+
 ## Active workers and Quint Connect
 
-The registry checks thirty finite configurations, twenty-four
-negative controls and 234 committed histories. `Workers` and `WorkersSession` add
+The registry checks thirty-one finite configurations, twenty-five
+negative controls and 244 committed histories. `Workers` and `WorkersSession` add
 two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
