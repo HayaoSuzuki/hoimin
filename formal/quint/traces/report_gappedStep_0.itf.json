@@ -1,0 +1,503 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "-1"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "init",
+      "Report::ReportModel::phase": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::result": "init",
+      "Report::ReportModel::runId": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "run_start",
+      "Report::ReportModel::phase": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::result": "ok",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "1"
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "3"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::result": "ok",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "3"
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "3"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "3"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::result": "sequence",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "2"
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "run_finish",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "ok",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "5"
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "Report::ReportModel::active": {
+        "#set": []
+      },
+      "Report::ReportModel::detail": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::eventRun": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::last": {
+        "#bigint": "5"
+      },
+      "Report::ReportModel::mutant": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::mutantSequence": {
+        "#bigint": "0"
+      },
+      "Report::ReportModel::op": "diagnostic",
+      "Report::ReportModel::phase": {
+        "#bigint": "2"
+      },
+      "Report::ReportModel::result": "finished",
+      "Report::ReportModel::runId": {
+        "#bigint": "1"
+      },
+      "Report::ReportModel::seen": {
+        "#set": []
+      },
+      "Report::ReportModel::sequence": {
+        "#bigint": "0"
+      }
+    }
+  ],
+  "vars": [
+    "Report::ReportModel::mutantSequence",
+    "Report::ReportModel::active",
+    "Report::ReportModel::mutant",
+    "Report::ReportModel::last",
+    "Report::ReportModel::eventRun",
+    "Report::ReportModel::detail",
+    "Report::ReportModel::runId",
+    "Report::ReportModel::op",
+    "Report::ReportModel::result",
+    "Report::ReportModel::phase",
+    "Report::ReportModel::seen",
+    "Report::ReportModel::sequence"
+  ]
+}

@@ -102,7 +102,13 @@ MODELS = (
     ),
     Model("budget.qnt", "Budget", "trace", "BudgetOverdraft"),
     Model("budget.qnt", "BudgetExtended", "extended"),
-    Model("report.qnt", "Report", "report", "ReportEarlyFinish", ("interleavedStep",)),
+    Model(
+        "report.qnt",
+        "Report",
+        "report",
+        "ReportEarlyFinish",
+        ("interleavedStep", "gappedStep"),
+    ),
     Model(
         "completion.qnt",
         "Completion",

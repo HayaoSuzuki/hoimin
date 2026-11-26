@@ -31,7 +31,7 @@ and interprets ITF integer/set encoding. It does not calculate expected policies
 checks. Each model generates four random histories (seed 1172, 24 transitions,
 20 samples). Named scenario actions normally generate 12-transition histories (24 for active
 worker schedules):
-`Report.interleavedStep` starts two mutants and finishes them in reverse order;
+`Report.interleavedStep` starts two mutants, rejects premature finish, and finishes them in reverse order;
 `Completion.gapStep` completes four requests in reverse order;
 `Completion.wrongKindStep` attempts a wrong kind before a generic failure.
 These schedules constrain inputs and reuse the same model transitions to compute
@@ -96,14 +96,19 @@ histories alongside the existing fixed ITF, independent journal PBT, and
 | --- | --- | --- | --- |
 | Budget | Capacity 2 per kind, 3 kinds, amounts 0–3, 2 successful reservations | Public `BudgetLedger::reserve/release`, returned IDs, contents and totals | Overdraft |
 | BudgetExtended | Same capacities, 4 successful reservations, release IDs 0–4 | Same public adapter, covering release followed by further allocation | Shared overdraft control |
-| Report | 2 run IDs, 2 mutant IDs, 2 mutant identity sequences, accepted event numbers 0–5; attempts use the last or next number | Public `ReportSequence::validate/observe` error categories and priority; the journal also checks exact errors | Finish while mutants remain active |
+| Report | 2 run IDs, 2 mutant IDs, 2 mutant identity sequences, event numbers 0–5 | Public `ReportSequence::validate/observe` errors with their exact fields | Finish while mutants remain active |
 | Completion | 4 issued requests, 2 completion kinds, generic failure, attempted IDs 0–5 | Internal fixture of production `RunState::allocate_id/register/accept_completion/retire_pending`; pending, next ID, retired, compressed floor/gaps and outcomes | Accept a retired completion again |
 
 Report covers run start/finish, mutant start/finish and a diagnostic as the
 representative ordinary report event. Its model-derived replay compares public
-validation outcomes; private validator fields are not inspected. The independent
-accepted-event journal compares exact errors, exercises rejected `observe` calls
-in default builds and probes subsequent validation to detect hidden state changes.
+validation outcomes, including the stored run ID, the previous event number, the
+active mutant count, and the stored mutant sequence. `gappedStep` accepts gaps,
+rejects an older event, and reports the original run ID for an event sent for a
+different run after completion. `interleavedStep` checks that two active mutants
+take priority over a repeated event sequence and exercises identity rejections
+before and after a mutant finishes. The independent accepted-event
+journal derives errors from the history and probes subsequent validation to
+detect hidden state changes. Default builds also exercise rejected `observe` calls.
 With contracts enabled, invalid consumer input goes through `validate`, because
 `observe` intentionally asserts on invalid producer events.
 
@@ -267,7 +272,7 @@ See the [design](../../docs/development/work/quint-public-stop/design.md),
 ## Active workers and Quint Connect
 
 The registry checks seventeen finite configurations, eleven negative controls and
-112 committed histories. `Workers` and `WorkersSession` add two workers and two
+113 committed histories. `Workers` and `WorkersSession` add two workers and two
 already-loaded candidates, reached only through public setup transitions.
 They cover apply, start acknowledgement, execution, persistence, finish
 acknowledgement, reset, spool EOF and finalization. Results are Killed/Survived;
