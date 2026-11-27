@@ -10,6 +10,7 @@ import HoiminOracle.AstDepthCases
 import HoiminOracle.SymbolCatalogCases
 import HoiminOracle.CandidateSelectionCases
 import HoiminOracle.SourceLocationCases
+import HoiminOracle.AnalyzerSourceAdmissionCases
 import Lean.Data.Json
 
 open HoiminOracle.CandidateSpan
@@ -170,6 +171,11 @@ def main (args : List String) : IO UInt32 := do
       else IO.eprintln "candidate locations corpus is stale" *> pure 1
   | ["--output-candidate-locations", path] =>
       IO.FS.writeFile path HoiminOracle.SourceLocation.candidateCorpus *> pure 0
+  | ["--check-analyzer-source-admission", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.AnalyzerSourceAdmission.corpus then pure 0
+      else IO.eprintln "analyzer source admission corpus is stale" *> pure 1
+  | ["--output-analyzer-source-admission", path] =>
+      IO.FS.writeFile path HoiminOracle.AnalyzerSourceAdmission.corpus *> pure 0
   | ["--cases"] => printCases
   | ["--sensitivity"] =>
       let status ← printSensitivity
@@ -194,14 +200,16 @@ def main (args : List String) : IO UInt32 := do
       if status != 0 then return status
       let status ← HoiminOracle.CandidateSelection.sensitivity
       if status != 0 then return status
-      HoiminOracle.SourceLocation.sensitivity
+      let status ← HoiminOracle.SourceLocation.sensitivity
+      if status != 0 then return status
+      HoiminOracle.AnalyzerSourceAdmission.sensitivity
   | ["--stats"] =>
       IO.println s!"fixed_cases={cases.length}"
       IO.println "sensitivity_families=12"
       IO.println "strict_cases=3"
       return 0
   | _ =>
-      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --output-source-coordinates PATH | --check-source-coordinates PATH | --output-source-declaration PATH | --check-source-declaration PATH | --output-delimiter-depth PATH | --check-delimiter-depth PATH | --output-source-escape PATH | --check-source-escape PATH | --output-regex-literal-span PATH | --check-regex-literal-span PATH | --output-format-spec PATH | --check-format-spec PATH | --output-format-removal PATH | --check-format-removal PATH | --output-ast-depth PATH | --check-ast-depth PATH | --output-symbol-catalog PATH | --check-symbol-catalog PATH | --output-candidate-selection PATH | --check-candidate-selection PATH | --output-source-locations PATH | --check-source-locations PATH | --output-candidate-locations PATH | --check-candidate-locations PATH | --cases | --sensitivity | --stats"
+      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --output-source-coordinates PATH | --check-source-coordinates PATH | --output-source-declaration PATH | --check-source-declaration PATH | --output-delimiter-depth PATH | --check-delimiter-depth PATH | --output-source-escape PATH | --check-source-escape PATH | --output-regex-literal-span PATH | --check-regex-literal-span PATH | --output-format-spec PATH | --check-format-spec PATH | --output-format-removal PATH | --check-format-removal PATH | --output-ast-depth PATH | --check-ast-depth PATH | --output-symbol-catalog PATH | --check-symbol-catalog PATH | --output-candidate-selection PATH | --check-candidate-selection PATH | --output-source-locations PATH | --check-source-locations PATH | --output-candidate-locations PATH | --check-candidate-locations PATH | --output-analyzer-source-admission PATH | --check-analyzer-source-admission PATH | --cases | --sensitivity | --stats"
       return 2
 
 end HoiminOracle.CandidateSpan.Executable

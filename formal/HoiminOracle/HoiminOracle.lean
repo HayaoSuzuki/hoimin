@@ -82,6 +82,7 @@ import HoiminOracle.AstDepthModel
 import HoiminOracle.SymbolCatalogModel
 import HoiminOracle.CandidateSelectionModel
 import HoiminOracle.SourceLocationModel
+import HoiminOracle.AnalyzerSourceAdmissionModel
 import HoiminOracle.CandidateSpanProofs
 import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel

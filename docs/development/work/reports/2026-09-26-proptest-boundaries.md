@@ -555,3 +555,40 @@ cap and 20-second timeout per command. The single-job Rust runs peaked at
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-core --test candidate_policy
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test analyzer_handler
 ```
+
+## Lean model of analyzer source admission
+
+The model applies the strict source decoder before using the parser
+outcome. A missing source or a decoding failure stops target traversal.
+A syntax error in a decoded source contributes a diagnostic and leaves
+later targets eligible. Lean proves that a decoding failure takes
+precedence over any parser outcome and that appending files after the
+first fatal error leaves the examined prefix and the failure unchanged.
+
+The 214 cases use real files with LF, CRLF, and CR endings, including
+UTF-8, ASCII, Latin-1, BOMs, and conflicting or unsupported declarations.
+All ordered pairs of file outcomes and six selected triples check mixed
+failures and successful continuation. The cases use the Boolean literal
+operator with capacity for every candidate so they isolate source
+admission from exception-project loading and candidate limits.
+
+Rust runs both candidate discovery and the streaming analyzer handler
+against the generated expectations. The test compares diagnostics and
+failure codes, then replays the final candidate spool for successful
+batches and compares it with discovery. A missing file has a fixed
+message that omits the path. The streaming test checks its position
+against the original request. The UTF-8 failure expectation includes
+the path and declared codec and compares the stable part of the message
+before the Rust standard library's error detail.
+
+The four sensitivity checks detect recovery from a decoding error,
+checking syntax before decoding, aborting on syntax errors, and
+choosing the last failure. On macOS, all 214 cases matched through both
+entry points. The CLI analyzer-handler suite passed 33 tests and the CI
+workflow suite passed 222.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-analyzer-source-admission corpus/analyzer-source-admission.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test analyzer_handler
+```
