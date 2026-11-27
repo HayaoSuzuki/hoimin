@@ -397,6 +397,9 @@ fn append_capped(output: &mut Vec<u8>, bytes: &[u8], capacity_limit: usize) {
 }
 
 #[cfg(test)]
+mod admission_oracle_tests;
+
+#[cfg(test)]
 mod capture_oracle_tests;
 
 #[cfg(test)]
@@ -552,6 +555,85 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[tokio::test]
+    async fn dropping_waiter_before_owner_poll_prevents_spawn() {
+        let fixture = tempfile::tempdir().unwrap();
+        let marker = fixture.path().join("started");
+        let runner = GitRunner::default();
+        let cancellation = ProcessCancellation::new();
+        let command = python(
+            "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()",
+            &marker,
+        );
+        let mut waiter = Box::pin(runner.run_command(command, &cancellation));
+        // Poll the waiter once on this current-thread runtime without yielding to its owner.
+        let first = std::future::poll_fn(|cx| {
+            std::task::Poll::Ready(std::future::Future::poll(waiter.as_mut(), cx))
+        })
+        .await;
+        assert!(first.is_pending());
+        assert_eq!(runner.state.active.load(Ordering::Acquire), 1);
+
+        drop(waiter);
+        assert!(cancellation.is_cancelled());
+        runner
+            .drain_for_shutdown(Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(!marker.exists());
+    }
+
+    #[tokio::test]
+    async fn request_gate_stops_future_spawns_while_lifecycle_token_stops_owned_child() {
+        let fixture = tempfile::tempdir().unwrap();
+        let marker = fixture.path().join("started");
+        let other_marker = fixture.path().join("second-started");
+        let gate = ProcessStartGate::new();
+        let runner = GitRunner::for_run(
+            gate.clone(),
+            tokio::time::Instant::now() + Duration::from_secs(30),
+        );
+        let cancellation = ProcessCancellation::new();
+        let first = tokio::spawn({
+            let runner = runner.clone();
+            let cancellation = cancellation.clone();
+            let command = python(
+                "import os,pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)",
+                &marker,
+            );
+            async move { runner.run_command(command, &cancellation).await }
+        });
+        let mut pid = FixturePid::new(announced(&marker).await);
+
+        gate.cancel();
+        let command = python(
+            "import pathlib,sys; pathlib.Path(sys.argv[1]).touch()",
+            &other_marker,
+        );
+        assert!(matches!(
+            runner.run_command(command, &cancellation).await,
+            Err(GitError::Cancelled)
+        ));
+        assert!(!other_marker.exists());
+        assert!(!cancellation.is_cancelled());
+        assert!(!first.is_finished());
+        assert_eq!(runner.state.active.load(Ordering::Acquire), 1);
+        assert!(alive(pid.pid));
+
+        cancellation.cancel();
+        assert!(matches!(
+            tokio::time::timeout(Duration::from_secs(5), first)
+                .await
+                .unwrap()
+                .unwrap(),
+            Err(GitError::Cancelled)
+        ));
+        assert!(!alive(pid.pid));
+        pid.disarm();
+        assert_eq!(runner.state.active.load(Ordering::Acquire), 0);
+        runner.drain_for_shutdown(Duration::ZERO).await.unwrap();
     }
 
     #[tokio::test]

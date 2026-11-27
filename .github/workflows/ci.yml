@@ -567,6 +567,8 @@ jobs:
             HoiminOracle.GitCaptureCases
             HoiminOracle.GitLifecycleModel
             HoiminOracle.GitLifecycleCases
+            HoiminOracle.GitAdmissionModel
+            HoiminOracle.GitAdmissionCases
             ChangedLinesAuditMain
             GlobSelectionAuditMain
             CleanupCapabilityAuditMain
@@ -776,6 +778,8 @@ jobs:
             lake exe generate_changed_lines -- --check-git-capture corpus/git-capture.jsonl
           run_guard check-git-lifecycle \
             lake exe generate_changed_lines -- --check-git-lifecycle corpus/git-lifecycle.jsonl
+          run_guard check-git-admission \
+            lake exe generate_changed_lines -- --check-git-admission corpus/git-admission.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \

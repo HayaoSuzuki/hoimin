@@ -1654,6 +1654,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/git-lifecycle.jsonl",
         ),
         (
+            "generate_changed_lines",
+            "--check-git-admission",
+            "corpus/git-admission.jsonl",
+        ),
+        (
             "generate_resume_budget",
             "--check-recheck",
             "corpus/resume-budget-recheck.jsonl",

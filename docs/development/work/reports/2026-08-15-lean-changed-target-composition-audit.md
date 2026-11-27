@@ -384,6 +384,43 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_cancellation
 ```
 
+## Git spawn admission and cancellation
+
+A standalone Git runner checks its lifecycle cancellation token before
+attempting a spawn. A run-scoped runner also checks the request's start gate
+and requires the current time to precede its deadline. Lean proves that
+denial persists through any sequence of events and that the deadline itself
+is outside the admission window.
+
+The 170 schedules cover the standalone and run-scoped policies. Each starts
+with up to three events drawn from closing the request gate, cancelling the
+lifecycle token, advancing virtual time, and attempting a spawn. Each ends
+with a spawn attempt. Rust uses a deliberately missing executable to
+distinguish refusal from reaching the operating system. It compares all 284
+attempts to the Lean outcomes and checks that each attempt leaves no active
+owner or shutdown diagnostic and preserves the cancellation token. Four
+sensitivity witnesses cover ignoring either stop signal, admitting a start
+at the deadline, and applying the request gate to a standalone runner.
+
+Separate Unix tests drop a waiter before the owner task is polled and close
+the request gate while a child is already running. The latter test observes
+that the closed gate refuses a second spawn, that the first child stays
+alive until lifecycle cancellation, and that the first waiter returns after
+the child is reaped. The Lean model concerns admission decisions at ordered
+observation points. The subprocess tests exercise the two specified handoffs.
+
+All 284 spawn attempts matched on macOS. The Git unit suite passed 120 tests,
+the cancellation integration suite passed four, and the CI workflow tests
+passed 222. Guarded Lean checks peaked at 1,245,920 KiB under a 2 GiB limit.
+Single-job Rust checks peaked at 2,326,528 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-admission corpus/git-admission.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_cancellation
+```
+
 ## Git resolution command sequence
 
 Changed-target resolution first checks that Git reports a worktree and verifies
