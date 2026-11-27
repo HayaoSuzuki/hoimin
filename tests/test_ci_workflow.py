@@ -1614,6 +1614,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/source-coordinates.jsonl",
         ),
         (
+            "generate_candidate_span",
+            "--check-source-declaration",
+            "corpus/source-declaration.jsonl",
+        ),
+        (
             "generate_exception_hierarchy",
             "--check-acquisition",
             "corpus/exception-acquisition.jsonl",

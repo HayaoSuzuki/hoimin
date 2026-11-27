@@ -92,8 +92,8 @@ encoding the decoded text recovers the original bytes.
 Five sensitivity checks detect using a decoded coordinate as a raw one,
 accepting interior UTF-8 bytes, counting an expansion at its start, rejecting
 the end boundary, and dropping the BOM from the coordinate layout. The input
-fixtures use recognized encoding declarations and valid payloads. Declaration
-recognition and invalid byte sequences have separate Rust coverage.
+fixtures use recognized encoding declarations and valid payloads. The next
+model covers declaration recognition and decoding errors.
 
 On macOS, all 154 cases matched across 3,771 raw offsets and 4,019 decoded
 offsets. The largest fixture contains 274 raw bytes and 402 decoded UTF-8
@@ -104,6 +104,46 @@ under a 2 GiB limit and 20-second timeout. Single-job Rust checks peaked at
 
 ```sh
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-source-coordinates corpus/source-coordinates.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test source_encoding --test source_encoding_properties --test candidate_policy
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test analyzer_handler
+```
+
+## Lean model of source encoding declarations
+
+The strict decoder searches the first two physical lines for a case-sensitive
+`coding:` or `coding=` marker in a comment. The model reads CRLF as one line
+ending, skips blank lines and comments without a name, and stops at the first
+line of source code. Lean proves that the search consumes only two lines, that
+source code blocks declarations on later lines, and that the first recognized
+name takes precedence even when the codec it names is unsupported.
+
+Codec selection normalizes the declared name and retains its original spelling
+in diagnostics. Lean proves that a missing declaration selects UTF-8, and that
+an incompatible declaration with a UTF-8 BOM produces a conflict before the
+decoder examines the payload. The model covers Hoimin's UTF-8, ASCII, and
+Latin-1 codecs. For ASCII it reports the first byte above 127 by its original
+offset. For invalid UTF-8 the oracle checks the diagnostic category and whether
+the encoding was explicit, leaving Rust's UTF-8 error detail to the standard
+library.
+
+The 360 cases comprise 216 combinations of header placement, line endings, and
+payload bytes, 132 combinations of codec names, BOM presence, and payload bytes,
+and 12 focused boundary cases. The Rust test compares the selected codec and
+decoded text or the diagnostic category, spelling, and applicable byte offset.
+Seven sensitivity checks exercise searching a third line, searching after
+code, splitting CRLF, accepting the `utf8` alias with a BOM, reporting an
+unsupported codec before a BOM conflict, normalizing the diagnostic name,
+and selecting the second declaration ahead of the first.
+
+On macOS, Rust matched all 360 cases, including 228 successful decodes and 132
+diagnostics. The targeted run passed 691 core tests and 31 CLI integration
+tests. The CI workflow suite passed 222 tests. Guarded Lean checks peaked at
+1,295,568 KiB under a 2 GiB limit, and single-job Rust checks peaked at
+973,040 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-source-declaration corpus/source-declaration.jsonl)
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test source_encoding --test source_encoding_properties --test candidate_policy
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test analyzer_handler

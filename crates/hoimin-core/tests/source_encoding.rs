@@ -5,6 +5,8 @@ use hoimin_core::{
 
 #[path = "support/source_coordinates_oracle.rs"]
 mod source_coordinates_oracle;
+#[path = "support/source_declaration_oracle.rs"]
+mod source_declaration_oracle;
 
 #[rstest::rstest]
 #[case::value_1(1)]
