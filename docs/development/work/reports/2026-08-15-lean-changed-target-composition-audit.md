@@ -340,6 +340,50 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_cancellation
 ```
 
+## Git shutdown ownership and diagnostics
+
+A failed wait leaves its Git child owned. Cleanup attempts termination once,
+records the first wait failure, and waits again. Shutdown may exhaust its
+waiting budget while cleanup is pending. A successful wait releases the
+owner and keeps the diagnostics recorded before that point. If the cleanup
+task disappears before a successful wait, its owner records missing lifecycle
+evidence. Shutdown succeeds when every owner is released and the diagnostic
+history is empty.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Independent cleanup owners | One or two child identities with initial I/O and termination outcomes | Actual `ActiveLifecycle` instances and `terminate_and_reap` tasks |
+| Wait failures and success | Ordered events carrying the child's result | Controlled `GitChild` replies with Tokio time paused |
+| Missing owner evidence | Abandonment event | Abort and join the cleanup task to run `ActiveLifecycle::drop` |
+| Shutdown observation | Active count, sticky diagnostics, and budget expiry if owners remain | Actual `drain_for_shutdown` with a zero budget after each event |
+| Cleanup return | Termination and first wait diagnostics for the completed owner | Actual cleanup task result in addition to the shared history |
+
+Lean proves that wait failure preserves the active count, subsequent wait
+failures retain the first report, and recorded failures persist over arbitrary
+event sequences. With a zero wait budget, a successful drain requires an empty
+history and zero active owners.
+
+The 313 `internal-fixture` cases include 32 single-owner schedules, 280
+interleavings of two owner schedules, and a separate successful two-owner
+case. Every case compares intermediate state, including the state after
+polling shutdown. Sensitivity checks detect early owner release, duplicate
+wait reporting, clearing the history when the last owner exits, suppressing
+the missing-evidence diagnostic, and ignoring a remaining owner at expiry.
+The subprocess cancellation suite supplies real signal, process, and pipe
+observations alongside these scripted cleanup outcomes.
+
+All 2,356 observations matched Rust on macOS. The Git unit suite passed 117
+tests and the cancellation suite passed four. Guarded Lean checks peaked at
+1,273,024 KiB under a 2 GiB limit. Single-job Rust checks peaked at
+2,289,040 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-lifecycle corpus/git-lifecycle.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_cancellation
+```
+
 ## Git resolution command sequence
 
 Changed-target resolution first checks that Git reports a worktree and verifies

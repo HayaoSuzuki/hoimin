@@ -400,6 +400,9 @@ fn append_capped(output: &mut Vec<u8>, bytes: &[u8], capacity_limit: usize) {
 mod capture_oracle_tests;
 
 #[cfg(test)]
+mod lifecycle_oracle_tests;
+
+#[cfg(test)]
 mod capture_tests {
     use super::*;
 

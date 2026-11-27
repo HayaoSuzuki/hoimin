@@ -3,6 +3,7 @@ import HoiminOracle.GitPhysicalRowsCases
 import HoiminOracle.GitWorktreeCases
 import HoiminOracle.GitResolutionCases
 import HoiminOracle.GitCaptureCases
+import HoiminOracle.GitLifecycleCases
 import Lean.Data.Json
 
 open HoiminOracle.ChangedLines Lean
@@ -62,6 +63,11 @@ def main (args : List String) : IO UInt32 := do
       else IO.eprintln "Git capture corpus is stale" *> pure 1
   | ["--output-git-capture", path] =>
       IO.FS.writeFile path HoiminOracle.GitCapture.corpus *> pure 0
+  | ["--check-git-lifecycle", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitLifecycle.corpus then pure 0
+      else IO.eprintln "Git lifecycle corpus is stale" *> pure 1
+  | ["--output-git-lifecycle", path] =>
+      IO.FS.writeFile path HoiminOracle.GitLifecycle.corpus *> pure 0
   | ["--sensitivity"] =>
       for (name, passed) in sensitivity do IO.println s!"{name}={passed}"
       unless sensitivity.all (·.2) do return 1
@@ -71,7 +77,9 @@ def main (args : List String) : IO UInt32 := do
       if status != 0 then return status
       let status ← HoiminOracle.GitResolution.sensitivity
       if status != 0 then return status
-      HoiminOracle.GitCapture.sensitivity
+      let status ← HoiminOracle.GitCapture.sensitivity
+      if status != 0 then return status
+      HoiminOracle.GitLifecycle.sensitivity
   | ["--stats"] =>
       IO.println s!"cases={rows.length}\nseparator_pairs=9\ngit_states=4\nmaximum_source_bytes=37\nsensitivity_families={sensitivity.length}\ntransitions=not-applicable"
       pure 0
@@ -79,4 +87,4 @@ def main (args : List String) : IO UInt32 := do
       HoiminOracle.GitPhysicalRows.stats
       pure 0
   | [] => IO.print corpus *> pure 0
-  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--check-physical-rows PATH|--output-physical-rows PATH|--check-git-worktree PATH|--output-git-worktree PATH|--check-git-resolution PATH|--output-git-resolution PATH|--check-git-capture PATH|--output-git-capture PATH|--sensitivity|--stats|--physical-rows-stats]" *> pure 2
+  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--check-physical-rows PATH|--output-physical-rows PATH|--check-git-worktree PATH|--output-git-worktree PATH|--check-git-resolution PATH|--output-git-resolution PATH|--check-git-capture PATH|--output-git-capture PATH|--check-git-lifecycle PATH|--output-git-lifecycle PATH|--sensitivity|--stats|--physical-rows-stats]" *> pure 2
