@@ -10,6 +10,11 @@ sources:
   revision: 97c394760bc02a56be0bfdeb6301257eac80d1c7
   working_tree: modified
   sha256: 2d1710df34ea77b0733ca1fbb5b10bb9d74d93603959cc0e69a24f04decd91f3
+- id: schema-internal-fixtures
+  resource: ../../../../crates/hoimin-cli/src/session/schema.rs
+  revision: 5a8dc6ab7339ca9d5c27948ff62216b0bec19124
+  working_tree: clean
+  sha256: 4026882d70e8225a1785dee693729079bd8a1e64455408be6070b077e4dc66da
 - id: development
   resource: ../../guides/contributing.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -47,7 +52,7 @@ hoiminのLean監査では、モデル内の性質を証明する作業と、Rust
 | Rust adapterとcorpus | 同じ前提を構成できる事例で公開APIの観測が一致すること | adapterが強制できない内部の実行時刻や未列挙の入力 |
 | 実機確認 | 実行した版・OS・設定での結果 | 別OS・別の資源制御方式・未実行の負荷条件 |
 
-公開APIとの比較で一致を要求するケースは `strict`、モデル内だけで確認するケースは `model-only` と記録する。どの分類かによって、実装について述べられる範囲が変わる。[^state][^migration]
+公開 API と比較するケースは `strict`、実装内部のテスト用フックで前提を構成して比較するケースは `internal-fixture`、モデル内で確認するケースは `model-only` と記録する。[^state][^migration][^schema-internal-fixtures]
 
 # 監査ごとに異なる前提
 
@@ -57,8 +62,7 @@ hoiminのLean監査では、モデル内の性質を証明する作業と、Rust
 
 Issue #882で旧session DBの移行対応を終了した。
 上記は2026-08-11の監査範囲の説明である。
-現行の同名モデル・corpusは、schema 4の直接初期化と未対応版の拒否を扱い、強制した新規DBのstale readだけをmodel-onlyとして区別する。
-過去の移行証明を現行実装の移行対応の根拠には使わない。[^current-initialization]
+現行の同名モデルと事例集は、schema 5 の直接初期化と未対応版の拒否を扱う。公開 API で比較する6件に加え、書き込みロック取得後の版の再確認と、`SQLITE_FULL` 後の巻き戻しを、実際の SQLite を使う `internal-fixture` で比較する。過去の抽象的な巻き戻し事例は `model-only` の記録として残す。[^current-initialization][^schema-internal-fixtures]
 
 資源の後始末を扱う監査では、真偽値による抽象モデルと、独立した内部Rust試験を組み合わせている。strictな対応試験や生成corpusによる比較はなく、モデルの成功とRust試験の成功はそれぞれの証拠として読む。[^cleanup]
 
@@ -84,3 +88,4 @@ CI監査報告には、キャッシュなしのビルドでのRSS（常駐メモ
 [^ci]: [2026-09-08-issue-369-lean-ci-audit.md](../../work/reports/2026-09-08-issue-369-lean-ci-audit.md)。
 
 [^current-initialization]: [現行session初期化モデル](../../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean)。
+[^schema-internal-fixtures]: [SQLite のロック取得と容量不足を構成する内部テスト](../../../../crates/hoimin-cli/src/session/schema.rs)。

@@ -75,6 +75,11 @@ sources:
   revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
   working_tree: modified
   sha256: dad6aeb5e49b0071758e611814942697b968f036ec4de0001dbcb64d95c5a37f
+- id: schema-internal-fixtures
+  resource: ../../../../crates/hoimin-cli/src/session/schema.rs
+  revision: 5a8dc6ab7339ca9d5c27948ff62216b0bec19124
+  working_tree: clean
+  sha256: 4026882d70e8225a1785dee693729079bd8a1e64455408be6070b077e4dc66da
 - id: issue-1073-schema
   resource: ../../../../crates/hoimin-cli/src/session/schema.rs
   revision: 03c7e00fc2087fa87c3c0ee9ab9f70c766fc6956
@@ -674,7 +679,7 @@ Issue #472 の設計では、指定されたsessionのDB、WAL・SHM・journal�
 Issue #895以降、session DBはschema 5だけを開く。
 初期化できるのは、新規パスまたは `user_version = 0`・`application_id = 0` で schema object がない空の DB だけとする。schema 5を一つのトランザクションで直接作成し、旧版1〜4と未対応の新しい版は変更せず拒否する。
 過去の移行監査は当時の実装の記録であり、現在の移行対応を示さない。
-`SchemaMigration`という既存のモジュール名を保つ現行モデルとcorpusは、新規初期化の競合、ロック取得後の版再確認、初期化失敗のrollback、未対応版の拒否を対象とする。公開 API と比較する strict は 6 件で、強制した stale read と抽象 rollback の 2 件は model-only とする。旧 rollback fixture は別用途の table を持つため、現行 API では DDL より前に拒否される。実際の DDL rollback は schema 所有者の SQLITE_FULL 試験で確認し、この fixture の拒否と区別する。[^issue-1073-correspondence]
+`SchemaMigration` の事例集は、公開 API と比較する `strict` 6件と、実際の SQLite を構成して内部から観測する `internal-fixture` 2件を含む。内部試験の一つは、両接続が空の DB を読んだ後に先行接続をコミットし、後続接続が書き込みロックの取得後に schema 5 を読むことを確かめる。もう一つは、初期化トランザクション中に `SQLITE_FULL` を起こし、版・スキーマ・ファイルが変更前に戻ることを確かめる。別用途のテーブルを持つ旧 fixture は、現行 API が DDL より前に拒否するため、モデル内の事例として記録する。[^issue-1073-correspondence][^schema-internal-fixtures]
 SQLiteのWAL実装や実際のクラッシュを証明するものではない。[^current-initialization]
 
 # 結果の生成と読取りの責務
@@ -1276,6 +1281,7 @@ lookup・保存・finish は確立した session にだけ実行する。既存�
 を参照する。過去の Lean モデルの結果を、新しい DB 識別処理の証明として扱わない。
 
 [^issue-1073-correspondence]: [Schema oracle correspondence modes](../../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationCases.lean).
+[^schema-internal-fixtures]: [SQLite のロック取得と容量不足を構成する内部テスト](../../../../crates/hoimin-cli/src/session/schema.rs)。
 
 ## Review admission and display ownership (Issues #1077–#1078)
 
