@@ -192,7 +192,7 @@ each boundary.
 | --- | --- | --- |
 | Startup invocation, shared deadline, and report handoff | Rust shell and controlled-startup fixtures | Stop before selection, after observation, and before reporting |
 | Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays normal pages and deadline checkpoints against directory entries | Bounded selection, scan errors, coordinator contention, and uninspected selected roots at the handoff |
-| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow | Integration with reported cursor-write errors |
+| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow. `janitor_selection.qnt` follows a write failure through the cleanup report | Recovery after reported partial writes and sync errors is verified at the slot boundary |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers a valid lease marker, retention, readiness, and heartbeat evidence | Invalid or absent observations before eligibility, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease | Claim combined with coordinator unlock, deletion, and report accounting |
@@ -305,6 +305,9 @@ that an empty scan preserves an existing cursor and generation.
 `persistDeadlineStep` expires after computing the page but before writing the
 cursor. Both preserve the prior cursor and generation. The negative control
 `prematureCursorStep` advances the cursor on the cancelled scan at EOF.
+`persistFailureStep` injects an error before writing the inactive slot.
+The selected page still reaches cleanup, the report records
+`CursorPersistenceFailed`, and the following scan uses the previous cursor.
 
 The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
 in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.

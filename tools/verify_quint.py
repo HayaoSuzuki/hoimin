@@ -126,6 +126,7 @@ MODELS = (
             "emptyPageStep",
             "eofDeadlineStep",
             "persistDeadlineStep",
+            "persistFailureStep",
             "recoveredCursorStep",
         ),
         scenario_steps=24,

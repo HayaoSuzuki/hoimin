@@ -1,7 +1,7 @@
 // Directory entries have distinct ranks and stay stable within each scan.
 // The coordinator serializes scans. The available names can change between scans.
 module JanitorSelection {
-  type Phase = Idle | Scanning | Eof | BeforePersist | Published |
+  type Phase = Idle | Scanning | Eof | BeforePersist | Published | PersistFailed |
     ExpiredScan | ExpiredEof | ExpiredPersist
   type Scan = { phase: Phase, listing: Set[int], seen: Set[int], chosen: List[int],
     complete: bool, cursorDeferred: bool, scans: int }
@@ -24,7 +24,7 @@ module JanitorSelection {
   }
 
   pure def terminal(phase: Phase): bool =
-    Set(Published, ExpiredScan, ExpiredEof, ExpiredPersist).contains(phase)
+    Set(Published, PersistFailed, ExpiredScan, ExpiredEof, ExpiredPersist).contains(phase)
 
   action begin(listing: Set[int]): bool = all {
     scan.scans < maxScans and (scan.phase == Idle or terminal(scan.phase)),
@@ -80,6 +80,11 @@ module JanitorSelection {
     publish({ ...scan, phase: Published }, advance(saved, scan.chosen)),
   }
 
+  action failPersist = all {
+    scan.phase == BeforePersist and scan.chosen.length() > 0,
+    publish({ ...scan, phase: PersistFailed }, saved),
+  }
+
   action expireBeforeScan = all {
     scan.phase == Scanning and scan.seen == Set(),
     publish({ ...scan, phase: ExpiredScan }, saved),
@@ -133,6 +138,10 @@ module JanitorSelection {
     if (scan.scans == 2 and scan.phase == BeforePersist) expireBeforePersist
     else advanceScenario
 
+  action persistFailureStep =
+    if (scan.scans == 2 and scan.phase == BeforePersist) failPersist
+    else advanceScenario
+
   val publishedAfterCursor = scan.phase == Published and scan.cursorDeferred
   val wrapped = scan.phase == Published and scan.chosen.length() > 0 and
     scan.chosen.select(name => name <= startCursor.name).length() > 0
@@ -142,7 +151,7 @@ module JanitorSelection {
   val completedEmptyScan = scan.phase == Published and scan.chosen.length() == 0
 
   val selectionIsExact = {
-    val hasSelection = Set(BeforePersist, Published, ExpiredPersist).contains(scan.phase)
+    val hasSelection = Set(BeforePersist, Published, PersistFailed, ExpiredPersist).contains(scan.phase)
     val after = scan.seen.filter(name => name > startCursor.name)
     val eligible = if (after.size() == 0) scan.seen else after
     if (hasSelection) all {
@@ -155,7 +164,7 @@ module JanitorSelection {
 
   val Safety = all {
     scan.seen.subseteq(scan.listing),
-    scan.complete == Set(Eof, BeforePersist, Published, ExpiredEof, ExpiredPersist).contains(scan.phase),
+    scan.complete == Set(Eof, BeforePersist, Published, PersistFailed, ExpiredEof, ExpiredPersist).contains(scan.phase),
     scan.complete implies scan.seen == scan.listing,
     selectionIsExact,
     if (scan.phase == Published and scan.chosen.length() > 0)

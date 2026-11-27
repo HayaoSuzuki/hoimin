@@ -1,16 +1,18 @@
 //! Replay candidate scans against real directory entries and coordinator slots.
 use super::super::{
-    COORDINATOR_FILE, CoordinatorLockGuard, ManagedRootCoordinator, read_coordinator_state,
+    COORDINATOR_FILE, CoordinatorLockGuard, ManagedRootCoordinator, ManagedRunRoot,
+    read_coordinator_state, select_reclaim_candidates,
     select_reclaim_candidates_locked_until_with_hooks,
 };
 use super::quint_cursor_name as name;
+use crate::io_faults;
 use crate::quint_itf::{number, set, states};
 use camino::Utf8Path;
 use hoimin_core::{JanitorReason, JanitorScan};
 use serde_json::Value;
 use std::cell::Cell;
 use std::collections::BTreeSet;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 pub(super) fn update_listing(
     coordinator: &ManagedRootCoordinator,
@@ -34,6 +36,15 @@ pub(super) fn assert_cursor(coordinator: &ManagedRootCoordinator, expected: &Val
             .unwrap();
     assert_eq!(actual.cursor, name(number(&expected["name"])));
     assert_eq!(actual.generation, number(&expected["generation"]));
+}
+
+fn expected_page(expected: &Value) -> Vec<String> {
+    expected["chosen"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|rank| name(number(rank)))
+        .collect()
 }
 
 pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value) {
@@ -96,12 +107,7 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
         assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
     } else {
         let (page, persistence_error) = result.unwrap();
-        let expected_page: Vec<_> = expected["chosen"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|rank| name(number(rank)))
-            .collect();
+        let expected_page = expected_page(expected);
         assert_eq!(page, expected_page);
         assert_eq!(persistence_error, None);
         assert_eq!(scan.stop_reason, None);
@@ -121,6 +127,10 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
 #[case::eof_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_eofDeadlineStep_0.itf.json"))]
 #[case::persist_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_persistDeadlineStep_0.itf.json"))]
 fn quint_history_matches_candidate_selection(#[case] trace: &str) {
+    replay_selection(trace);
+}
+
+fn replay_selection(trace: &str) {
     let parent = tempfile::tempdir().unwrap();
     let coordinator =
         ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
@@ -130,13 +140,17 @@ fn quint_history_matches_candidate_selection(#[case] trace: &str) {
         let scan = &row["scan"];
         if !matches!(
             scan["phase"]["tag"].as_str().unwrap(),
-            "Published" | "ExpiredScan" | "ExpiredEof" | "ExpiredPersist"
+            "Published" | "PersistFailed" | "ExpiredScan" | "ExpiredEof" | "ExpiredPersist"
         ) {
             continue;
         }
         update_listing(&coordinator, &mut previous, &scan["listing"]);
         assert_cursor(&coordinator, &row["startCursor"]);
-        check_scan(&coordinator, scan);
+        if scan["phase"]["tag"].as_str().unwrap() == "PersistFailed" {
+            check_cursor_failure_handoff(&coordinator, scan);
+        } else {
+            check_scan(&coordinator, scan);
+        }
         assert_cursor(&coordinator, &row["saved"]);
         finished += 1;
     }
@@ -144,4 +158,70 @@ fn quint_history_matches_candidate_selection(#[case] trace: &str) {
         finished, 3,
         "trace must include three complete scan outcomes"
     );
+}
+
+fn check_cursor_failure_handoff(coordinator: &ManagedRootCoordinator, expected: &Value) {
+    let initial_bytes = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let expected_page = expected_page(expected);
+    let report = ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
+        coordinator,
+        SystemTime::now(),
+        Instant::now(),
+        &|_| Duration::ZERO,
+        &|scan| {
+            let fault = io_faults::arm("cursor.write");
+            let (page, error) = select_reclaim_candidates(coordinator, scan).unwrap();
+            assert!(fault.triggered());
+            assert_eq!(page, expected_page);
+            assert!(error.is_some());
+            Ok((page, error))
+        },
+    );
+    let selected = u64::try_from(expected_page.len()).unwrap();
+    let observed = u64::try_from(set(&expected["seen"]).len()).unwrap();
+    assert_eq!(
+        report.scan.directory_scan_complete,
+        expected["complete"].as_bool().unwrap()
+    );
+    assert_eq!(
+        report.scan.cursor_deferred,
+        expected["cursorDeferred"].as_bool().unwrap()
+    );
+    assert_eq!(report.scan.stop_reason, None);
+    assert_eq!(report.scan.observed_matching_entries, observed);
+    assert_eq!(
+        report.scan.selection_omitted_observed_entries,
+        observed - selected
+    );
+    assert_eq!(report.scan.selected_roots, selected);
+    assert_eq!(report.scan.uninspected_selected_roots, 0);
+    assert_eq!(report.inspected_roots, selected);
+    assert_eq!(
+        report
+            .unresolved_by_reason
+            .get(&JanitorReason::LeaseInvalid),
+        Some(&selected)
+    );
+    assert_eq!(
+        report.details[0].reason,
+        JanitorReason::CursorPersistenceFailed
+    );
+    assert_eq!(report.details.len(), expected_page.len() + 1);
+    assert_eq!(
+        coordinator.dir.read(COORDINATOR_FILE).unwrap(),
+        initial_bytes
+    );
+}
+
+#[test]
+fn cursor_write_failure_preserves_the_page_and_reports_the_failure() {
+    let trace = include_str!(
+        "../../../../../../formal/quint/traces/janitor_selection_persistFailureStep_0.itf.json"
+    );
+    assert!(
+        states(trace)
+            .iter()
+            .any(|row| row["scan"]["phase"]["tag"] == "PersistFailed")
+    );
+    replay_selection(trace);
 }
