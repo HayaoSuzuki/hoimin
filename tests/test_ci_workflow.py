@@ -1604,6 +1604,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/metrics-validation.jsonl",
         ),
         (
+            "generate_timeout_limit",
+            "--check-resource-sizes",
+            "corpus/resource-sizes.jsonl",
+        ),
+        (
             "generate_resume_budget",
             "--check-recheck",
             "corpus/resume-budget-recheck.jsonl",

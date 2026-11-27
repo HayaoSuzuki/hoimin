@@ -86,6 +86,7 @@ import HoiminOracle.ProcessOutputCases
 import HoiminOracle.TimeoutLimitModel
 import HoiminOracle.TimeoutLimitProofs
 import HoiminOracle.TimeoutLimitCases
+import HoiminOracle.ResourceSizeModel
 import HoiminOracle.CleanupCapabilityModel
 import HoiminOracle.CleanupCapabilityProofs
 import HoiminOracle.CleanupCapabilityCases

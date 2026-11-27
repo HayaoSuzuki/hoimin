@@ -1,4 +1,5 @@
 import HoiminOracle.TimeoutLimitCases
+import HoiminOracle.ResourceSizeCases
 import Lean.Data.Json
 
 open HoiminOracle.TimeoutLimit
@@ -99,11 +100,21 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["--output", path] => writeCorpus path
   | ["--check", path] => checkCorpus path
+  | ["--output-resource-sizes", path] =>
+      IO.FS.writeFile path HoiminOracle.ResourceSize.corpus
+      return 0
+  | ["--check-resource-sizes", path] =>
+      if (← IO.FS.readFile path) == HoiminOracle.ResourceSize.corpus then return 0
+      IO.eprintln s!"stale resource size corpus: {path}"
+      return 1
   | ["--stats"] => printStats
-  | ["--sensitivity"] => printSensitivity
+  | ["--sensitivity"] =>
+      let status ← printSensitivity
+      if status != 0 then return status
+      HoiminOracle.ResourceSize.sensitivity
   | ["--cases"] => printCases
   | _ => do
-      IO.eprintln "usage: generate_timeout_limit --output PATH | --check PATH | --stats | --sensitivity | --cases"
+      IO.eprintln "usage: generate_timeout_limit --output PATH | --check PATH | --output-resource-sizes PATH | --check-resource-sizes PATH | --stats | --sensitivity | --cases"
       return 2
 
 end HoiminOracle.TimeoutLimit.Executable

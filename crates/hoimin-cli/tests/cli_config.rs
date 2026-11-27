@@ -7,6 +7,9 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
+#[path = "support/resource_size_oracle.rs"]
+mod resource_size_oracle;
+
 type ConfigParser = fn(
     &[&str],
 ) -> Result<
