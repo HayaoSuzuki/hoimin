@@ -6,6 +6,10 @@ use super::input::InputDisposition;
 use crate::artifacts::open_regular_file;
 use crate::finite_file::SnapshotReader;
 
+#[cfg(test)]
+#[path = "duplicate/oracle_tests.rs"]
+mod oracle_tests;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum DuplicateReason {
     SamePath,

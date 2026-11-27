@@ -1614,6 +1614,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/snapshot-reads.jsonl",
         ),
         (
+            "generate_progress_input",
+            "--check-duplicates",
+            "corpus/progress-duplicates.jsonl",
+        ),
+        (
             "generate_candidate_span",
             "--check-source-coordinates",
             "corpus/source-coordinates.jsonl",

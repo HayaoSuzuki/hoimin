@@ -638,3 +638,50 @@ job and peaked at 2,073,776 KiB under a 3 GiB cap.
 (cd formal/HoiminOracle && lake exe generate_timeout_limit -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 finite_file plan::source artifacts::run_report progress::duplicate workspace::copy
 ```
+
+## Lean model of progress duplicate warnings
+
+`progress` reports the first occurrence of a repeated path even when an
+earlier report at a different path has identical bytes. With no prior
+occurrence of the path, it chooses the first earlier input in the same
+fingerprint bucket that can still be confirmed byte for byte. Missing or
+changed files can fail confirmation, so the search moves to the next
+candidate. Each input stays in the comparison history.
+
+Lean proves the earliest-index conditions for both warning reasons,
+including the path rule's precedence. It proves that an unavailable file
+cannot confirm a byte match and that projecting the inputs from an
+annotated history preserves their order for any annotation rule. The
+existing progress decision model computes the adjacent comparison states,
+the final decision, and the consecutive stall count for the strict cases.
+
+The 84 strict cases exercise the public CLI entry point with real reports.
+They enumerate ordered pairs and triples across four stable paths, plus
+four longer or mixed histories. Different whitespace can preserve the
+meaning of a report while changing its bytes. The mixed histories include
+repeated incomplete reports that warn and still break the stall chain.
+The adapter checks warning text and order, the retained input paths, and
+the comparison outcomes.
+
+The 71 internal-fixture cases replay a two-input matrix over eight
+actions plus seven selected histories. They supply fingerprints to the
+private tracker so different contents can deliberately collide, and edit
+real files between observations to exercise optional confirmation.
+Confirmation uses the production file reader. The matrix treats files
+as stable inside each observation. Existing tests separately cover
+growth and shrinkage during a read. Seven broken variants cover path
+priority, the last occurrence in either branch, trusting the fingerprint
+alone, ignoring the fingerprint, treating two missing files as equal,
+and stopping at the first failed confirmation.
+
+On macOS, all 84 CLI cases and 71 tracker cases matched. The targeted Rust
+runs passed 18 unit tests and 34 CLI integration tests, and the CI workflow
+suite passed 222. Lean commands ran under a 2 GiB cap with a 20-second
+timeout per command. The Rust runs used one build job and a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_progress_input -- --check-duplicates corpus/progress-duplicates.jsonl)
+(cd formal/HoiminOracle && lake exe generate_progress_input -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- progress::duplicate
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test progress -- duplicate output_defers_mixed_history_rendering
+```
