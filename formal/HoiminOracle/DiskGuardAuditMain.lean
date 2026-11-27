@@ -190,6 +190,71 @@ private def reportEvidenceSensitivity : Bool :=
   let broken := if projectedPrimaryMatches firstSample laterSample then [] else [laterSample]
   decide (appendReportEvidence firstSample [] laterSample ≠ broken)
 
+private def finalizationErrorJson (error : FinalizationError) : Lean.Json :=
+  .arr #[.str error.1, .str error.2]
+
+private def finalizationReportJson (report : FinalizationReport) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("complete", Lean.toJson report.complete), ("exit_code", Lean.toJson report.exitCode),
+    ("primary", (report.primary.map fun (code, message) =>
+      Lean.Json.arr #[.str code, (message.map Lean.Json.str).getD .null]).getD .null),
+    ("errors", .arr (report.errors.toArray.map finalizationErrorJson))]
+
+private def finalizationErrorCase (id : String) (start : FinalizationReport)
+    (errors : List FinalizationError) (runtime : Bool := false) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"), ("id", .str id),
+    ("start", finalizationReportJson start), ("runtime", Lean.toJson runtime),
+    ("errors", .arr (errors.toArray.map finalizationErrorJson)),
+    ("expected", finalizationReportJson (recordFinalizationErrors start errors))]
+
+private def monitorJoinError : FinalizationError :=
+  (stopCode .measurementFailed, "disk monitor join exceeded shutdown budget")
+
+private def endQueryError : FinalizationError :=
+  (stopCode .measurementFailed, "end free-space query failed: injected end query failure")
+
+private def executionCleanupError : FinalizationError :=
+  ("workspace.cleanup.deferred", "cleanup did not complete")
+
+private def stoppedMeasurementReport : FinalizationReport :=
+  ⟨false, 2, some (stopCode .measurementFailed, some "injected prior measurement failure"), []⟩
+
+private def runtimeMonitorTimeoutReport : FinalizationReport :=
+  -- The failed monitor join denies destructive cleanup before the pending errors are projected.
+  recordFinalizationError stoppedMeasurementReport
+    ("workspace.cleanup.deferred",
+      "process/output drain, disk monitor join, or final disk measurement join was not proven")
+
+def renderFinalizationErrorsCorpus : String :=
+  let starts : List FinalizationReport := [
+    ⟨true, 0, none, []⟩,
+    ⟨false, 130, none, []⟩,
+    ⟨false, 2, some (stopCode .reserveReached, none), [monitorJoinError]⟩,
+    stoppedMeasurementReport]
+  let alphabet := [monitorJoinError, endQueryError, executionCleanupError]
+  let traces := [[]] ++ alphabet.map (fun error => [error]) ++
+    alphabet.flatMap fun first => alphabet.map fun second => [first, second]
+  let cases := starts.zipIdx.flatMap fun (start, startIndex) =>
+    traces.zipIdx.map fun (trace, traceIndex) =>
+      finalizationErrorCase s!"start_{startIndex}_trace_{traceIndex}" start trace
+  let mixed := finalizationErrorCase "repeated_and_distinct" stoppedMeasurementReport [
+    (stopCode .measurementFailed, "injected prior measurement failure"),
+    monitorJoinError, endQueryError, monitorJoinError, executionCleanupError]
+  let runtime := [
+    finalizationErrorCase "monitor_timeout" runtimeMonitorTimeoutReport [monitorJoinError] true,
+    finalizationErrorCase "monitor_timeout_and_end_query_failure" runtimeMonitorTimeoutReport
+      [monitorJoinError, endQueryError] true]
+  String.join ((cases ++ [mixed] ++ runtime).map fun item => item.compress ++ "\n")
+
+private def finalizationErrorsSensitivity : Bool :=
+  let result := recordFinalizationErrors stoppedMeasurementReport
+    [monitorJoinError, endQueryError, monitorJoinError]
+  decide (result.primary ≠ some (endQueryError.1, some endQueryError.2)) &&
+    decide (result.errors ≠ [monitorJoinError, endQueryError, monitorJoinError]) &&
+    decide (result.errors ≠ [monitorJoinError]) &&
+    decide (result.errors ≠ [endQueryError, monitorJoinError])
+
 private def meterRoots (sameFilesystem : Bool) : List MeterRoot := [
   { filesystem := 7, available := 90, files := [(0, 4), (1, 0)] },
   { filesystem := if sameFilesystem then 7 else 8, available := 4, files := [(0, 4), (2, 6)] } ]
@@ -399,7 +464,7 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
   unless rootRenamingCasesPass && payloadSymmetryCasesPass do
     IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
-  unless sensitivityPasses && reportEvidenceSensitivity && meterSensitivity &&
+  unless sensitivityPasses && reportEvidenceSensitivity && finalizationErrorsSensitivity && meterSensitivity &&
       statsSensitivity && finalCapacitySensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
@@ -473,6 +538,8 @@ def main (args : List String) : IO UInt32 := do
   | ["--check", path] => checkCorpus path renderCorpus
   | ["--output-report-evidence", path] => writeCorpus path renderReportEvidenceCorpus
   | ["--check-report-evidence", path] => checkCorpus path renderReportEvidenceCorpus
+  | ["--output-finalization-errors", path] => writeCorpus path renderFinalizationErrorsCorpus
+  | ["--check-finalization-errors", path] => checkCorpus path renderFinalizationErrorsCorpus
   | ["--output-meter", path] => writeCorpus path renderMeterCorpus
   | ["--check-meter", path] => checkCorpus path renderMeterCorpus
   | ["--output-statistics", path] => writeCorpus path renderStatisticsCorpus
@@ -482,7 +549,7 @@ def main (args : List String) : IO UInt32 := do
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-finalization-errors | --check-finalization-errors | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

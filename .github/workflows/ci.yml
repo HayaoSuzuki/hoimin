@@ -702,6 +702,8 @@ jobs:
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \
             lake exe generate_disk_guard -- --check-report-evidence corpus/disk-report-evidence.jsonl
+          run_guard check-disk-finalization-errors \
+            lake exe generate_disk_guard -- --check-finalization-errors corpus/disk-finalization-errors.jsonl
           run_guard check-disk-meter \
             lake exe generate_disk_guard -- --check-meter corpus/disk-meter.jsonl
           run_guard check-disk-statistics \

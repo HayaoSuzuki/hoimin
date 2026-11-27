@@ -7231,76 +7231,188 @@ mod tests {
         assert_eq!(janitor["details"][0]["reason"], "young");
     }
 
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinalizationReportObservation {
+        complete: bool,
+        exit_code: i32,
+        primary: Option<(String, Option<String>)>,
+        errors: Vec<(String, String)>,
+    }
+
+    impl FinalizationReportObservation {
+        fn from_summary(summary: &hoimin_core::RunSummary) -> Self {
+            let stop = summary.disk.stop.as_ref();
+            Self {
+                complete: summary.complete,
+                exit_code: summary.exit_code,
+                primary: stop.map(|stop| (stop.code.clone(), stop.message.clone())),
+                errors: stop
+                    .into_iter()
+                    .flat_map(|stop| &stop.secondary)
+                    .filter_map(|evidence| match evidence {
+                        hoimin_core::DiskSecondary::Error { code, message } => {
+                            Some((code.clone(), message.clone()))
+                        }
+                        hoimin_core::DiskSecondary::Observation { .. } => None,
+                    })
+                    .collect(),
+            }
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinalizationErrorCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        runtime: bool,
+        start: FinalizationReportObservation,
+        errors: Vec<(String, String)>,
+        expected: FinalizationReportObservation,
+    }
+
+    fn finalization_error_cases() -> impl Iterator<Item = FinalizationErrorCase> {
+        include_str!("../../../formal/HoiminOracle/corpus/disk-finalization-errors.jsonl")
+            .lines()
+            .map(|line| {
+                let case: FinalizationErrorCase = serde_json::from_str(line).unwrap();
+                assert_eq!(case.schema, 1, "{}", case.id);
+                assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+                case
+            })
+    }
+
+    fn last_jsonl_run_summary(stdout: &CollectingWriter, case_id: &str) -> hoimin_core::RunSummary {
+        // Preserve the original JSON tokens, including signed deltas outside the i64 range.
+        let bytes = stdout.snapshot();
+        let last = bytes
+            .rsplit(|byte| *byte == b'\n')
+            .find(|line| !line.is_empty())
+            .expect(case_id);
+        let OutputEvent::RunFinished(summary) =
+            serde_json::from_slice(last).unwrap_or_else(|error| panic!("{case_id}: {error}"))
+        else {
+            panic!("{case_id}: expected run_finished");
+        };
+        summary
+    }
+
+    #[test]
+    fn finalization_error_projection_matches_lean() {
+        let mut ids = BTreeSet::new();
+        for case in finalization_error_cases().filter(|case| !case.runtime) {
+            assert!(ids.insert(case.id.clone()));
+            let mut disk = hoimin_core::DiskRunSummary::unmeasured(8, 10);
+            disk.stop = case
+                .start
+                .primary
+                .map(|(code, message)| hoimin_core::DiskStopReport {
+                    code,
+                    message,
+                    owned_bytes: None,
+                    available_bytes: None,
+                    secondary: case
+                        .start
+                        .errors
+                        .into_iter()
+                        .map(|(code, message)| hoimin_core::DiskSecondary::Error { code, message })
+                        .collect(),
+                });
+            let mut summary = hoimin_core::RunSummary {
+                resolved_mutant_timeout: None,
+                schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
+                sequence: 1,
+                run_id: "run".into(),
+                counts: hoimin_core::MutationSummary::default(),
+                complete: case.start.complete,
+                exit_code: case.start.exit_code,
+                disk,
+                verification_selection: None,
+            };
+            let errors = case
+                .errors
+                .iter()
+                .map(|(code, message)| format!("{code}: {message}"))
+                .collect::<Vec<_>>();
+            for _ in 0..2 {
+                apply_finalization_errors_to_summary(&mut summary, &errors);
+                assert_eq!(
+                    FinalizationReportObservation::from_summary(&summary),
+                    case.expected,
+                    "{}",
+                    case.id
+                );
+            }
+        }
+        assert_eq!(ids.len(), 53);
+    }
+
+    #[rstest::rstest]
+    #[case::monitor_timeout("monitor_timeout", false)]
+    #[case::monitor_timeout_and_end_query_failure("monitor_timeout_and_end_query_failure", true)]
     #[tokio::test]
-    async fn inner_monitor_join_timeout_is_persisted_when_outer_retry_joins() {
+    async fn finalization_error_report_matches_lean(
+        #[case] case_id: &str,
+        #[case] fail_end_query: bool,
+    ) {
+        let case = finalization_error_cases()
+            .find(|case| case.runtime && case.id == case_id)
+            .unwrap();
         let project = tempfile::tempdir().unwrap();
-        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
-        let mut args = vec![
-            OsString::from("hoimin"),
-            OsString::from("run"),
-            OsString::from("--root"),
-            project.path().as_os_str().to_owned(),
-            OsString::from("--file"),
-            OsString::from("target.py"),
-            OsString::from("--min-free-space"),
-            OsString::from("1B"),
-            OsString::from("--allow-best-effort-memory"),
-            OsString::from("--"),
-        ];
-        args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = output_failure_test_config(&project);
         let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
             owned_bytes: 0,
             available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
             conservative_entries: false,
             elapsed: Duration::from_millis(1),
         }));
+        let (code, message) = case.start.primary.unwrap();
+        assert_eq!(code, hoimin_core::DISK_MEASUREMENT_FAILED);
         control.inject_post_drain_disk_failure(hoimin_core::DiskFailure {
-            reason: hoimin_core::DiskFailureReason::MeasurementFailed(
-                "injected prior measurement failure".to_owned(),
-            ),
+            reason: hoimin_core::DiskFailureReason::MeasurementFailed(message.unwrap()),
             secondary: Vec::new(),
         });
         control.inject_inner_monitor_join_timeout_once();
-        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
+        let end = if fail_end_query {
+            Err("injected end query failure".to_owned())
+        } else {
+            Ok(BTreeMap::from([(FilesystemKey(7), 500)]))
+        };
+        control.override_end_available(end);
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
         let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("an unjoined monitor must keep the run incomplete");
-
-        assert!(error.contains("disk.measurement.failed"), "{error}");
-        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(
-            report["summary"]["disk"]["stop"]["code"],
-            hoimin_core::DISK_MEASUREMENT_FAILED
-        );
-        assert_eq!(
-            report["summary"]["disk"]["stop"]["message"],
-            "injected prior measurement failure"
-        );
-        assert_eq!(
-            report["summary"]["disk"]["filesystems"][0]["end_available_bytes"],
-            500
-        );
-        assert_eq!(
-            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
-            -500
-        );
         assert!(
-            report["summary"]["disk"]["stop"]["secondary"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|secondary| {
-                    secondary["Error"]["code"] == hoimin_core::DISK_MEASUREMENT_FAILED
-                        && secondary["Error"]["message"]
-                            .as_str()
-                            .is_some_and(|message| message.contains("monitor join"))
-                }),
-            "{}",
-            report["summary"]["disk"]["stop"]
+            error.contains(hoimin_core::DISK_MEASUREMENT_FAILED),
+            "{error}"
+        );
+
+        let summary = last_jsonl_run_summary(&stdout, case_id);
+        assert_eq!(
+            FinalizationReportObservation::from_summary(&summary),
+            case.expected,
+            "{case_id}"
+        );
+        let execution = summary
+            .disk
+            .cleanup
+            .iter()
+            .find(|record| record.root_id == "execution")
+            .expect("execution cleanup evidence");
+        assert_eq!(execution.status, hoimin_core::DiskCleanupStatus::Deferred);
+        let filesystem = &summary.disk.filesystems[0];
+        assert_eq!(
+            filesystem.end_available_bytes,
+            (!fail_end_query).then_some(500)
+        );
+        assert_eq!(
+            filesystem.available_bytes_change,
+            (!fail_end_query).then_some(-500)
         );
         assert!(
             !observed
@@ -8066,15 +8178,7 @@ mod tests {
                 );
             }
 
-            // Read the original JSON number tokens to preserve the full signed difference.
-            let bytes = stdout.snapshot();
-            let last = bytes
-                .rsplit(|byte| *byte == b'\n')
-                .find(|line| !line.is_empty())
-                .unwrap();
-            let OutputEvent::RunFinished(summary) = serde_json::from_slice(last).unwrap() else {
-                panic!("{id}: expected run_finished");
-            };
+            let summary = last_jsonl_run_summary(&stdout, id);
             assert_eq!(summary.disk.filesystems, case.expected_filesystems, "{id}");
             assert_eq!(summary.complete, case.expected_complete, "{id}");
             assert_eq!(

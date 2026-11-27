@@ -289,6 +289,53 @@ theorem replayed_report_evidence_does_not_duplicate (primary item : ReportEviden
   by_cases duplicate : item = primary ∨ item ∈ existing <;>
     simp [appendReportEvidence, duplicate]
 
+theorem finalization_error_preserves_primary (report : FinalizationReport)
+    (error : FinalizationError) (primary : String × Option String)
+    (prior : report.primary = some primary) :
+    (recordFinalizationError report error).primary = some primary := by
+  simp [recordFinalizationError, prior]
+  split <;> rfl
+
+theorem finalization_errors_preserve_primary (report : FinalizationReport)
+    (errors : List FinalizationError) (primary : String × Option String)
+    (prior : report.primary = some primary) :
+    (recordFinalizationErrors report errors).primary = some primary := by
+  induction errors generalizing report with
+  | nil => exact prior
+  | cons error rest ih =>
+      exact ih (recordFinalizationError report error)
+        (finalization_error_preserves_primary report error primary prior)
+
+theorem finalization_error_marks_incomplete (report : FinalizationReport)
+    (error : FinalizationError) :
+    (recordFinalizationError report error).complete = false ∧
+    ((recordFinalizationError report error).exitCode =
+      if report.exitCode = 0 then 2 else report.exitCode) := by
+  by_cases missing : report.primary.isNone = true
+  · simp [recordFinalizationError, missing]
+  · by_cases duplicate : report.primary = some (error.1, some error.2) ∨ error ∈ report.errors
+    · simp [recordFinalizationError, missing, duplicate]
+    · simp [recordFinalizationError, missing, duplicate]
+
+theorem repeated_finalization_error_preserves_evidence (report : FinalizationReport)
+    (error : FinalizationError)
+    (alreadyRecorded : report.primary = some (error.1, some error.2) ∨ error ∈ report.errors)
+    (primaryExists : report.primary.isSome = true) :
+    (recordFinalizationError report error).errors = report.errors := by
+  cases primary : report.primary with
+  | none => simp [primary] at primaryExists
+  | some value =>
+      have duplicate : value = (error.1, some error.2) ∨ error ∈ report.errors := by
+        simpa [primary] using alreadyRecorded
+      simp [recordFinalizationError, primary, duplicate]
+
+theorem distinct_finalization_error_appends (report : FinalizationReport)
+    (error : FinalizationError) (primary : String × Option String)
+    (prior : report.primary = some primary) (different : primary ≠ (error.1, some error.2))
+    (fresh : error ∉ report.errors) :
+    (recordFinalizationError report error).errors = report.errors ++ [error] := by
+  simp [recordFinalizationError, prior, different, fresh]
+
 theorem a_known_physical_file_adds_no_bytes (count : MeterCount) (filesystem id bytes : Nat)
     (seen : (filesystem, id) ∈ count.identities) :
     chargeMeterFile true count filesystem (id, bytes) = count := by

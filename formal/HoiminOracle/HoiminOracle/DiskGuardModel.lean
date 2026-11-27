@@ -142,6 +142,28 @@ def appendReportEvidence (primary : ReportEvidence) (existing : List ReportEvide
     (item : ReportEvidence) : List ReportEvidence :=
   if item = primary ∨ item ∈ existing then existing else existing ++ [item]
 
+abbrev FinalizationError := String × String
+
+structure FinalizationReport where
+  complete : Bool
+  exitCode : Int
+  primary : Option (String × Option String)
+  errors : List FinalizationError
+  deriving DecidableEq
+
+def recordFinalizationError (report : FinalizationReport) (error : FinalizationError) :
+    FinalizationReport :=
+  let incomplete := { report with
+    complete := false, exitCode := if report.exitCode = 0 then 2 else report.exitCode }
+  let primary := (error.1, some error.2)
+  if report.primary.isNone then { incomplete with primary := some primary }
+  else if report.primary = some primary ∨ error ∈ report.errors then incomplete
+  else { incomplete with errors := report.errors ++ [error] }
+
+def recordFinalizationErrors (report : FinalizationReport) (errors : List FinalizationError) :
+    FinalizationReport :=
+  errors.foldl recordFinalizationError report
+
 def removeRoot (root : RootId) (roots : List RootId) : List RootId :=
   roots.filter (· != root)
 

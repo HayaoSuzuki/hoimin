@@ -1614,6 +1614,17 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             report_evidence_corpus,
         ]
     )
+    disk_finalization_errors_corpus = "corpus/disk-finalization-errors.jsonl"
+    expected_remaining.append(
+        [
+            "lake",
+            "exe",
+            "generate_disk_guard",
+            "--",
+            "--check-finalization-errors",
+            disk_finalization_errors_corpus,
+        ]
+    )
     disk_meter_corpus = "corpus/disk-meter.jsonl"
     expected_remaining.append(
         ["lake", "exe", "generate_disk_guard", "--", "--check-meter", disk_meter_corpus]
@@ -1682,6 +1693,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             load_recheck_corpus,
             budget_recheck_corpus,
             report_evidence_corpus,
+            disk_finalization_errors_corpus,
             disk_meter_corpus,
             disk_statistics_corpus,
             disk_final_capacity_corpus,

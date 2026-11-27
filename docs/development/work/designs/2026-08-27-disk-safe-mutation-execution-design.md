@@ -1118,6 +1118,38 @@ cargo test --locked -p hoimin-cli --lib disk_report_secondary_merge_matches_lean
 cargo test --locked -p hoimin-cli --lib pre_dispatch_sample_stops_before_analyzer_dispatch
 ```
 
+## Finalization errors in the final report
+
+Lean proves that an existing primary stop survives every added finalization
+error. Each error marks the run incomplete, changes an exit code of zero to
+two, and preserves an existing nonzero exit code. Error identity includes the
+code and message. An existing error is preserved in place, and a distinct
+error joins the end of the list.
+
+The corpus covers four initial reports, all sequences of up to two errors
+from a three-error alphabet, and one longer sequence that replays both the
+primary and a secondary error. The Rust projection fixture reapplies each
+sequence and compares the entire ordered list of secondary errors. Two shell
+fixtures also read the final JSONL after a measurement failure and monitor
+join timeout, with a successful or failed final capacity query. Before
+projecting the pending errors, the lifecycle records that the unjoined
+monitor makes cleanup unsafe and defers it. The fixtures check the primary,
+the full secondary error order including the cleanup deferral, completion,
+exit status, and the absence of an output acknowledgement. The query and
+join outcomes are injected.
+Measurement observations and their durations are covered by the earlier
+monitor evidence fixture.
+
+The generator checks witnesses for a replaced primary, repeated or reordered
+secondary errors, and loss of distinct messages with the same code.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-finalization-errors corpus/disk-finalization-errors.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib finalization_error_
+```
+
 ## Final filesystem capacity
 
 The Lean model joins the final capacity query to the filesystem keys
