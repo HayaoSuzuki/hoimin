@@ -29,6 +29,14 @@ cargo test --locked -p hoimin-core --test lean_reduce_spec_oracle --test reduce_
 cargo test --locked -p hoimin-cli --test reduce report_failure_preserves_a_diff_the_session_did_not_publish -- --exact
 ```
 
+## 測定したソースと公開された diff の一致
+
+定義を一つ削減できる公開 CLI の試験で、子プロセスにテストソースのバイト列を出力させる。`report.json` が認証済みとした案について、探索3回と最終確認3回の出力を読み、その diff を元ソースの別コピーに適用した結果と比較する。レポート内の BLAKE3 も適用後のバイト列と照合し、元ソースは実行前の内容のままであることを確認する。[CLI の照合](../../../../../crates/hoimin-cli/tests/reduce.rs)
+
+```sh
+cargo test --locked -p hoimin-cli --test reduce redundant_definition_produces_verified_unapplied_diff -- --exact
+```
+
 ## 結果
 
 `reduce` の採用判定と成果物保持をモデル化し、22 個の一般定理を Lean 4.32.2 の kernel で検査した。952 行の期待値付き JSONL オラクルを Lean から生成し、再生成との一致を確認した。意図的に壊した 14 種の判定をすべて検出した。
