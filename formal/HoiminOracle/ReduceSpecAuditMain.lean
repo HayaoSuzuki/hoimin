@@ -64,19 +64,22 @@ def overlapRows : List Json :=
       (Json.mkObj [("removed",toJson (Span.mk 1 a b)),("kept",toJson (Span.mk 2 c d))])
       (toJson (overlaps ⟨1,a,b⟩ ⟨2,c,d⟩))
 
-def traceRow (index : Nat) (events : List Event) : Json :=
+def traceRow (id : String) (events : List Event) : Json :=
   let states := events.scanl (step baseContext) {deadline:=4}
-  row "trace" s!"trace-{index}" (Json.mkObj [
+  row "trace" id (Json.mkObj [
     ("context",toJson baseContext),("deadline",toJson (4:Nat)),("events",toJson events)])
     (toJson (states.map fun s => Json.mkObj [
       ("now",toJson s.now),("stopped",toJson s.stopped),
       ("best",toJson (s.best.map (·.id))),("safe",toJson (stateSafe s))]))
 
-def corpus (depth : Nat) : String := String.join <|
-  ((certificationCases.map certificationRow) ++ timingRows ++ matrixRows ++ medianRows ++
-    overlapRows ++ ((tracesUpTo depth).zipIdx.map fun (t,i) => traceRow i t) ++
-    fullWidthTimingRows).map
-      (fun (j : Json) => j.compress ++ "\n")
+def corpus (depth : Nat) : String :=
+  let indexedTraces := (tracesUpTo depth).zipIdx
+  let traceRows := indexedTraces.map fun (events, index) => traceRow s!"trace-{index}" events
+  let retentionRows := bestRetentionCases.map fun (id, events) => traceRow s!"trace-best-{id}" events
+  String.join <|
+    ((certificationCases.map certificationRow) ++ timingRows ++ matrixRows ++ medianRows ++
+      overlapRows ++ traceRows ++ fullWidthTimingRows ++ retentionRows).map
+        (fun (j : Json) => j.compress ++ "\n")
 
 def checkAudit (depth : Nat) : IO Unit := do
   unless sensitivity.all (fun (_,a,b) => a != b) do
@@ -109,5 +112,7 @@ def main (rawArgs : List String) : IO Unit := do
   | ["--stats"] | ["--stats",_] =>
     let ts := tracesUpTo depth
     let pairs := timingRows.length + fullWidthTimingRows.length
-    IO.println s!"depth={depth} alphabet={alphabet.length} traces={ts.length} transitions={(ts.map List.length).foldl (·+·) 0} certification={certificationCases.length} pairs={pairs} results={matrixRows.length} medians={medianRows.length} overlaps={overlapRows.length} rows={certificationCases.length+pairs+matrixRows.length+medianRows.length+overlapRows.length+ts.length} sensitivity={sensitivity.length}"
+    let rows := certificationCases.length + pairs + matrixRows.length + medianRows.length +
+      overlapRows.length + ts.length + bestRetentionCases.length
+    IO.println s!"depth={depth} alphabet={alphabet.length} traces={ts.length} transitions={(ts.map List.length).foldl (·+·) 0} certification={certificationCases.length} pairs={pairs} results={matrixRows.length} medians={medianRows.length} overlaps={overlapRows.length} bestRetention={bestRetentionCases.length} rows={rows} sensitivity={sensitivity.length}"
   | _ => throw (IO.userError "--output PATH | --check PATH | --stats [1..3] | --sensitivity")

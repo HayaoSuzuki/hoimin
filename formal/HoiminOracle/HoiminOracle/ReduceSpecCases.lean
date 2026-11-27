@@ -17,6 +17,12 @@ def faster : Proposal := { good with
   reducedPairs := triple 80, completedAt := 2 }
 def nested : Proposal := { good with removed := [⟨1,0,30⟩] }
 def pending : Proposal := { faster with pairCount := 2, completedAt := 3 }
+def slower : Proposal := { faster with exploration := triple 91 }
+def tied : Proposal := { faster with exploration := triple 90 }
+
+def bestRetentionCases : List (String × List Event) := [
+  ("slower", [{ tick := 1, proposal := some good }, { tick := 2, proposal := some slower }]),
+  ("tie", [{ tick := 1, proposal := some good }, { tick := 2, proposal := some tied }]) ]
 
 -- A deterministic toy runner: definitions 1 and 2 each kill mutant 1;
 -- definition 3 is kept but does not kill it. Costs are deliberately not additive.
@@ -137,6 +143,9 @@ def compareSaturatingProducts (num den original reduced : Nat) : Bool :=
 def compareWrappingProducts (num den original reduced : Nat) : Bool :=
   (den * reduced) % (maxTick + 1) ≤ ((den - num) * original) % (maxTick + 1)
 
+def replaceOnTie (previous candidate : Proposal) : Option Proposal :=
+  if median candidate.exploration ≤ median previous.exploration then some candidate else some previous
+
 def sensitivity : List (String × Bool × Bool) := [
   ("atomicity/publish-before-complete", stateSafe (step baseContext {deadline:=4}
     {tick:=3,proposal:=some pending}), stateSafe (brokenEarlyPublish {deadline:=4}
@@ -168,6 +177,10 @@ def sensitivity : List (String × Bool × Bool) := [
     compareSaturatingProducts 1 20 divisibleOriginal (exactThreshold + 1)),
   ("arithmetic/wrapped-products", pairPass (maxTick - 1) maxTick maxTick 2,
     compareWrappingProducts (maxTick - 1) maxTick maxTick 2),
+  ("selection/slower-certificate", chooseBest (some good) slower == some good,
+    some slower == some good),
+  ("selection/replace-tie", chooseBest (some good) tied == some good,
+    replaceOnTie good tied == some good),
   ("precedence/deadline-equality", (step baseContext {deadline:=1}
     {tick:=1,proposal:=some good}).best.isSome,
     (brokenEarlyPublish {deadline:=1} {tick:=1,proposal:=some good}).best.isSome) ]
@@ -176,6 +189,8 @@ def sensitivity : List (String × Bool × Bool) := [
 -- enumeration and serialization remain in ReduceSpecAuditMain.
 set_option maxHeartbeats 20000 in
 example : certifies baseContext good = true := by decide
+set_option maxHeartbeats 20000 in
+example : certifies baseContext slower = true ∧ certifies baseContext tied = true := by decide
 set_option maxHeartbeats 20000 in
 example : scopeValid baseContext nested = false := by decide
 set_option maxHeartbeats 20000 in

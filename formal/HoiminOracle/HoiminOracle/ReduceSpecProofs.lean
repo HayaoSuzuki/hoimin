@@ -140,6 +140,47 @@ theorem chooseBest_minimum (best : Option Proposal) (p : Proposal) :
         exact Nat.le_refl _
 
 set_option maxHeartbeats 20000 in
+theorem chooseBest_retains_tie (previous candidate : Proposal)
+    (tie : median candidate.exploration = median previous.exploration) :
+    chooseBest (some previous) candidate = some previous := by
+  simp [chooseBest, tie]
+
+set_option maxHeartbeats 20000 in
+theorem step_retains_or_improves_best (ctx : Context) (s : State) (e : Event)
+    (previous : Proposal) (saved : s.best = some previous) :
+    ∃ best, (step ctx s e).best = some best ∧
+      median best.exploration ≤ median previous.exploration := by
+  have unchanged : ∃ best, s.best = some best ∧
+      median best.exploration ≤ median previous.exploration := ⟨previous, saved, Nat.le_refl _⟩
+  unfold step
+  split
+  · exact unchanged
+  · split
+    · exact unchanged
+    · cases e.proposal with
+      | none => exact unchanged
+      | some candidate =>
+        dsimp only
+        split
+        · exact unchanged
+        · split
+          · obtain ⟨best, selected, _, improved⟩ := chooseBest_minimum s.best candidate
+            exact ⟨best, selected, improved previous saved⟩
+          · exact unchanged
+
+set_option maxHeartbeats 20000 in
+theorem run_retains_or_improves_best (ctx : Context) (s : State) (events : List Event)
+    (previous : Proposal) (saved : s.best = some previous) :
+    ∃ best, (run ctx s events).best = some best ∧
+      median best.exploration ≤ median previous.exploration := by
+  induction events generalizing s previous with
+  | nil => exact ⟨previous, saved, Nat.le_refl _⟩
+  | cons e rest ih =>
+    obtain ⟨next, kept, improved⟩ := step_retains_or_improves_best ctx s e previous saved
+    obtain ⟨best, selected, improvedAgain⟩ := ih (step ctx s e) next kept
+    exact ⟨best, selected, Nat.le_trans improvedAgain improved⟩
+
+set_option maxHeartbeats 20000 in
 theorem finalPass_strict (num den : Nat) (original reduced : Triple)
     (h : finalPass num den original reduced = true) :
     reduced.a < original.a ∧ reduced.b < original.b ∧ reduced.c < original.c := by

@@ -6,7 +6,11 @@
 
 有効な短縮率 `0 < n < d` と正の測定値に対して、`pairPass_iff_threshold` は、一組の短縮率判定が `reduced ≤ ⌊(d − n) × original / d⌋` と同値であることを示す。定理の入力は自然数である。[Lean の証明](../../../../../formal/HoiminOracle/HoiminOracle/ReduceSpecProofs.lean)
 
-Rust の `pair_pass` には、Lean から生成した `u128` 上限付近の6入力を追加した。積が `u128` に収まらない場合も含め、閾値ちょうどの3入力と、1 tick 超過の3入力を個別に比較する。積を飽和させる対照と、128 ビットで折り返す対照は、どちらも超過した入力を誤って受理する。既存の状態遷移の深さは3のままで、コーパスは計958行となった。[生成ケース](../../../../../formal/HoiminOracle/HoiminOracle/ReduceSpecCases.lean) · [Rust の照合](../../../../../crates/hoimin-core/tests/lean_reduce_spec_oracle.rs)
+Rust の `pair_pass` には、Lean から生成した `u128` 上限付近の6入力を追加した。積が `u128` に収まらない場合も含め、閾値ちょうどの3入力と、1 tick 超過の3入力を個別に比較する。積を飽和させる対照と、128 ビットで折り返す対照は、どちらも超過した入力を誤って受理する。[生成ケース](../../../../../formal/HoiminOracle/HoiminOracle/ReduceSpecCases.lean) · [Rust の照合](../../../../../crates/hoimin-core/tests/lean_reduce_spec_oracle.rs)
+
+## 実装後に追加した最良案の保持の検証
+
+`run_retains_or_improves_best` は、最良案を保持した状態から任意長のイベント列を処理した後も、案が残り、その探索時の中央値が処理前以下であることを示す。`chooseBest_retains_tie` は、中央値が等しいときに先に保持した案を選ぶことを示す。2件のイベント列で、遅い認証済み案と、同じ中央値の別の認証済み案を Rust の `State::step` に渡して比較する。既存の全列挙は深さ3のままで、コーパスは計960行となった。[Lean の証明](../../../../../formal/HoiminOracle/HoiminOracle/ReduceSpecProofs.lean) · [Rust の照合](../../../../../crates/hoimin-core/tests/lean_reduce_spec_oracle.rs)
 
 ```sh
 (cd formal/HoiminOracle && lake exe generate_reduce_spec -- --check corpus/reduce-spec.jsonl)
