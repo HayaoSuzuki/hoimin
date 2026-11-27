@@ -5,6 +5,8 @@ mod collecting_writer;
 mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
+#[path = "plan/selection_flow_oracle.rs"]
+mod selection_flow_oracle;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
@@ -4835,8 +4837,10 @@ async fn verify_preview_explicit_ids_follow_discovery_not_rank_argument_or_saved
 #[tokio::test]
 async fn verify_preview_truncated_formats_owned_dispatch_and_runtime_boundary() {
     let project = Project::new();
-    let (path, mut manifest, marker) =
-        write_plan_manifest(&project, &["--max-candidates", "1"]).await;
+    let coordinator = tempfile::tempdir().unwrap();
+    let marker = coordinator.path().join("test-command-ran");
+    let (path, mut manifest) =
+        write_plan_manifest_with_marker(&project, &["--max-candidates", "1"], &marker).await;
     assert!(manifest.truncated);
     let execution_tmp = tempfile::tempdir().unwrap();
     let preview = preview_cli(
@@ -4862,8 +4866,9 @@ async fn verify_preview_truncated_formats_owned_dispatch_and_runtime_boundary() 
     .await;
     assert_eq!(
         run.status.code(),
-        Some(2),
-        "truncated execution remains incomplete"
+        Some(4),
+        "truncated execution remains incomplete: {}",
+        String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(preview_started_ids(&run.stdout), preview_ids(&preview));
     assert!(marker.exists());

@@ -247,6 +247,10 @@ name = "generate_plan_discovery_budget"
 root = "PlanDiscoveryBudgetAuditMain"
 
 [[lean_exe]]
+name = "generate_verify_selection_flow"
+root = "VerifySelectionFlowAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

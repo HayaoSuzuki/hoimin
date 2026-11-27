@@ -1295,3 +1295,48 @@ under a 2 GiB cap. Single-job Rust peaked at 2,203,536 KiB under a
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 plan::
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan -- --test-threads=2
 ```
+
+## Lean model of verify selection from preview to execution
+
+Explicit IDs select membership and retain discovery order. Ranked pages
+and seeded samples carry an order into both the preview and execution.
+The model reuses the line and file round-robin order and the seeded
+sampling algorithm. It treats the ranked plan and source validation
+as prior inputs and assumes a discovery stream with unique IDs.
+
+Lean proves that explicit orders agree when preview and execution see
+the same selected discovery projection. For ranked pages and samples,
+it proves agreement once discovery accounts for each selected ID and
+that an incomplete ordered discovery cannot release the dispatch
+order. It also proves priority for the malformed explicit ID, the
+out-of-range offset and the truncated-plan sample rejection.
+
+The 32 cases use two small Python files, one worker and a successful
+baseline for accepted requests. They vary ordering policy, offset, seed,
+duplicate and unknown IDs, and budgets, with complete, truncated and
+empty plan fixtures. One empty manifest also carries a truncated flag
+to exercise competing sample rejections. The adapter compares full
+preview rows, the IDs in `mutant_started`, selection provenance in
+`run_started` and `run_finished`, and exit status. The marker records
+whether the test command ran, and the saved plan stays byte-identical.
+Six altered models exercise budget checks, sample admission and seed,
+paging, and the two sources of ordering.
+
+The legacy truncated-preview test wrote its baseline marker inside the
+original project and expected exit 2. A local reproduction moving only
+the marker confirmed that the in-project write triggers
+`workspace.original.changed` and exit 2. A marker outside the project
+leaves the candidate limit as the sole warning and gives exit 4,
+as documented for a truncated run. The test now uses the outside marker.
+
+On macOS, the 21 accepted cases and 11 rejections matched for both
+public commands. The plan and sampling suites passed 293 and 48 tests
+respectively, with two existing ignored tests. The workflow suite
+passed 222 tests. Lean ran under a 2 GiB cap, and single-job Rust ran
+under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_verify_selection_flow -- --check corpus/verify-selection-flow.jsonl)
+(cd formal/HoiminOracle && lake exe generate_verify_selection_flow -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan --test sampling -- --test-threads=2
+```

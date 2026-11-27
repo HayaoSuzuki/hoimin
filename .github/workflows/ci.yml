@@ -711,6 +711,9 @@ jobs:
             HoiminOracle.PlanDiscoveryBudgetModel
             HoiminOracle.PlanDiscoveryBudgetCases
             PlanDiscoveryBudgetAuditMain
+            HoiminOracle.VerifySelectionFlowModel
+            HoiminOracle.VerifySelectionFlowCases
+            VerifySelectionFlowAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -797,6 +800,7 @@ jobs:
             'generate_plan_records|corpus/plan-records.jsonl|sensitivity'
             'generate_plan_verify|corpus/plan-verify.jsonl|sensitivity'
             'generate_plan_discovery_budget|corpus/plan-discovery-budget.jsonl|sensitivity'
+            'generate_verify_selection_flow|corpus/verify-selection-flow.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'
