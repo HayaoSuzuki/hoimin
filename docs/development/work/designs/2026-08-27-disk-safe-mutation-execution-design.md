@@ -1118,6 +1118,28 @@ cargo test --locked -p hoimin-cli --lib disk_report_secondary_merge_matches_lean
 cargo test --locked -p hoimin-cli --lib pre_dispatch_sample_stops_before_analyzer_dispatch
 ```
 
+## Final filesystem capacity
+
+The Lean model joins the final capacity query to the filesystem keys
+observed during the run. It proves that the report preserves those keys,
+an absent end value has no change, and a measured zero yields the negative
+of the start value. For any two unsigned 64-bit capacities, the difference
+lies between `-(2^64 - 1)` and `2^64 - 1`.
+
+Five fixtures supply a fixed starting reading and a controlled final query
+to the Rust shell, then decode the emitted JSONL as a typed report. They cover
+large differences in both directions, equal endpoints, a measured zero,
+missing and extra end keys, and an empty successful query. The failed query
+fixture checks the incomplete report, the measurement error, and the absence
+of an output acknowledgement.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-final-capacity corpus/disk-final-capacity.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib final_disk_capacity_report_matches_lean
+```
+
 ## Cleanup outcomes and finish admission
 
 The lifecycle corpus crosses four component-settlement schedules with the four

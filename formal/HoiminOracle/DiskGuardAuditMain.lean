@@ -286,6 +286,38 @@ private def statsSensitivity : Bool :=
   minimumCapacity (historicalCapacities history) != minimumCapacity (historicalCapacities current) &&
     (recordStats history emptyStatsReading).length != history.length + 1
 
+private def finalCapacityCase (id : String) (starts : List (Nat × Nat))
+    (query : Option (List (Nat × Nat))) : Lean.Json :=
+  let pairs (values : List (Nat × Nat)) := Lean.Json.arr (values.toArray.map fun (key, bytes) =>
+    .arr #[Lean.toJson key, Lean.toJson bytes])
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"), ("id", .str id),
+    ("start", pairs starts), ("end", (query.map pairs).getD .null),
+    ("expected_complete", Lean.toJson query.isSome),
+    ("expected_filesystems", .arr ((finalCapacities starts query).toArray.map fun row =>
+      Lean.Json.mkObj [
+        ("key", .str (toString row.key)),
+        ("start_available_bytes", Lean.toJson row.start),
+        ("minimum_available_bytes", Lean.toJson row.start),
+        ("end_available_bytes", optionNatJson row.finish),
+        ("available_bytes_change", (row.change.map Lean.toJson).getD .null)]))]
+
+def renderFinalCapacityCorpus : String :=
+  let maxBytes := 2^64 - 1
+  let starts := [(7, 1000), (8, 800)]
+  let cases := [
+    finalCapacityCase "wide_changes" [(7, maxBytes), (8, 2)] (some [(7, 0), (8, maxBytes)]),
+    finalCapacityCase "missing_key_and_measured_zero" starts (some [(7, 0), (9, 500)]),
+    finalCapacityCase "empty_success" starts (some []),
+    finalCapacityCase "query_failure" starts none,
+    finalCapacityCase "equal_and_decreased" starts (some [(7, 500), (8, 800)])]
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+private def finalCapacitySensitivity : Bool :=
+  let maxBytes := 2^64 - 1
+  capacityChange maxBytes (some 0) != some (Int.ofNat (0 - maxBytes)) &&
+    endCapacity (some [(7, 0)]) 8 != some 0
+
 private def familyEvents : List Event := [
   .dispatch, .observe 9 10 11 10, .processDrainSucceeded, .outputDrained,
   .monitorJoined, .requestCleanup executionRoot, .reportSucceeded, .finish]
@@ -367,7 +399,8 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
   unless rootRenamingCasesPass && payloadSymmetryCasesPass do
     IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
-  unless sensitivityPasses && reportEvidenceSensitivity && meterSensitivity && statsSensitivity do
+  unless sensitivityPasses && reportEvidenceSensitivity && meterSensitivity &&
+      statsSensitivity && finalCapacitySensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
   return .ok ()
@@ -444,10 +477,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check-meter", path] => checkCorpus path renderMeterCorpus
   | ["--output-statistics", path] => writeCorpus path renderStatisticsCorpus
   | ["--check-statistics", path] => checkCorpus path renderStatisticsCorpus
+  | ["--output-final-capacity", path] => writeCorpus path renderFinalCapacityCorpus
+  | ["--check-final-capacity", path] => checkCorpus path renderFinalCapacityCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-meter | --check-meter | --output-statistics | --check-statistics) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

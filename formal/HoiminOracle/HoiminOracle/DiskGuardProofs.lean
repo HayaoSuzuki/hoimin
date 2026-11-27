@@ -341,4 +341,24 @@ theorem accepted_samples_do_not_raise_minimum (history : List StatsReading) (val
       extending_capacity_history_preserves_minimum_bound (historicalCapacities history)
         value.capacities previous sampled
 
+theorem final_capacity_keys_are_historical (starts : List (Nat × Nat))
+    (query : Option (List (Nat × Nat))) :
+    (finalCapacities starts query).map FinalCapacity.key = starts.map Prod.fst := by
+  simp [finalCapacities, List.map_map, Function.comp_def]
+
+theorem unavailable_end_capacity_has_no_change (query : Option (List (Nat × Nat)))
+    (key start : Nat) (missing : endCapacity query key = none) :
+    capacityChange start (endCapacity query key) = none := by
+  simp [missing, capacityChange]
+
+theorem measured_zero_end_capacity_has_signed_change (start : Nat) :
+    capacityChange start (some 0) = some (-Int.ofNat start) := by
+  simp [capacityChange]
+
+theorem capacity_change_is_bounded_by_u64_magnitude (start finish : Nat)
+    (startFits : start < 2^64) (finishFits : finish < 2^64) :
+    ∃ change, capacityChange start (some finish) = some change ∧
+      -((2 : Int)^64 - 1) ≤ change ∧ change ≤ (2 : Int)^64 - 1 := by
+  refine ⟨(finish : Int) - (start : Int), rfl, ?_, ?_⟩ <;> omega
+
 end HoiminOracle.DiskGuard

@@ -8014,43 +8014,82 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn final_disk_evidence_preserves_a_negative_free_space_change() {
-        let project = tempfile::tempdir().unwrap();
-        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
-        let mut args = vec![
-            OsString::from("hoimin"),
-            OsString::from("run"),
-            OsString::from("--root"),
-            project.path().as_os_str().to_owned(),
-            OsString::from("--file"),
-            OsString::from("target.py"),
-            OsString::from("--min-free-space"),
-            OsString::from("1B"),
-            OsString::from("--allow-best-effort-memory"),
-            OsString::from("--"),
-        ];
-        args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
-        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
-            owned_bytes: 0,
-            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
-            conservative_entries: false,
-            elapsed: Duration::from_millis(1),
-        }));
-        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
-        let stdout = CollectingWriter::default();
+    async fn final_disk_capacity_report_matches_lean() {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Case {
+            schema: u8,
+            mode: String,
+            id: String,
+            start: Vec<(u64, u64)>,
+            end: Option<Vec<(u64, u64)>>,
+            expected_complete: bool,
+            expected_filesystems: Vec<hoimin_core::DiskFilesystemReport>,
+        }
 
-        assert_eq!(
-            run_loop_with_control(config, stdout.clone(), Vec::new(), control,)
-                .await
-                .unwrap(),
-            0
-        );
-        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(
-            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
-            -500
-        );
+        let corpus = include_str!("../../../formal/HoiminOracle/corpus/disk-final-capacity.jsonl");
+        assert_ne!(corpus, "");
+        for line in corpus.lines() {
+            let case: Case = serde_json::from_str(line).unwrap();
+            let id = &case.id;
+            assert_eq!(case.schema, 1, "{id}");
+            assert_eq!(case.mode, "internal-fixture", "{id}");
+            let filesystem_map = |values: Vec<(u64, u64)>| {
+                values
+                    .into_iter()
+                    .map(|(key, bytes)| (FilesystemKey(key), bytes))
+                    .collect::<BTreeMap<_, _>>()
+            };
+            let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+                owned_bytes: 0,
+                available_by_filesystem: filesystem_map(case.start),
+                conservative_entries: false,
+                elapsed: Duration::from_millis(1),
+            }));
+            control.override_end_available(
+                case.end
+                    .map(filesystem_map)
+                    .ok_or_else(|| "injected end query failure".to_owned()),
+            );
+            let observed = control.clone();
+            let project = tempfile::tempdir().unwrap();
+            let config = output_failure_test_config(&project);
+            let stdout = CollectingWriter::default();
+            let result = run_loop_with_control(config, stdout.clone(), Vec::new(), control).await;
+            if case.expected_complete {
+                assert_eq!(result, Ok(0), "{id}");
+            } else {
+                let error = result.expect_err(id);
+                assert!(
+                    error.contains(hoimin_core::DISK_MEASUREMENT_FAILED),
+                    "{id}: {error}"
+                );
+            }
+
+            // Read the original JSON number tokens to preserve the full signed difference.
+            let bytes = stdout.snapshot();
+            let last = bytes
+                .rsplit(|byte| *byte == b'\n')
+                .find(|line| !line.is_empty())
+                .unwrap();
+            let OutputEvent::RunFinished(summary) = serde_json::from_slice(last).unwrap() else {
+                panic!("{id}: expected run_finished");
+            };
+            assert_eq!(summary.disk.filesystems, case.expected_filesystems, "{id}");
+            assert_eq!(summary.complete, case.expected_complete, "{id}");
+            assert_eq!(
+                summary.disk.stop.as_ref().map(|stop| stop.code.as_str()),
+                (!case.expected_complete).then_some(hoimin_core::DISK_MEASUREMENT_FAILED),
+                "{id}"
+            );
+            assert_eq!(
+                observed
+                    .finalization_events()
+                    .contains(&"output_acknowledged"),
+                case.expected_complete,
+                "{id}"
+            );
+        }
     }
 
     #[tokio::test]

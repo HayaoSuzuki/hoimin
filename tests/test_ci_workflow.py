@@ -1629,6 +1629,17 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             disk_statistics_corpus,
         ]
     )
+    disk_final_capacity_corpus = "corpus/disk-final-capacity.jsonl"
+    expected_remaining.append(
+        [
+            "lake",
+            "exe",
+            "generate_disk_guard",
+            "--",
+            "--check-final-capacity",
+            disk_final_capacity_corpus,
+        ]
+    )
     corpus_paths = {
         path.relative_to(LEAN_ORACLE).as_posix()
         for path in (LEAN_ORACLE / "corpus").glob("*.jsonl")
@@ -1673,6 +1684,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             report_evidence_corpus,
             disk_meter_corpus,
             disk_statistics_corpus,
+            disk_final_capacity_corpus,
         }
         == corpus_paths
     )

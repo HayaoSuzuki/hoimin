@@ -217,6 +217,27 @@ def recordStats (history : List StatsReading) (sample : StatsSample) : List Stat
 def historicalCapacities (history : List StatsReading) : List (Nat × Nat) :=
   history.flatMap StatsReading.capacities
 
+def endCapacity (query : Option (List (Nat × Nat))) (key : Nat) : Option Nat := do
+  let values ← query
+  let (_, bytes) ← values.find? fun entry => entry.1 == key
+  return bytes
+
+def capacityChange (start : Nat) (finish : Option Nat) : Option Int :=
+  finish.map fun bytes => Int.ofNat bytes - Int.ofNat start
+
+structure FinalCapacity where
+  key : Nat
+  start : Nat
+  finish : Option Nat
+  change : Option Int
+  deriving DecidableEq
+
+def finalCapacities (starts : List (Nat × Nat)) (query : Option (List (Nat × Nat))) :
+    List FinalCapacity :=
+  starts.map fun (key, start) =>
+    let finish := endCapacity query key
+    ⟨key, start, finish, capacityChange start finish⟩
+
 def allSafetySucceeded (state : State) : Bool :=
   state.processDrain == .succeeded && state.outputDrain == .succeeded &&
     state.monitorJoin == .succeeded
