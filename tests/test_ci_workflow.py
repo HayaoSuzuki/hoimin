@@ -1609,6 +1609,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/resource-sizes.jsonl",
         ),
         (
+            "generate_timeout_limit",
+            "--check-snapshot-reads",
+            "corpus/snapshot-reads.jsonl",
+        ),
+        (
             "generate_candidate_span",
             "--check-source-coordinates",
             "corpus/source-coordinates.jsonl",

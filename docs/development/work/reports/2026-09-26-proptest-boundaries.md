@@ -592,3 +592,49 @@ workflow suite passed 222.
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test analyzer_handler
 ```
+
+## Lean model of descriptor-length reads
+
+`SnapshotReader` starts with the length observed on its open descriptor.
+A nonempty request reads at most the smaller of the remaining budget and
+the caller's buffer capacity. Only bytes delivered to the caller reduce
+the budget. EOF with bytes still due is a shrink error. At zero budget
+the reader probes one byte and distinguishes exact EOF from growth.
+Empty requests leave the underlying reader untouched, and failed reads
+preserve both the remaining budget and the underlying error.
+
+Lean proves that bytes delivered plus the remaining budget equal the
+initial budget of each call. A drain that stops at EOF, a length change,
+or an ordinary I/O error reads at most the initial length plus one byte,
+including any retries after interruption. The model assumes that
+underlying requests return at most the number of bytes requested and
+that failed reads consume no bytes. Same-length rewrites and filesystem
+I/O duration are outside the modeled contract.
+
+The corpus covers the eight-call alphabet at depths one and two for
+initial lengths 0, 1, 4, 5, and `u64::MAX`, plus four selected traces of
+length three or four. The 364 traces contain 693 calls. The Rust unit
+adapter exercises the actual reader using a scripted underlying read and
+compares its requested width, consumed bytes, remaining budget, outcome,
+and buffer writes. It also replays 122 traces using real files with
+controlled length changes and compares physical descriptor offsets.
+Both adapters use the internal-fixture mode because the reader is a
+private component. The source read and hash, report decoding, report
+comparison, and workspace copy tests exercise its consumers.
+
+Seven broken variants cover an empty request touching the file, reading
+past the allowance, widening or skipping the EOF probe, treating early
+EOF as success, spending the whole request on a short read, and charging
+the budget for an error.
+
+On macOS, all 364 scripted traces and all 122 real-file replays matched.
+The targeted CLI run passed 266 tests with 10 ignored and the CI workflow
+suite passed 222. Lean commands stayed within a 2 GiB cap and a 20-second
+timeout per command. The targeted Rust build and tests used one build
+job and peaked at 2,073,776 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_timeout_limit -- --check-snapshot-reads corpus/snapshot-reads.jsonl)
+(cd formal/HoiminOracle && lake exe generate_timeout_limit -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 finite_file plan::source artifacts::run_report progress::duplicate workspace::copy
+```

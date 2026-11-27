@@ -3,6 +3,10 @@
 use std::fs::File;
 use std::io::Read;
 
+#[cfg(test)]
+#[path = "finite_file/oracle_tests.rs"]
+mod oracle_tests;
+
 /// A finite read of the opened file, without imposing a fixed total-size cap.
 ///
 /// Read at most the length observed on this descriptor, then probe one byte to
