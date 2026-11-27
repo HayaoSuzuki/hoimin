@@ -15,6 +15,8 @@ mod import_root_oracle;
 mod operator_selector_oracle;
 #[path = "support/resource_size_oracle.rs"]
 mod resource_size_oracle;
+#[path = "support/selector_syntax_oracle.rs"]
+mod selector_syntax_oracle;
 
 type ConfigParser = fn(
     &[&str],
