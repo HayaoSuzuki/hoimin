@@ -11,6 +11,8 @@ mod admission_oracle_tests;
 #[cfg(test)]
 mod catalog_oracle_tests;
 #[cfg(test)]
+mod configuration_oracle_tests;
+#[cfg(test)]
 mod header_oracle_tests;
 #[cfg(test)]
 mod uri_oracle_tests;
@@ -63,7 +65,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, SchemaError> {
         admit(&connection, &expected)?;
     }
     let mut connection = Connection::open(path)?;
-    configure_with_schema(&mut connection, &expected, |_| {}, |_| {})?;
+    configure_with_schema(&mut connection, &expected, |_| {}, |_| {}, enable_wal)?;
     Ok(connection)
 }
 
@@ -180,6 +182,7 @@ fn configure_observed(
         &current_schema()?,
         after_initial_version_read,
         |_| {},
+        enable_wal,
     )
 }
 
@@ -254,6 +257,7 @@ fn configure_with_schema(
     expected: &SchemaObjects,
     after_initial_version_read: impl FnOnce(i64),
     after_writer_version_read: impl FnOnce(i64),
+    configure_journal: impl FnOnce(&Connection, Duration) -> Result<(), SchemaError>,
 ) -> Result<(), SchemaError> {
     const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -271,7 +275,7 @@ fn configure_with_schema(
         }
         transaction.commit()?;
     }
-    enable_wal(connection, BUSY_TIMEOUT)
+    configure_journal(connection, BUSY_TIMEOUT)
 }
 
 fn initialize(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
@@ -1038,10 +1042,12 @@ mod tests {
                     &expected,
                     |observed| assert_eq!(observed, 0),
                     |version| versions.borrow_mut().push(version),
+                    enable_wal,
                 )
                 .unwrap();
             },
             |version| versions.borrow_mut().push(version),
+            enable_wal,
         )
         .unwrap();
 
@@ -1228,6 +1234,7 @@ mod tests {
             &current_schema().unwrap(),
             |version| assert_eq!(version, 0),
             |version| writer_version.set(Some(version)),
+            enable_wal,
         )
         .unwrap_err();
         assert!(matches!(

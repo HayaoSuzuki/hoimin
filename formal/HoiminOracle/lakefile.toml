@@ -319,6 +319,10 @@ name = "generate_session_catalog"
 root = "SessionCatalogAuditMain"
 
 [[lean_exe]]
+name = "generate_session_configuration"
+root = "SessionConfigurationAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

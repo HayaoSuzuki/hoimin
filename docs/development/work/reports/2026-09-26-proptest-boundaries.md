@@ -2097,3 +2097,48 @@ Lean ran under a 2 GiB limit and single-job Rust under a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_session_catalog -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_catalog_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of session configuration across journal failure
+
+SQLite session configuration has a commit boundary before WAL
+enablement. A fresh database passes admission, is rechecked after
+acquiring the writer transaction, and is initialized and committed
+before any journal-mode request. If the journal-mode request fails,
+the opener returns that error and the committed schema remains.
+A subsequent open admits the existing schema.
+
+Lean proves that journal failure preserves the committed state,
+and that journal success preserves schema, version, and rows while
+enabling WAL. A disk-full error during initialization skips the
+journal phase. The writer reread preserves the schema and rows when
+another connection initialized the database after the first
+observation.
+
+The 13 cases execute the production configuration function on real
+SQLite connections. They record the first version read, the writer
+reread, the state before attempting WAL, the outcome, and the state
+afterward. For named databases, another connection reads the state
+at the journal boundary. The adapter closes the first connection
+and reopens through the normal session handler, checking the schema,
+journal mode, and any stored fingerprint.
+
+The fixtures use SQLite's page-count cap for the initialization
+failure and a second connection's exclusive transaction for journal
+contention. The contention fixture sets both timeouts to zero for
+one real journal request. The temporary-database fixtures observe a
+real SQLite journal refusal and run configuration again on the same
+connection. They exercise the commit boundary for a different kind
+of failure. Six sensitivity checks cover rollback, the journal
+boundary, the writer reread, success reporting, and row preservation.
+
+All 13 cases matched on macOS in the default and `contracts`
+configurations. The 91-test schema suite passed in each configuration.
+The session handler and hard-link targets passed 133 tests with one
+existing ignored test, and the workflow suite passed 222. Lean used a
+2 GiB limit and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_configuration -- --check corpus/session-configuration.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_configuration -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_configuration_matches_lean_oracle -- --test-threads=1
+```
