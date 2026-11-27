@@ -86,6 +86,67 @@ fn expected_counts(expected: &Value) -> Counts {
     .map(|field| number(&expected[field]))
 }
 
+pub(super) fn assert_startup_report(actual: &JanitorSummary, trace: &str) {
+    let history = states(trace);
+    let terminal = &history.last().unwrap()["s"];
+    assert_eq!(terminal["phase"]["tag"], "Published");
+    assert_eq!(terminal["handoff"]["tag"], "Delivered");
+    let expected = &terminal["handoff"]["value"];
+    let summary = &expected["summary"];
+    for (field, value) in [
+        ("inspected", actual.inspected_roots),
+        ("reclaimed", actual.reclaimed_roots),
+        ("absent", actual.absent_roots),
+        ("preserved", actual.preserved_roots),
+        ("unresolved", actual.unresolved_roots),
+        ("examined", actual.examined_entries),
+        ("removed", actual.removed_entries),
+        ("uninspected", actual.scan.uninspected_selected_roots),
+        ("omitted", actual.scan.selection_omitted_observed_entries),
+    ] {
+        assert_eq!(value, number(&summary[field]), "{field}");
+    }
+    let scan = &expected["scan"];
+    assert_eq!(
+        actual.scan.directory_scan_complete,
+        scan["complete"].as_bool().unwrap()
+    );
+    assert_eq!(
+        actual.scan.cursor_deferred,
+        scan["cursorDeferred"].as_bool().unwrap()
+    );
+    assert_eq!(
+        actual.scan.observed_matching_entries,
+        number(&scan["observedMatching"])
+    );
+    assert_eq!(
+        usize::try_from(actual.scan.selected_roots).unwrap(),
+        scan["selected"].as_array().unwrap().len()
+    );
+    assert_eq!(
+        actual
+            .scan
+            .stop_reason
+            .map(|reason| format!("{reason:?}"))
+            .as_deref(),
+        scan["stop"]["value"]["tag"].as_str()
+    );
+    let diagnostics: Vec<_> = expected["diagnostics"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|detail| detail["tag"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        actual
+            .details
+            .iter()
+            .map(|detail| format!("{:?}", detail.reason))
+            .collect::<Vec<_>>(),
+        diagnostics
+    );
+}
+
 fn replay(trace: &str, skip_acknowledgement: bool) -> Result<(), String> {
     let history = states(trace);
     assert!(history.len() > 1);
@@ -211,6 +272,14 @@ fn quint_selected_roots_reach_the_report(#[case] stop_after_first: bool) {
     assert!(coordinator.dir.exists(behind_cursor));
     assert!(!coordinator.dir.exists(first));
     assert_eq!(coordinator.dir.exists(second), stop_after_first);
+    if stop_after_first {
+        assert_startup_report(
+            &report,
+            include_str!(
+                "../../../../../../formal/quint/traces/janitor_startup_cleanupDeadlineStep_0.itf.json"
+            ),
+        );
+    }
 }
 
 #[test]
@@ -275,6 +344,41 @@ fn quint_deferred_cleanup_progress_reaches_the_report() {
         std::fs::read(deep_deleting.join("branch/nested/leaf/payload")).unwrap(),
         b"beyond the traversal cap",
     );
+    assert_startup_report(
+        &report,
+        include_str!(
+            "../../../../../../formal/quint/traces/janitor_startup_deferredStep_0.itf.json"
+        ),
+    );
+}
+
+#[test]
+fn quint_cursor_write_failure_keeps_removal_evidence_in_the_report() {
+    let directory = tempfile::tempdir().unwrap();
+    let parent = Utf8Path::from_path(directory.path()).unwrap();
+    let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+    let [behind, first, second] =
+        [1_u128, 2, 3].map(|id| format!("{DELETING_PREFIX}{}", uuid::Uuid::from_u128(id)));
+    seed_cursor(&coordinator, &behind);
+    drop(create_owned_directory(&coordinator.dir, &first).unwrap());
+    drop(create_owned_directory(&coordinator.dir, &second).unwrap());
+    let fault = crate::io_faults::arm("cursor.write");
+    let report = ManagedRunRoot::reclaim_abandoned(&coordinator, SystemTime::now());
+    assert!(fault.triggered());
+    assert_startup_report(
+        &report,
+        include_str!(
+            "../../../../../../formal/quint/traces/janitor_startup_cursorFailureStep_0.itf.json"
+        ),
+    );
+    assert!(coordinator.dir.exists(&behind));
+    assert!(!coordinator.dir.exists(&first));
+    assert!(!coordinator.dir.exists(&second));
+    let (_, cursor) =
+        read_coordinator_state(&coordinator.file, &coordinator.path.join(COORDINATOR_FILE))
+            .unwrap();
+    assert_eq!(cursor.cursor, behind);
+    assert_eq!(cursor.generation, 1);
 }
 
 #[test]

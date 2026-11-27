@@ -225,6 +225,14 @@ fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str, expected
     } else {
         assert_scan_stopped(&report, JanitorReason::CoordinatorBusy, &[], 0);
     }
+    if phase == "EnumerationInterrupted" {
+        super::quint_reclaim::assert_startup_report(
+            &report,
+            include_str!(
+                "../../../../../../formal/quint/traces/janitor_startup_selectionFailureStep_0.itf.json"
+            ),
+        );
+    }
     if let Some(guard) = guard {
         guard.unlock(&coordinator.path).unwrap();
     }

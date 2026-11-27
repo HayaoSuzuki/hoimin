@@ -7687,19 +7687,17 @@ mod tests {
         [behind_cursor, reclaimed, preserved_path]
     }
 
-    fn shell_janitor_trace() -> Vec<serde_json::Value> {
-        crate::quint_itf::states(include_str!(
-            "../../../formal/quint/traces/janitor_reclaim_shellReportStep_0.itf.json"
-        ))
-    }
-
     fn assert_quint_janitor_report(janitor: &serde_json::Value) {
-        use crate::quint_itf::number;
+        use crate::quint_itf::{number, states};
 
-        let trace = shell_janitor_trace();
-        let terminal = trace.last().unwrap();
-        assert_eq!(terminal["command"]["tag"], "Hold");
-        let summary = &terminal["summary"];
+        let trace = states(include_str!(
+            "../../../formal/quint/traces/janitor_startup_publishedStep_0.itf.json"
+        ));
+        let terminal = &trace.last().unwrap()["s"];
+        assert_eq!(terminal["phase"]["tag"], "Published");
+        assert_eq!(terminal["handoff"]["tag"], "Delivered");
+        let delivered = &terminal["handoff"]["value"];
+        let summary = &delivered["summary"];
         for (field, model) in [
             ("inspected_roots", "inspected"),
             ("reclaimed_roots", "reclaimed"),
@@ -7718,24 +7716,35 @@ mod tests {
         ] {
             assert_eq!(scan[field], number(&summary[model]), "{field}");
         }
-        let selected = number(&summary["inspected"]) + number(&summary["uninspected"]);
+        let expected_scan = &delivered["scan"];
+        let selected = expected_scan["selected"].as_array().unwrap().len();
         assert_eq!(scan["selected_roots"], selected);
         assert_eq!(
             scan["observed_matching_entries"],
-            selected + number(&summary["omitted"])
+            number(&expected_scan["observedMatching"])
         );
-        assert_eq!(scan["directory_scan_complete"], true);
-        assert_eq!(scan["cursor_deferred"], true);
+        assert_eq!(scan["directory_scan_complete"], expected_scan["complete"]);
+        assert_eq!(scan["cursor_deferred"], expected_scan["cursorDeferred"]);
+        assert_eq!(expected_scan["stop"]["tag"], "NoScanStop");
+        assert!(scan["stop_reason"].is_null());
+        assert_eq!(delivered["diagnostics"][0]["tag"], "Young");
+        assert_eq!(delivered["diagnostics"].as_array().unwrap().len(), 1);
     }
 
     #[rstest::rstest]
-    #[case::before_janitor(ManagedRootSetupBoundary::CoordinatorOpened)]
-    #[case::after_janitor(ManagedRootSetupBoundary::ReclaimFinished)]
-    fn quint_startup_janitor_cancellation_at_handoff(#[case] stop_at: ManagedRootSetupBoundary) {
-        use crate::quint_itf::number;
+    #[case::before_janitor(ManagedRootSetupBoundary::CoordinatorOpened, ShutdownCause::Cancellation, include_str!("../../../formal/quint/traces/janitor_startup_cancelledBeforeStep_0.itf.json"))]
+    #[case::after_janitor(ManagedRootSetupBoundary::ReclaimFinished, ShutdownCause::Cancellation, include_str!("../../../formal/quint/traces/janitor_startup_cancelledAfterStep_0.itf.json"))]
+    #[case::deadline_after_janitor(ManagedRootSetupBoundary::ReclaimFinished, ShutdownCause::TotalTimeout, include_str!("../../../formal/quint/traces/janitor_startup_timedOutAfterStep_0.itf.json"))]
+    fn quint_startup_janitor_stops_at_handoff(
+        #[case] stop_at: ManagedRootSetupBoundary,
+        #[case] stop_cause: ShutdownCause,
+        #[case] trace: &str,
+    ) {
+        use crate::quint_itf::{number, states};
 
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
+            .start_paused(true)
             .build()
             .unwrap();
         let _entered = runtime.enter();
@@ -7749,23 +7758,35 @@ mod tests {
             &|boundary| {
                 last.set(Some(boundary));
                 if boundary == stop_at {
-                    control.cancel();
+                    if stop_cause == ShutdownCause::Cancellation {
+                        control.cancel();
+                    } else {
+                        runtime.block_on(tokio::time::advance(Duration::from_secs(30)));
+                    }
                 }
             },
             Some(&timing),
         );
         assert!(matches!(
             result,
-            Err(PreparationError::Stopped(ShutdownCause::Cancellation))
+            Err(PreparationError::Stopped(actual)) if actual == stop_cause
         ));
         assert_eq!(last.get(), Some(stop_at));
-        let trace = shell_janitor_trace();
-        let boundary_state = if stop_at == ManagedRootSetupBoundary::ReclaimFinished {
-            trace.last().unwrap()
+        let history = states(trace);
+        let terminal = &history.last().unwrap()["s"];
+        assert_eq!(terminal["phase"]["tag"], "Stopped");
+        let cause = if stop_cause == ShutdownCause::Cancellation {
+            "Cancelled"
         } else {
-            trace.first().unwrap()
+            "TotalDeadline"
         };
-        let removals = number(&boundary_state["summary"]["reclaimed"]);
+        assert_eq!(terminal["phase"]["value"]["tag"], cause);
+        let handoff = &terminal["handoff"];
+        let removals = match handoff["tag"].as_str().unwrap() {
+            "NoReport" => 0,
+            "Ready" => number(&handoff["value"]["summary"]["reclaimed"]),
+            other => panic!("unexpected cancelled handoff {other}"),
+        };
         assert_eq!(u64::from(!reclaimed.exists()), removals);
         assert!(behind_cursor.is_dir());
         assert!(preserved.is_dir());

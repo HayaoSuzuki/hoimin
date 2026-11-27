@@ -166,6 +166,23 @@ MODELS = (
         simulation_mutant_step="prematureCursorStep",
     ),
     Model(
+        "janitor_startup.qnt",
+        "JanitorStartup",
+        "janitor_startup",
+        scenarios=(
+            "publishedStep",
+            "cancelledBeforeStep",
+            "cancelledAfterStep",
+            "timedOutAfterStep",
+            "selectionFailureStep",
+            "cursorFailureStep",
+            "cleanupDeadlineStep",
+            "deferredStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="publishAfterStopStep",
+    ),
+    Model(
         "copy_preflight.qnt",
         "CopyPreflight",
         "copy_preflight",

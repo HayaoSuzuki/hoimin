@@ -190,7 +190,7 @@ each boundary.
 
 | Boundary | Existing model and implementation correspondence | Model work remaining |
 | --- | --- | --- |
-| Startup invocation, shared deadline, and report handoff | `janitor_selection.qnt` covers selection stops. The shell replays pre- and post-janitor cancellation and the published report using `janitor_reclaim.qnt` | A single model of startup through publication |
+| Startup invocation, shared deadline, and report handoff | `janitor_startup.qnt` composes selection, cleanup, retry, report freeze, and shell publication. Rust replays deadline and cancellation boundaries | Native Windows replay |
 | Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Input listings remain stable within each modelled scan |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy | Windows mutation barrier needs native Rust verification |
@@ -198,11 +198,32 @@ each boundary.
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion | Windows lease reacquisition needs native Rust verification |
 | Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, partial deletion, and replacement after Windows handle consumption. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Native Windows replay of the pinned-handle histories |
 | Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline. `janitor_reclaim.qnt` compares the real janitor's finished report after two deferred roots are retried | Windows pinned-handle verification |
-| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results, deferred cleanup counters, retained details, and the published shell report | A single model connecting the process phases through publication |
+| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` check ledger results and retained diagnostics. `janitor_startup.qnt` checks that the shell publishes the frozen startup report | Native Windows replay |
 
 Existing host-specific tests remain part of the implementation evidence. Quint
 models use small representative directories and explicit filesystem outcomes
 so that the checks can run on each change.
+
+## Startup janitor lifecycle and publication
+
+`janitor_startup.qnt` follows one startup with up to three observed matches
+and two selected roots. The selector, ownership checks, and cleanup slices
+supply bounded observations. The model follows each selected root from
+uninspected through inspection and any deferred retry, then freezes the
+finished report for shell publication.
+
+The scheduled histories cover failed enumeration, a failed cursor write that
+keeps the page, a cleanup deadline with an uninspected selection, and a
+completed retry round with one unresolved root. The shell histories distinguish
+successful publication from cancellation before janitor startup, cancellation
+after cleanup, and expiry of the shared preparation deadline before handoff.
+`publishAfterStopStep` must violate `Safety`. The checks exercise the shell
+report both with clean execution cleanup and with a later recordless failure.
+
+The Rust adapter compares the delivered counters, scan status, and typed
+diagnostics with the real startup report. The cancellation and total-deadline
+fixtures also check that the shell returns the matching stop and preserves the
+directory evidence from the janitor phase it reached.
 
 ## Startup janitor reclaim evidence
 
@@ -230,14 +251,10 @@ replay compares these outcomes against the two corresponding prefixes of
 the same model history. Update the model and regenerate its ITF fixtures
 when the observable classification or summary contract changes.
 
-`shellReportStep` keeps the second selected root as young. The shell replay
-seeds the real cursor, then checks the counters and typed diagnostic in the
-published disk report. It exercises successful execution cleanup and a failure
-that omits the execution cleanup record.
-Cancellation is also replayed immediately before and after the janitor runs.
-The shell returns a preparation stop at either boundary. Comparing the
-directory contents with the initial or terminal model state checks that an
-acknowledged removal survives the stop and that no execution roots are created.
+`shellReportStep` is the ledger projection of the case that keeps the second
+selected root as young. The mixed-namespace replay uses that projection for
+the first scan. `janitor_startup.qnt` supplies the corresponding shell
+publication and cancellation histories.
 
 `deferredReportStep` replays the public janitor entry point with a three-entry
 slice limit. The first root removes one payload in its initial slice and
