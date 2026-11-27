@@ -770,3 +770,48 @@ Rust run peaked at 2,073,952 KiB under a 3 GiB cap.
 (cd formal/HoiminOracle && lake exe generate_timeout_limit -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 artifacts::tests finite_file source_file review::input::input_boundary_tests plan::review_tests analyzer::exception_project reduce::input
 ```
+
+## Lean model of review source grouping
+
+Review visits distinct source paths in the order of their first
+occurrence and uses one source observation per path. Each candidate
+still receives its own result in the original candidate order. This
+means an error for an earlier candidate on the second file reaches the
+caller before a later error on the first file.
+
+The model distinguishes an invalid path, an unavailable file, and an
+opened file. For an opened file a mismatch against the current raw
+hash gives `stale`. With a matching hash, the candidate's mutation,
+span, and original-text checks precede the retained decoding error.
+Location and stable-ID checks follow source validation. Lean proves
+that each path occurs once in the visit list, that the first candidate
+path is visited first, and that using the captured observations yields
+the pointwise results in candidate order. Separate theorems cover the
+stale and original-text precedence.
+
+The corpus uses seven file fixtures, including valid UTF-8 and Latin-1,
+invalid UTF-8, an unsupported codec, a missing file, and an invalid
+path. It crosses both hash states with six candidate shapes for each
+file, then exercises interleaved batches and competing errors. The
+internal-fixture adapter invokes the existing Rust batch entry point
+with real files. It checks the read-attempt order, the count of created
+contexts, all result values and diagnostics, and the first error index.
+The corpus uses distinct path spellings and selects one descriptor
+defect per candidate. Files remain stable within each batch.
+
+Seven broken variants exercise hashing after validation, checking
+decoding too early, misclassifying missing files, ignoring candidate
+identity, returning grouped results, sorting paths before reads, and
+reusing the first candidate's result for all candidates on a path.
+
+On macOS all 207 cases matched. The targeted Rust runs passed 39 unit
+tests and 43 CLI integration tests, and the CI workflow suite passed 222.
+Lean ran under a 2 GiB cap and a 20-second timeout per command. The
+single-job Rust runs stayed under a 3 GiB cap, with a peak of 2,087,744 KiB.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-sources corpus/review-sources.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::input review::tests::source review::tests::review_list_reads_and_indexes_each_source_once_per_command plan::review_tests
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```

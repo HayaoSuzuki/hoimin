@@ -12,6 +12,10 @@ use hoimin_core::{
 #[path = "input_boundary_tests.rs"]
 mod input_boundary_tests;
 
+#[cfg(test)]
+#[path = "source_oracle_tests.rs"]
+mod source_oracle_tests;
+
 use super::ReviewError;
 use super::model::{ArtifactReference, ReportReference, ReviewKey, SourceState};
 use crate::artifacts::{READ_ONLY_ARTIFACT_LIMIT, bounded_read, open_regular_file};
