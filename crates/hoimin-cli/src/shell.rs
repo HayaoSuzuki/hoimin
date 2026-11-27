@@ -5841,9 +5841,9 @@ fn skip_expired_metrics_finalization(
     clippy::too_many_arguments,
     reason = "metrics finalization carries the existing run summary and the shared shutdown deadline"
 )]
-async fn finalize_metrics_with_shutdown(
+async fn finalize_metrics_with_shutdown<C: crate::metrics::Clock + Send + 'static>(
     path: crate::metrics::MetricsOutput,
-    collector: Option<MetricsCollector>,
+    collector: Option<MetricsCollector<C>>,
     run_failure: Option<String>,
     discovered: u64,
     executed: u64,
@@ -13398,4 +13398,7 @@ mod tests {
     include!("shell_coverage_tests.rs");
     include!("shell_runtime_coverage_tests.rs");
     include!("shell_disk_stop_tests.rs");
+    mod metrics_deadline_oracle {
+        include!("shell_metrics_deadline_tests.rs");
+    }
 }

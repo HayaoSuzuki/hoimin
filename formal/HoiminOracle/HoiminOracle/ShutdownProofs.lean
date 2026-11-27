@@ -131,4 +131,22 @@ theorem run_preserves_structural_invariant (state : State) (trace : List Event)
       exact induction (step state event).state
         (step_preserves_structural_invariant state event holds)
 
+theorem metrics_expiry_preserves_return_snapshot (warnings : List String)
+    (timing : MetricsTiming) (work : MetricsWork)
+    (expired : (observeMetrics warnings timing work).expired = true) :
+    (observeMetrics warnings timing work).warnings = warnings ∧
+      (observeMetrics warnings timing work).atReturn = work.initialFile := by
+  cases timing <;> cases work <;> simp_all [observeMetrics]
+
+theorem metrics_expiry_before_admission_preserves_file (warnings : List String)
+    (work : MetricsWork) :
+    (observeMetrics warnings .expiresBeforeAdmission work).settled = work.initialFile := by
+  cases work <;> rfl
+
+theorem metrics_only_successful_admitted_work_publishes (warnings : List String)
+    (timing : MetricsTiming) (work : MetricsWork) :
+    (observeMetrics warnings timing work).settled = .published ↔
+      timing ≠ .expiresBeforeAdmission ∧ work = .publish := by
+  cases timing <;> cases work <;> simp [observeMetrics, MetricsWork.initialFile, MetricsWork.complete]
+
 end HoiminOracle.ShutdownAudit

@@ -451,4 +451,44 @@ example : safe (runWith brokenRegressionStep State.initial regressionWitness) = 
 example : safe (run State.initial detachWitness) = true := by decide
 example : safe (runWith brokenDetachStep State.initial detachWitness) = false := by decide
 
+inductive MetricsTiming
+  | onTime | expiresBeforeAdmission | expiresAfterAdmission
+  deriving DecidableEq
+
+inductive MetricsWork
+  | publish | noCollector | runFailed | invalidMetrics | renameFailed | workerPanicked
+  deriving DecidableEq
+
+inductive MetricsFile
+  | previous | published | directory
+  deriving DecidableEq
+
+structure MetricsObservation where
+  expired : Bool
+  warnings : List String
+  atReturn : MetricsFile
+  settled : MetricsFile
+  deriving DecidableEq
+
+def MetricsWork.initialFile : MetricsWork → MetricsFile
+  | .renameFailed => .directory
+  | _ => .previous
+
+def MetricsWork.complete : MetricsWork → MetricsFile × List String
+  | .publish => (.published, [])
+  | .noCollector => (.previous, [])
+  | .runFailed => (.previous, ["metrics.incomplete"])
+  | .invalidMetrics => (.previous, ["metrics.state"])
+  | .renameFailed => (.directory, ["metrics.write"])
+  | .workerPanicked => (.previous, ["metrics.write"])
+
+def observeMetrics (priorWarnings : List String) (timing : MetricsTiming) (work : MetricsWork) :
+    MetricsObservation :=
+  let before := work.initialFile
+  let (finished, warnings) := work.complete
+  match timing with
+  | .onTime => ⟨false, priorWarnings ++ warnings, finished, finished⟩
+  | .expiresBeforeAdmission => ⟨true, priorWarnings, before, before⟩
+  | .expiresAfterAdmission => ⟨true, priorWarnings, before, finished⟩
+
 end HoiminOracle.ShutdownAudit

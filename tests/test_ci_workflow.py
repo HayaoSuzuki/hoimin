@@ -1589,16 +1589,17 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         ["lake", "exe", "generate_session", "--", "--depth", "4", flag, corpus]
         for flag, corpus in session_companions.items()
     )
-    budget_recheck_corpus = "corpus/resume-budget-recheck.jsonl"
-    expected_remaining.append(
-        [
-            "lake",
-            "exe",
+    finalization_companions = [
+        ("generate_shutdown", "--check-metrics", "corpus/shutdown-metrics.jsonl"),
+        (
             "generate_resume_budget",
-            "--",
             "--check-recheck",
-            budget_recheck_corpus,
-        ]
+            "corpus/resume-budget-recheck.jsonl",
+        ),
+    ]
+    expected_remaining.extend(
+        ["lake", "exe", executable, "--", flag, corpus]
+        for executable, flag, corpus in finalization_companions
     )
     disk_companions = {
         "--check-report-evidence": "corpus/disk-report-evidence.jsonl",
@@ -1654,7 +1655,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         | set(process_companions.values())
         | set(disk_companions.values())
         | set(session_companions.values())
-        | {budget_recheck_corpus}
+        | {corpus for _, _, corpus in finalization_companions}
         == corpus_paths
     )
 

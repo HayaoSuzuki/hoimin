@@ -342,7 +342,7 @@ mod coverage_tests {
         );
         let finalized = finalize_metrics_with_shutdown(
             output,
-            None,
+            None::<MetricsCollector>,
             None,
             0,
             0,

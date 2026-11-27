@@ -53,9 +53,9 @@ future boundaries without a public or existing fixture seam are `model-only`.
   handle before detached or bounded blocking cleanup starts. A successful await
   restores the returned workspace; an expired await drops only the join handle,
   leaving the spawned task as the sole workspace owner.
-- `shell.rs:2584` moves the metrics collector and output path into one owned
-  blocking operation under the same budget. Expiry preserves prior warnings and
-  reports incomplete metrics rather than starting a second write.
+- `finalize_metrics_with_shutdown` moves the collector and output path into
+  one owned blocking operation under the shared budget. An expired wait
+  returns the prior warnings and the expiry error.
 - `shell.rs:146` retains the interrupt monitor as an owned argument until outer
   finalization resolves; the second-signal path therefore remains live while a
   session/report close is blocked.
@@ -81,3 +81,26 @@ The worksheet does not promote a private barrier or injected completion to
 `strict`. A model-only result can be promoted only when the same premise and
 complete observation become available through public CLI arguments, OS
 signals, SQLite locks, filesystem controls, or controlled child processes.
+
+## Metrics publication at the shutdown deadline
+
+The Lean model checks the file and warnings returned by the bounded metrics
+finalizer. If the deadline expires while the worker is held before admission,
+the previous bytes remain after the worker exits. If the worker is held inside
+metrics collection after admission, expiry returns the previous warnings and
+the previous file is still visible. Releasing that worker can publish the new
+file after the finalizer returns. A validation or replacement failure leaves
+the destination intact. The model fixes the pause before publication and
+assumes the runtime stays alive until the worker settles.
+
+The ten generated cases use the real Rust finalizer and temporary
+directories. The adapter checks warning codes, the expiry flag, the destination
+before and after release, the full metrics object on successful replacement,
+and cleanup of unpublished temporary files. The three Lean sensitivity
+examples detect admitting expired work, cancelling admitted work, and
+returning warnings from work that was still paused at expiry.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_shutdown -- --check-metrics corpus/shutdown-metrics.jsonl)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib metrics_publication_across_shutdown_deadline_matches_lean
+```

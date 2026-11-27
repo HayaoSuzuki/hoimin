@@ -236,4 +236,70 @@ def renderShutdownCorpus : String :=
 
 example : shutdownCases.length = 12 := by native_decide
 
+private def metricsTimingName : MetricsTiming → String
+  | .onTime => "on_time"
+  | .expiresBeforeAdmission => "expires_before_admission"
+  | .expiresAfterAdmission => "expires_after_admission"
+
+private def metricsWorkName : MetricsWork → String
+  | .publish => "publish"
+  | .noCollector => "no_collector"
+  | .runFailed => "run_failed"
+  | .invalidMetrics => "invalid_metrics"
+  | .renameFailed => "rename_failed"
+  | .workerPanicked => "worker_panicked"
+
+private def metricsFileName : MetricsFile → String
+  | .previous => "previous"
+  | .published => "published"
+  | .directory => "directory"
+
+-- Early completion paths never reach the blocking clock used to pause
+-- already-admitted work in the Rust fixture.
+private def metricsCases : List (MetricsTiming × MetricsWork) :=
+  (List.map (fun work => (.onTime, work))
+    [.publish, .noCollector, .runFailed, .invalidMetrics, .renameFailed, .workerPanicked]) ++
+  [(.expiresBeforeAdmission, .publish), (.expiresAfterAdmission, .publish),
+    (.expiresAfterAdmission, .invalidMetrics), (.expiresAfterAdmission, .renameFailed)]
+
+private def observeFixtureMetrics := observeMetrics ["previous"]
+
+private def metricsCaseJson (timing : MetricsTiming) (work : MetricsWork) : Lean.Json :=
+  let observed := observeFixtureMetrics timing work
+  let timingName := metricsTimingName timing
+  let workName := metricsWorkName work
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)),
+    ("id", .str s!"{timingName}_{workName}"),
+    ("mode", .str (modeName .internalFixture)),
+    ("timing", .str timingName), ("work", .str workName),
+    ("expected", Lean.Json.mkObj [
+      ("expired", Lean.toJson observed.expired),
+      ("warnings", stringsJson observed.warnings),
+      ("at_return", .str (metricsFileName observed.atReturn)),
+      ("settled", .str (metricsFileName observed.settled))
+    ])
+  ]
+
+def renderShutdownMetricsCorpus : String :=
+  String.join (metricsCases.map fun (timing, work) => (metricsCaseJson timing work).compress ++ "\n")
+
+private def metricsCasesDistinguish (candidate : MetricsTiming → MetricsWork → MetricsObservation) :
+    Bool := metricsCases.any fun (timing, work) =>
+      decide (candidate timing work ≠ observeFixtureMetrics timing work)
+
+example : metricsCasesDistinguish
+    (fun timing work => observeFixtureMetrics
+      (if timing = .expiresBeforeAdmission then .expiresAfterAdmission else timing) work) = true := by
+  decide
+
+example : metricsCasesDistinguish
+    (fun timing work => observeFixtureMetrics
+      (if timing = .expiresAfterAdmission then .expiresBeforeAdmission else timing) work) = true := by
+  decide
+
+example : metricsCasesDistinguish (fun timing work =>
+    let observed := observeFixtureMetrics timing work
+    { observed with warnings := "previous" :: work.complete.2 }) = true := by decide
+
 end HoiminOracle.ShutdownAudit
