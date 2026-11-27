@@ -1038,3 +1038,45 @@ Single-job Rust peaked at 2,147,840 KiB under a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::store_tests
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of existing review store admission
+
+The file preflight checks file type and the 16 MiB limit before reading
+the SQLite journal format bytes. A SQLite header must have format
+bytes `[1, 1]` before either open proceeds to SQLite. Admission then
+checks application and version identifiers, schema objects, project
+metadata, journal mode, integrity, and page geometry in that order.
+Lean proves the priority of the file limit, header rejection, unexpected
+objects, and unsupported page size. It also proves that a database with
+4096-byte pages meets the geometry limit exactly when it has at most
+4096 pages.
+
+The 106 cases include combinations of identity, schema and project
+checks, and conflicting failures in the same file. The 104 actual file
+fixtures on macOS exercise both read and write admission. One of these
+uses a Unix symbolic link. Tests compare directory entries and stream
+file contents into digests after both operations. A write open on an
+absent path creates a database that can then be reopened. The two
+model-only cases exercise the inner journal mode and page count guards
+independently of the earlier on-disk preflight.
+
+An unreferenced page fails SQLite's integrity check for both access
+modes. In the bundled SQLite 3.54.1, a one-byte revision is reported by
+`quick_check` when the database is reopened for writing. A read-only
+reopen omits the CHECK constraint during schema loading. The Rust
+adapter checks that reading the affected candidate after read-only
+admission still fails with an invalid stored revision. Eleven defective
+variants exercise the admission guards and the access-dependent
+integrity result.
+
+On macOS all 208 admission observations matched. The targeted Rust runs
+passed 44 unit tests and 44 CLI integration tests. The CI workflow suite
+passed 222 tests. The Lean build peaked at 1,299,280 KiB under a 2 GiB
+cap. Single-job Rust peaked at 2,133,872 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-store-admission corpus/review-store-admission.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::store_tests
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```
