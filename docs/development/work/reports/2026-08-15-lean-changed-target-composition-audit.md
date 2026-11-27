@@ -139,3 +139,31 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 git diff --check
 ```
+
+## Diff selection configuration
+
+The configuration model covers `--changed`, `--changed-context`, and
+`--diff-base` alongside the four explicit selector types. Lean proves that
+accepted changed selection requires a source and that twice the maximum
+accepted context fits a signed 32-bit value.
+
+The 386 fixtures distinguish three boundaries. The CLI rejects an explicit
+context without `--changed`, including zero, and checks the numeric range
+before constructing run settings. Raw configuration treats omitted and
+explicit zero context alike. It checks the context bound before configuration
+dependencies. Saved settings carry one optional changed scope. Deserialization
+checks its context bound and normalized run construction checks the presence
+of a source. An explicit revision string is retained verbatim.
+
+The Rust adapter compares both public CLI parsers, raw construction, saved
+run settings, and plan restoration. It verifies the normalized scope or the
+first diagnostic at each boundary. The sensitivity check detects dropping
+explicit zero, checking the source before the context bound in raw settings,
+and ignoring a supplied revision. The comparison ends before Git resolves
+revisions or computes changed lines.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-config corpus/changed-config.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test cli_config changed_selection_configuration_matches_lean
+```

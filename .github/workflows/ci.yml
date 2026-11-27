@@ -544,6 +544,8 @@ jobs:
             SourceOrderAuditMain
             CandidateSpanAuditMain
             ChangedTargetAuditMain
+            HoiminOracle.ChangedConfigModel
+            HoiminOracle.ChangedConfigCases
             ChangedContextAuditMain
             ChangedLinesAuditMain
             GlobSelectionAuditMain
@@ -732,6 +734,8 @@ jobs:
             lake exe generate_environment_fingerprint -- --check-import-roots corpus/import-roots.jsonl
           run_guard check-operator-selectors \
             lake exe generate_environment_fingerprint -- --check-operator-selectors corpus/operator-selectors.jsonl
+          run_guard check-changed-config \
+            lake exe generate_changed_context -- --check-config corpus/changed-config.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \
