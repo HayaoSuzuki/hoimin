@@ -82,6 +82,7 @@ import HoiminOracle.ChangedContextCases
 import HoiminOracle.ChangedConfigModel
 import HoiminOracle.SelectorSyntaxModel
 import HoiminOracle.PathOrderModel
+import HoiminOracle.DiscoveryScopeModel
 import HoiminOracle.SymbolResolutionModel
 import HoiminOracle.LineCoverageModel
 import HoiminOracle.GitInventoryModel

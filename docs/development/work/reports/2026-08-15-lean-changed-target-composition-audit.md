@@ -214,6 +214,58 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test target_policy --tes
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test target_handler
 ```
 
+## Pruning discovery to selected paths
+
+The discovery filter retains every descendant of a source, the exact paths
+named by file and line selectors, and the directories leading to those paths.
+Source containment compares complete path components. Built-in exclusions
+apply even when a selector names an excluded subtree. A project-root source,
+a symbol request without a source, an invalid path normalization, or an empty
+selection leaves discovery unscoped at the filesystem function boundary.
+The caller can diagnose selector errors before or after discovery according
+to the selector type.
+
+| Observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Scope construction | Source paths, file paths, line paths, symbol presence, and path reduction | Actual `DiscoveryScope::new` on the fixture selection |
+| Paths inspected by the filter | An entry is reached only when every ancestor directory remains traversable | `DiscoveryStats.visited_entries` from the real walk |
+| Discovered records | Reachable, admitted regular files and their Python flags | Complete result of `discover_explicit_with_stats` |
+| Unsupported native spelling | A literal backslash in a Unix path | Real Unix filename and exact `UnsupportedPath` value |
+
+Lean proves that a selected source admits its descendants, exact selectors
+retain their ancestor directories, and a rejected ancestor prevents traversal
+to its children. The 72 matrix cases combine six source configurations,
+six exact configurations, and the presence or absence of a symbol. Nine focused
+cases cover a source naming a file, normalization to the project root, an exact
+selector naming a directory, native spellings, and explicit built-in exclusions.
+Five cases require Unix filename semantics. Each diagnostic fixture contains
+one unsupported path, so directory enumeration order cannot change the
+expected error. The corpus measures complete filter visits for successful walks.
+The initial model counted the walk root and predicted 17 calls for the broad
+fixture. Rust observed 16. The walker accepts its root before calling the
+filter, so the model counts only entries below the root.
+
+The six sensitivity checks detect omitting line selectors, pruning symbol
+discovery without a source, using a raw string prefix for containment, dropping
+the directories of exact paths, ignoring built-in exclusions, and losing the
+malformed-file diagnostic. Fixtures use a plain temporary tree and exercise
+the pruning filter directly. Ignore patterns, include restoration, symlink
+traversal, and non-UTF-8 directory entries have separate Rust coverage.
+
+All 81 cases matched on macOS. The 78 successful walks visited between five
+and 16 entries, and the three errors carried the expected native path. Rust
+passed 27 discovery unit tests, with three existing benchmarks ignored, and
+89 integration tests. The CI workflow suite passed 222 tests. The final guarded
+Lean checks peaked at 1,291,296 KiB under a 2 GiB limit and 20-second timeout.
+Single-job Rust checks peaked at 1,733,616 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-discovery-scope corpus/discovery-scope.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::fs
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test target_handler --test lean_glob_selection_oracle
+```
+
 ## Resolving symbol modules and definitions
 
 Hoimin resolves a dotted module by joining its name components with slashes

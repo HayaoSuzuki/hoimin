@@ -1641,6 +1641,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         ),
         (
             "generate_changed_context",
+            "--check-discovery-scope",
+            "corpus/discovery-scope.jsonl",
+        ),
+        (
+            "generate_changed_context",
             "--check-line-coverage",
             "corpus/line-coverage.jsonl",
         ),

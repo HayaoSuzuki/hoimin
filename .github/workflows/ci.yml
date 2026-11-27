@@ -551,6 +551,9 @@ jobs:
             HoiminOracle.PathOrderModel
             HoiminOracle.SymbolResolutionModel
             HoiminOracle.SymbolResolutionCases
+            HoiminOracle.ImportRootModel
+            HoiminOracle.DiscoveryScopeModel
+            HoiminOracle.DiscoveryScopeCases
             HoiminOracle.LineCoverageModel
             HoiminOracle.LineCoverageCases
             HoiminOracle.GitInventoryModel
@@ -640,7 +643,6 @@ jobs:
             HoiminOracle.NullableGateModel
             NullableGateAuditMain
             HoiminOracle.EnvironmentFingerprintModel
-            HoiminOracle.ImportRootModel
             HoiminOracle.ImportRootCases
             HoiminOracle.OperatorSelectorModel
             HoiminOracle.OperatorSelectorCases
@@ -777,6 +779,8 @@ jobs:
             lake exe generate_changed_context -- --check-selector-syntax corpus/selector-syntax.jsonl
           run_guard check-symbol-resolution \
             lake exe generate_changed_context -- --check-symbol-resolution corpus/symbol-resolution.jsonl
+          run_guard check-discovery-scope \
+            lake exe generate_changed_context -- --check-discovery-scope corpus/discovery-scope.jsonl
           run_guard check-line-coverage \
             lake exe generate_changed_context -- --check-line-coverage corpus/line-coverage.jsonl
           run_guard check-git-inventory \
