@@ -1,14 +1,17 @@
 // A stable staging or deleting directory encountered after an owner stopped.
-// The coordinator and deletion are available when the evidence admits a root.
+// Admission is followed by one claim and removal attempt.
 module JanitorNamespaceRecovery {
   type Namespace = Staging | Deleting
   type Layout = Empty | UnmarkedPayload | LeaseOnly | LeaseWithHeartbeat |
     LeaseWithPayload | MarkersWithPayload
   type Age = BeforeThreshold | AtThreshold | AgeReadError
-  type Observation = { namespace: Namespace, layout: Layout, age: Age }
-  type Reason = Young | LeaseInvalid | UnsafeStaging | HeartbeatInvalid | AgeUnverifiable
+  type Interruption = Uninterrupted | RenameError | UnlockError | PayloadUnlinkError | PayloadDeadline
+  type Observation = { namespace: Namespace, layout: Layout, age: Age, interruption: Interruption }
+  type Reason = Young | LeaseInvalid | UnsafeStaging | HeartbeatInvalid | AgeUnverifiable |
+    ClaimFailed | CoordinatorFailed | DeleteFailed | CleanupIncomplete
   type Outcome = Reclaimed | Held(Reason)
-  type Report = { outcome: Outcome, details: List[Reason] }
+  type Placement = OriginalName | DeletingName | RemovedName
+  type Report = { outcome: Outcome, details: List[Reason], placement: Placement, removed: int }
   type Evaluation = Pending | Evaluated({ observation: Observation, report: Report })
   type State = { checked: int, last: Evaluation }
 
@@ -17,32 +20,59 @@ module JanitorNamespaceRecovery {
 
   action init = s' = { checked: 0, last: Pending }
 
-  pure val reclaimed: Report = { outcome: Reclaimed, details: [] }
-  pure def held(reason: Reason): Report = { outcome: Held(reason), details: [reason] }
+  pure def reclaimed(layout: Layout): Report = {
+    val removed = match layout {
+      | Empty => 1
+      | LeaseOnly => 2
+      | LeaseWithHeartbeat => 3
+      | MarkersWithPayload => 4
+      | _ => 0
+    }
+    { outcome: Reclaimed, details: [], placement: RemovedName, removed: removed }
+  }
+  pure def held(reason: Reason): Report =
+    { outcome: Held(reason), details: [reason], placement: OriginalName, removed: 0 }
 
   pure def emptyRoot(input: Observation): Report =
-    if (input.namespace == Deleting) reclaimed
+    if (input.namespace == Deleting) reclaimed(Empty)
     else match input.age {
       | BeforeThreshold => held(Young)
-      | AtThreshold => reclaimed
-      | AgeReadError => { outcome: Held(LeaseInvalid), details: [AgeUnverifiable, LeaseInvalid] }
+      | AtThreshold => reclaimed(Empty)
+      | AgeReadError => { ...held(LeaseInvalid), details: [AgeUnverifiable, LeaseInvalid] }
     }
 
-  pure def byAge(age: Age): Report = match age {
+  pure def byAge(age: Age, layout: Layout): Report = match age {
     | BeforeThreshold => held(Young)
-    | AtThreshold => reclaimed
+    | AtThreshold => reclaimed(layout)
     | AgeReadError => held(AgeUnverifiable)
   }
 
-  pure def decide(input: Observation): Report = match input.layout {
+  pure def admittedResult(input: Observation): Report = match input.layout {
     | Empty => emptyRoot(input)
     | UnmarkedPayload => held(LeaseInvalid)
-    | LeaseOnly => if (input.namespace == Deleting) reclaimed else byAge(input.age)
-    | LeaseWithHeartbeat => byAge(input.age)
+    | LeaseOnly => if (input.namespace == Deleting) reclaimed(LeaseOnly)
+      else byAge(input.age, LeaseOnly)
+    | LeaseWithHeartbeat => byAge(input.age, LeaseWithHeartbeat)
     | LeaseWithPayload =>
       if (input.namespace == Staging) held(UnsafeStaging) else held(HeartbeatInvalid)
     | MarkersWithPayload =>
-      if (input.namespace == Staging) held(UnsafeStaging) else byAge(input.age)
+      if (input.namespace == Staging) held(UnsafeStaging) else byAge(input.age, MarkersWithPayload)
+  }
+
+  pure def decide(input: Observation): Report = {
+    val admission = admittedResult(input)
+    if (admission.outcome != Reclaimed) admission
+    else match input.interruption {
+      | RenameError =>
+        if (input.namespace == Staging and input.layout != Empty) held(ClaimFailed) else admission
+      | UnlockError =>
+        if (input.layout == Empty) { ...admission, details: [CoordinatorFailed] }
+        else { ...held(CoordinatorFailed),
+          placement: if (input.namespace == Staging) DeletingName else OriginalName }
+      | PayloadUnlinkError => held(DeleteFailed)
+      | PayloadDeadline => { ...held(CleanupIncomplete), removed: 1 }
+      | Uninterrupted => admission
+    }
   }
 
   action record(input: Observation, report: Report): bool = all {
@@ -62,7 +92,11 @@ module JanitorNamespaceRecovery {
   }
 
   action evaluate(ns: Namespace, layout: Layout, age: Age): bool = {
-    val input = { namespace: ns, layout: layout, age: age }
+    attempt(ns, layout, age, Uninterrupted)
+  }
+
+  action attempt(ns: Namespace, layout: Layout, age: Age, interruption: Interruption): bool = {
+    val input = { namespace: ns, layout: layout, age: age, interruption: interruption }
     record(input, decide(input))
   }
 
@@ -90,19 +124,45 @@ module JanitorNamespaceRecovery {
     else if (s.checked == 2) evaluate(Deleting, LeaseWithHeartbeat, AgeReadError)
     else evaluate(Staging, LeaseWithHeartbeat, AgeReadError)
 
+  action claimFailureStep =
+    if (s.checked == 0) attempt(Staging, LeaseOnly, AtThreshold, RenameError)
+    else if (s.checked == 1) attempt(Staging, LeaseWithHeartbeat, AtThreshold, UnlockError)
+    else if (s.checked == 2) attempt(Deleting, Empty, BeforeThreshold, UnlockError)
+    else attempt(Deleting, LeaseOnly, BeforeThreshold, RenameError)
+
+  action sliceFailureStep =
+    if (s.checked == 0) attempt(Deleting, MarkersWithPayload, AtThreshold, PayloadUnlinkError)
+    else if (s.checked == 1) attempt(Deleting, MarkersWithPayload, AtThreshold, PayloadDeadline)
+    else if (s.checked == 2) attempt(Deleting, MarkersWithPayload, BeforeThreshold, PayloadUnlinkError)
+    else attempt(Staging, MarkersWithPayload, AtThreshold, PayloadUnlinkError)
+
   action ignoreStagingAgeStep =
-    record({ namespace: Staging, layout: Empty, age: BeforeThreshold }, reclaimed)
+    record({ namespace: Staging, layout: Empty, age: BeforeThreshold, interruption: Uninterrupted },
+      reclaimed(Empty))
 
   pure def safe(input: Observation, report: Report): bool = {
     val stagingAdmitted = input.age == AtThreshold and
       Set(Empty, LeaseOnly, LeaseWithHeartbeat).contains(input.layout)
     val deletingAdmitted = Set(Empty, LeaseOnly).contains(input.layout) or
       (input.age == AtThreshold and Set(LeaseWithHeartbeat, MarkersWithPayload).contains(input.layout))
+    val admitted = if (input.namespace == Staging) stagingAdmitted else deletingAdmitted
+    val blockingFailure = match input.interruption {
+      | Uninterrupted => false
+      | RenameError => input.namespace == Staging and input.layout != Empty
+      | UnlockError => input.layout != Empty
+      | _ => true
+    }
     all {
-      (report.outcome == Reclaimed) ==
-        (if (input.namespace == Staging) stagingAdmitted else deletingAdmitted),
+      (report.outcome == Reclaimed) == (admitted and not(blockingFailure)),
+      (report.placement == RemovedName) == (report.outcome == Reclaimed),
+      (report.placement == DeletingName) ==
+        (admitted and input.namespace == Staging and input.layout != Empty and input.interruption == UnlockError),
+      not(admitted) implies report.placement == OriginalName and report.removed == 0,
+      (report.outcome != Reclaimed) implies report.removed ==
+        (if (admitted and input.interruption == PayloadDeadline) 1 else 0),
       match report.outcome {
-        | Reclaimed => report.details == []
+        | Reclaimed => report.removed == reclaimed(input.layout).removed and
+          report.details == (if (input.interruption == UnlockError) [CoordinatorFailed] else [])
         | Held(reason) => report.details.length() > 0 and report.details[report.details.length() - 1] == reason
       },
       (input.namespace == Staging and input.layout == Empty and input.age == AgeReadError)

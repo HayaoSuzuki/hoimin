@@ -38,6 +38,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "Empty",
                 "value": {
@@ -68,6 +74,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -92,6 +107,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "Empty",
                 "value": {
@@ -112,6 +133,15 @@
                 "value": {
                   "#tup": []
                 }
+              },
+              "placement": {
+                "tag": "RemovedName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "1"
               }
             }
           }
@@ -132,6 +162,12 @@
             "observation": {
               "age": {
                 "tag": "AgeReadError",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
                 "value": {
                   "#tup": []
                 }
@@ -172,6 +208,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -196,6 +241,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "Empty",
                 "value": {
@@ -216,6 +267,15 @@
                 "value": {
                   "#tup": []
                 }
+              },
+              "placement": {
+                "tag": "RemovedName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "1"
               }
             }
           }

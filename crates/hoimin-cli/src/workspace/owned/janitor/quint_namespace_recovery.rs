@@ -1,8 +1,10 @@
 //! Replay startup recovery against real staging and deleting directories.
 use super::super::{
-    DELETING_PREFIX, HEARTBEAT_FILE, LEASE_FILE, LEASE_SCHEMA, LeaseMarker, ManagedRootCoordinator,
-    ManagedRunRoot, OwnerKind, STAGING_PREFIX, STALE_AFTER, create_owned_directory,
+    DELETING_PREFIX, HEARTBEAT_FILE, JANITOR_CLEANUP_BUDGET, LEASE_FILE, LEASE_SCHEMA, LeaseMarker,
+    ManagedRootCoordinator, ManagedRunRoot, OwnerKind, STAGING_PREFIX, STALE_AFTER,
+    create_owned_directory,
 };
+use crate::quint_itf::number;
 use crate::{io_faults, quint_itf::states};
 use camino::Utf8Path;
 use hoimin_core::{JanitorReason, JanitorSummary};
@@ -23,6 +25,10 @@ fn reason(value: &Value) -> JanitorReason {
         "UnsafeStaging" => JanitorReason::UnsafeStaging,
         "HeartbeatInvalid" => JanitorReason::HeartbeatInvalid,
         "AgeUnverifiable" => JanitorReason::AgeUnverifiable,
+        "ClaimFailed" => JanitorReason::ClaimFailed,
+        "CoordinatorFailed" => JanitorReason::CoordinatorFailed,
+        "DeleteFailed" => JanitorReason::DeleteFailed,
+        "CleanupIncomplete" => JanitorReason::CleanupIncomplete,
         other => panic!("unexpected namespace recovery reason {other}"),
     }
 }
@@ -80,10 +86,12 @@ fn assert_outcome(
     expected: &Value,
     original: &Utf8Path,
     deleting: &Utf8Path,
+    layout: &str,
     payload: bool,
 ) {
     assert_eq!(actual.inspected_roots, 1);
     assert_eq!(actual.absent_roots, 0);
+    assert_eq!(actual.removed_entries, number(&expected["removed"]));
     let counts = (
         actual.reclaimed_roots,
         actual.preserved_roots,
@@ -91,11 +99,7 @@ fn assert_outcome(
     );
     let outcome = &expected["outcome"];
     match tag(outcome) {
-        "Reclaimed" => {
-            assert_eq!(counts, (1, 0, 0));
-            assert!(!original.exists());
-            assert!(!deleting.exists());
-        }
+        "Reclaimed" => assert_eq!(counts, (1, 0, 0)),
         "Held" => {
             let cause = reason(&outcome["value"]);
             if cause.is_normal_hold() {
@@ -105,14 +109,55 @@ fn assert_outcome(
                 assert_eq!(counts, (0, 0, 1));
                 assert_eq!(actual.unresolved_by_reason.get(&cause), Some(&1));
             }
-            assert!(original.is_dir());
-            assert_eq!(deleting.exists(), deleting == original);
-            if payload {
-                assert_eq!(std::fs::read(original.join("payload")).unwrap(), PAYLOAD);
-            }
         }
         other => panic!("unexpected namespace recovery outcome {other}"),
     }
+    let remaining = match tag(&expected["placement"]) {
+        "RemovedName" => {
+            assert!(!original.exists());
+            assert!(!deleting.exists());
+            return;
+        }
+        "OriginalName" => {
+            assert_eq!(deleting.exists(), deleting == original);
+            original
+        }
+        "DeletingName" => {
+            assert!(!original.exists());
+            deleting
+        }
+        other => panic!("unexpected surviving namespace {other}"),
+    };
+    assert!(remaining.is_dir());
+    assert_eq!(
+        remaining.join(LEASE_FILE).is_file(),
+        !matches!(layout, "Empty" | "UnmarkedPayload"),
+    );
+    assert_eq!(
+        remaining.join(HEARTBEAT_FILE).is_file(),
+        matches!(layout, "LeaseWithHeartbeat" | "MarkersWithPayload"),
+    );
+    let file = remaining.join("payload");
+    if payload && actual.removed_entries == 0 {
+        assert_eq!(std::fs::read(file).unwrap(), PAYLOAD);
+    } else {
+        assert!(!file.exists());
+    }
+}
+
+fn reclaim(
+    coordinator: &ManagedRootCoordinator,
+    name: &str,
+    now: SystemTime,
+    elapsed: &dyn Fn(Instant) -> Duration,
+) -> JanitorSummary {
+    ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
+        coordinator,
+        now,
+        Instant::now(),
+        elapsed,
+        &|_| Ok((vec![name.to_owned()], None)),
+    )
 }
 
 fn replay(value: &Value) {
@@ -139,22 +184,33 @@ fn replay(value: &Value) {
         "AtThreshold" => (threshold, None),
         "AgeReadError" => (
             threshold,
-            Some(match layout {
-                "Empty" => "janitor.staging_age",
-                "LeaseWithHeartbeat" | "MarkersWithPayload" => "janitor.heartbeat_metadata",
-                other => panic!("no timestamp read for layout {other}"),
-            }),
+            Some((
+                match layout {
+                    "Empty" => "janitor.staging_age",
+                    "LeaseWithHeartbeat" | "MarkersWithPayload" => "janitor.heartbeat_metadata",
+                    other => panic!("no timestamp read for layout {other}"),
+                },
+                JanitorReason::AgeUnverifiable,
+            )),
         ),
         other => panic!("unexpected age evidence {other}"),
     };
-    let fault = injection.map(io_faults::arm);
-    let report = ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
-        &coordinator,
-        now,
-        Instant::now(),
-        &|_| Duration::ZERO,
-        &|_| Ok((vec![name.clone()], None)),
-    );
+    let interruption = tag(&input["interruption"]);
+    let injection = match interruption {
+        "Uninterrupted" | "PayloadDeadline" => injection,
+        "RenameError" => Some(("claim.rename", JanitorReason::ClaimFailed)),
+        "UnlockError" => Some(("coordinator.unlock", JanitorReason::CoordinatorFailed)),
+        "PayloadUnlinkError" => Some(("cleanup.unlink_file", JanitorReason::DeleteFailed)),
+        other => panic!("unexpected recovery interruption {other}"),
+    };
+    let fault = injection.map(|(point, reason)| (io_faults::arm(point), reason));
+    let report = reclaim(&coordinator, &name, now, &|_| {
+        if interruption == "PayloadDeadline" && !deleting.join("payload").exists() {
+            JANITOR_CLEANUP_BUDGET
+        } else {
+            Duration::ZERO
+        }
+    });
 
     let details: Vec<_> = expected["details"]
         .as_array()
@@ -162,11 +218,8 @@ fn replay(value: &Value) {
         .iter()
         .map(reason)
         .collect();
-    if let Some(fault) = fault {
-        assert_eq!(
-            fault.triggered(),
-            details.contains(&JanitorReason::AgeUnverifiable)
-        );
+    if let Some((fault, reason)) = fault {
+        assert_eq!(fault.triggered(), details.contains(&reason));
     }
     assert_eq!(
         report
@@ -176,7 +229,20 @@ fn replay(value: &Value) {
             .collect::<Vec<_>>(),
         details,
     );
-    assert_outcome(&report, expected, &path, &deleting, payload);
+    assert_outcome(&report, expected, &path, &deleting, layout, payload);
+    if tag(&expected["placement"]) == "DeletingName"
+        || details.contains(&JanitorReason::CleanupIncomplete)
+    {
+        drop(coordinator);
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let restarted = reclaim(&coordinator, deleting.file_name().unwrap(), now, &|_| {
+            Duration::ZERO
+        });
+        assert_eq!(restarted.reclaimed_roots, 1);
+        // The interrupted attempt left only the root, lease and heartbeat.
+        assert_eq!(restarted.removed_entries, 3);
+        assert!(!deleting.exists());
+    }
 }
 
 #[rstest::rstest]
@@ -188,6 +254,8 @@ fn replay(value: &Value) {
 #[case::markers(include_str!("../../../../../../formal/quint/traces/janitor_namespace_recovery_markersStep_0.itf.json"))]
 #[case::payload(include_str!("../../../../../../formal/quint/traces/janitor_namespace_recovery_payloadStep_0.itf.json"))]
 #[case::fallback(include_str!("../../../../../../formal/quint/traces/janitor_namespace_recovery_fallbackStep_0.itf.json"))]
+#[case::claim_failure(include_str!("../../../../../../formal/quint/traces/janitor_namespace_recovery_claimFailureStep_0.itf.json"))]
+#[case::slice_failure(include_str!("../../../../../../formal/quint/traces/janitor_namespace_recovery_sliceFailureStep_0.itf.json"))]
 fn quint_history_matches_janitor_namespace_recovery(#[case] trace: &str) {
     let history = states(trace);
     assert_eq!(history.len(), 5);

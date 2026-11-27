@@ -38,6 +38,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "UnmarkedPayload",
                 "value": {
@@ -68,6 +74,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -92,6 +107,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "UnmarkedPayload",
                 "value": {
@@ -122,6 +143,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -142,6 +172,12 @@
             "observation": {
               "age": {
                 "tag": "AtThreshold",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
                 "value": {
                   "#tup": []
                 }
@@ -176,6 +212,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -200,6 +245,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "MarkersWithPayload",
                 "value": {
@@ -220,6 +271,15 @@
                 "value": {
                   "#tup": []
                 }
+              },
+              "placement": {
+                "tag": "RemovedName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "4"
               }
             }
           }

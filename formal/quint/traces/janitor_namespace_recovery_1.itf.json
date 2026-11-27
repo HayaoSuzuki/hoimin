@@ -38,6 +38,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "LeaseWithPayload",
                 "value": {
@@ -68,6 +74,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -88,6 +103,12 @@
             "observation": {
               "age": {
                 "tag": "BeforeThreshold",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
                 "value": {
                   "#tup": []
                 }
@@ -122,6 +143,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -142,6 +172,12 @@
             "observation": {
               "age": {
                 "tag": "AgeReadError",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
                 "value": {
                   "#tup": []
                 }
@@ -176,6 +212,15 @@
                     "#tup": []
                   }
                 }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
               }
             }
           }
@@ -200,6 +245,12 @@
                   "#tup": []
                 }
               },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
               "layout": {
                 "tag": "LeaseWithHeartbeat",
                 "value": {
@@ -220,6 +271,15 @@
                 "value": {
                   "#tup": []
                 }
+              },
+              "placement": {
+                "tag": "RemovedName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "3"
               }
             }
           }
