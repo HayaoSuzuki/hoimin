@@ -2,6 +2,7 @@ import HoiminOracle.ChangedContextCases
 import HoiminOracle.ChangedConfigCases
 import HoiminOracle.SelectorSyntaxCases
 import HoiminOracle.LineCoverageCases
+import HoiminOracle.GitInventoryCases
 
 open HoiminOracle.ChangedContext
 
@@ -26,6 +27,11 @@ def main (args : List String) : IO UInt32 := do
       else IO.eprintln "line coverage corpus is stale" *> pure 1
   | ["--output-line-coverage", path] =>
       IO.FS.writeFile path HoiminOracle.LineCoverage.corpus *> pure 0
+  | ["--check-git-inventory", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitInventory.corpus then pure 0
+      else IO.eprintln "Git inventory corpus is stale" *> pure 1
+  | ["--output-git-inventory", path] =>
+      IO.FS.writeFile path HoiminOracle.GitInventory.corpus *> pure 0
   | ["--sensitivity"] =>
       for (name, passed) in sensitivity do IO.println s!"{name}={passed}"
       unless sensitivity.all (·.2) do return 1
@@ -33,9 +39,11 @@ def main (args : List String) : IO UInt32 := do
       if status != 0 then return status
       let status ← HoiminOracle.SelectorSyntax.sensitivity
       if status != 0 then return status
-      HoiminOracle.LineCoverage.sensitivity
+      let status ← HoiminOracle.LineCoverage.sensitivity
+      if status != 0 then return status
+      HoiminOracle.GitInventory.sensitivity
   | ["--stats"] =>
       IO.println s!"cases={fixtures.length * contexts.length}\nmaximum_file_lines=8\nmaximum_hunks=2\nsensitivity_families={sensitivity.length}"
       pure 0
   | [] => IO.print corpus *> pure 0
-  | _ => IO.eprintln "usage: generate_changed_context [--check PATH|--output PATH|--check-config PATH|--output-config PATH|--check-selector-syntax PATH|--output-selector-syntax PATH|--check-line-coverage PATH|--output-line-coverage PATH|--sensitivity|--stats]" *> pure 2
+  | _ => IO.eprintln "usage: generate_changed_context [--check PATH|--output PATH|--check-config PATH|--output-config PATH|--check-selector-syntax PATH|--output-selector-syntax PATH|--check-line-coverage PATH|--output-line-coverage PATH|--check-git-inventory PATH|--output-git-inventory PATH|--sensitivity|--stats]" *> pure 2

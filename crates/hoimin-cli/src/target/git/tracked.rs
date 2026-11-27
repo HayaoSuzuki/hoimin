@@ -260,6 +260,44 @@ mod tests {
 
         assert_eq!(actual, DiffPlan::Legacy);
     }
+
+    #[test]
+    fn git_inventory_plan_matches_lean() {
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum ExpectedPlan {
+            Legacy,
+            Scoped { batches: Vec<Vec<String>> },
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            schema: u32,
+            mode: String,
+            id: String,
+            scope: Vec<String>,
+            inventory: String,
+            expected: ExpectedPlan,
+        }
+
+        let corpus = include_str!("../../../../../formal/HoiminOracle/corpus/git-inventory.jsonl");
+        let mut ids = BTreeSet::new();
+        for row in corpus.lines() {
+            let fixture: Fixture = serde_json::from_str(row).unwrap();
+            assert_eq!(fixture.schema, 1, "{}", fixture.id);
+            assert_eq!(fixture.mode, "internal-fixture", "{}", fixture.id);
+            let selected: Vec<_> = fixture.scope.iter().map(String::as_str).collect();
+            let actual = inventory_plan(fixture.inventory.as_bytes(), &scope(&selected))
+                .unwrap_or_else(|error| panic!("{}: {error}", fixture.id));
+            let expected = match fixture.expected {
+                ExpectedPlan::Legacy => DiffPlan::Legacy,
+                ExpectedPlan::Scoped { batches } => DiffPlan::Scoped(batches),
+            };
+            assert_eq!(actual, expected, "{}", fixture.id);
+            assert!(ids.insert(fixture.id));
+        }
+        assert_eq!(ids.len(), 50);
+    }
 }
 
 #[cfg(test)]

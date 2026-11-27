@@ -197,3 +197,52 @@ slice. Path normalization and Git diff parsing are outside this comparison.
 (cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test target_policy line_selection_coverage_matches_lean
 ```
+
+## Tracked diff inventory and pathspec batches
+
+Scoped change resolution uses Git's name-status inventory to decide how to
+fetch patch and numstat records. Only the status destination participates in
+scope membership. A selected rename, copy, unusual status, or path exceeding
+8,192 UTF-8 bytes requires the full diff. Other selected paths are sorted,
+deduplicated, and packed into the longest successive prefixes that fit both
+128 paths and 8,192 path bytes. The byte budget counts path spellings without
+the fixed Git flags or argument separators.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Recognized status and path fields | Typed record and NUL-delimited rendering | The actual `inventory_plan` parses the rendered bytes |
+| Resolved selection | Scope of canonical relative paths | `GitPathScope` built from the same target paths |
+| Fallback or batches | Branch and complete ordered batch contents | Exact `DiffPlan` equality at the owned parser seam |
+
+All 50 cases use `internal-fixture` mode. The matrix crosses all nine status
+kinds with four scopes, and 14 additional cases exercise empty input and scope,
+duplicates, ordering, separator aliases, and the count and byte boundaries.
+In particular, the fixture with two UTF-8 names fits under the character count
+but requires two batches by byte count. Synthetic long path spellings exercise
+the planner without creating files. Case aliases, malformed record diagnostics,
+Git's rename detection, and subprocess execution remain outside the model.
+Existing `changed_git_scope` integration tests exercise real Git commands and
+the public plan.
+
+Lean proves the fallback criterion and the maximality of each selected prefix.
+For any input whose individual paths fit, concatenating the batches recovers
+the original sequence, and every batch is nonempty and meets both budgets.
+It also proves that the scoped plan contains exactly the paths in both the
+inventory destinations and the scope.
+Sensitivity witnesses detect using the source path, checking fallback before
+scope, keeping duplicates, treating either limit as exclusive, counting
+characters, and omitting the oversized-path fallback. These are pure planning
+decisions, with no concurrent or durable effects in the model.
+
+All 50 plans matched. The focused Rust Git unit suite passed 110 tests and
+the real-Git scope suite passed 19 tests on macOS. Lean commands were run
+serially with a 20-second deadline and a 2 GiB process-tree RSS limit. The
+final Lean checks peaked at 1,212,464 KiB, with a longest command of 5.4 s.
+The single-job Rust checks peaked at 2,250,816 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-git-inventory corpus/git-inventory.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git::tracked
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope
+```

@@ -82,6 +82,7 @@ import HoiminOracle.ChangedContextCases
 import HoiminOracle.ChangedConfigModel
 import HoiminOracle.SelectorSyntaxModel
 import HoiminOracle.LineCoverageModel
+import HoiminOracle.GitInventoryModel
 import HoiminOracle.ChangedLinesModel
 import HoiminOracle.ProcessOutputModel
 import HoiminOracle.ProcessOutputProofs
