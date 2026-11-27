@@ -714,6 +714,9 @@ jobs:
             HoiminOracle.VerifySelectionFlowModel
             HoiminOracle.VerifySelectionFlowCases
             VerifySelectionFlowAuditMain
+            HoiminOracle.WorkspaceIntegrityModel
+            HoiminOracle.WorkspaceIntegrityCases
+            WorkspaceIntegrityAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -801,6 +804,7 @@ jobs:
             'generate_plan_verify|corpus/plan-verify.jsonl|sensitivity'
             'generate_plan_discovery_budget|corpus/plan-discovery-budget.jsonl|sensitivity'
             'generate_verify_selection_flow|corpus/verify-selection-flow.jsonl|sensitivity'
+            'generate_workspace_integrity|corpus/workspace-integrity.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

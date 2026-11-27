@@ -251,6 +251,10 @@ name = "generate_verify_selection_flow"
 root = "VerifySelectionFlowAuditMain"
 
 [[lean_exe]]
+name = "generate_workspace_integrity"
+root = "WorkspaceIntegrityAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

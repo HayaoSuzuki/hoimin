@@ -1340,3 +1340,44 @@ under a 3 GiB cap.
 (cd formal/HoiminOracle && lake exe generate_verify_selection_flow -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan --test sampling -- --test-threads=2
 ```
+
+## Lean model of original workspace integrity
+
+The workspace checker compares the selected directory set and selected
+file contents against the preflight snapshot. A directory difference
+takes priority, followed by the first changed or removed file from the
+saved manifest, then the first newly added file. Each traversal follows
+path-component order. The model uses exact content equality for the
+small fixture files, and the implementation compares size and digest.
+
+Lean proves that writes to the excluded fixture path leave the selected
+snapshot unchanged. It proves that a change detected before the baseline
+prevents execution, and that a change detected before the final report
+gives exit 2 while preserving the observed baseline exit or finished
+mutant status. The two comparisons observe snapshots at their
+checkpoints. A change restored before the final comparison may leave
+the original snapshot equal.
+
+The 58 cases comprise 45 real-file comparisons through workspace
+preflight and original verification and 13 public verify runs with one
+worker and one candidate. The test command in the latter group applies
+the requested edits to the original tree during the baseline or mutant.
+The oracle checks the reported path, baseline exit, mutant status,
+summary exit and touched file contents. The case matrix includes
+ignored files and directory trees, same-size edits, replacements with
+the same bytes, empty directories, a failing baseline and a transient
+edit restored before final verification. Six deliberately incorrect
+variants check the diagnostic priority, comparison checkpoints,
+outcome preservation and exit precedence.
+
+All 58 cases matched on macOS. The plan, workspace handler and empty
+directory suites passed 294, 60 and 16 tests respectively, with one
+existing ignored test. The workflow suite passed 222 tests. Lean
+peaked at 1,282,224 KiB under a 2 GiB cap. The Rust runs used one build
+job and a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_workspace_integrity -- --check corpus/workspace-integrity.jsonl)
+(cd formal/HoiminOracle && lake exe generate_workspace_integrity -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan --test workspace_handler --test workspace_empty_directories -- --test-threads=2
+```

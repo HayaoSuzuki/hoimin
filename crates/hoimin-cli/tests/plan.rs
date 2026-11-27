@@ -7,6 +7,8 @@ mod jsonl_report;
 mod mutation_outcome;
 #[path = "plan/selection_flow_oracle.rs"]
 mod selection_flow_oracle;
+#[path = "plan/workspace_integrity_oracle.rs"]
+mod workspace_integrity_oracle;
 use collecting_writer::CollectingWriter;
 
 use std::collections::BTreeSet;
