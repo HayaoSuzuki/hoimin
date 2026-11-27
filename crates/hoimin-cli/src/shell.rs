@@ -7624,22 +7624,8 @@ mod tests {
             elapsed: Duration::from_millis(1),
         }));
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
-        let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
-        let managed = managed_parent.join("hoimin-workspaces-v2");
-        let [behind_cursor, reclaimed] =
-            [1_u128, 2].map(|id| managed.join(format!(".deleting-{}", uuid::Uuid::from_u128(id))));
-
-        // Populate the cursor through the real janitor, then rebuild the first name.
-        std::fs::create_dir(&behind_cursor).unwrap();
-        let seed = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
-        assert_eq!(seed.reclaimed_roots, 1);
-        std::fs::create_dir(&behind_cursor).unwrap();
-        std::fs::create_dir(&reclaimed).unwrap();
-        let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
-        let preserved_path = preserved.path().to_owned();
-        preserved.unlock_fixture_lease();
-        drop(preserved);
-        drop(coordinator);
+        let [behind_cursor, reclaimed, preserved_path] =
+            quint_janitor_shell_fixture(managed_parent);
         if recordless_cleanup {
             control.inject_execution_cleanup_failed_without_record();
         }
@@ -7683,12 +7669,34 @@ mod tests {
         assert!(preserved_path.is_dir());
     }
 
-    fn assert_quint_janitor_report(janitor: &serde_json::Value) {
-        use crate::quint_itf::{number, states};
+    fn quint_janitor_shell_fixture(parent: &Utf8Path) -> [Utf8PathBuf; 3] {
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let managed = parent.join("hoimin-workspaces-v2");
+        let [behind_cursor, reclaimed] =
+            [1_u128, 2].map(|id| managed.join(format!(".deleting-{}", uuid::Uuid::from_u128(id))));
 
-        let trace = states(include_str!(
+        // Populate the cursor through the real janitor, then rebuild the first name.
+        std::fs::create_dir(&behind_cursor).unwrap();
+        let seed = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        assert_eq!(seed.reclaimed_roots, 1);
+        std::fs::create_dir(&behind_cursor).unwrap();
+        std::fs::create_dir(&reclaimed).unwrap();
+        let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let preserved_path = preserved.path().to_owned();
+        preserved.unlock_fixture_lease();
+        [behind_cursor, reclaimed, preserved_path]
+    }
+
+    fn shell_janitor_trace() -> Vec<serde_json::Value> {
+        crate::quint_itf::states(include_str!(
             "../../../formal/quint/traces/janitor_reclaim_shellReportStep_0.itf.json"
-        ));
+        ))
+    }
+
+    fn assert_quint_janitor_report(janitor: &serde_json::Value) {
+        use crate::quint_itf::number;
+
+        let trace = shell_janitor_trace();
         let terminal = trace.last().unwrap();
         assert_eq!(terminal["command"]["tag"], "Hold");
         let summary = &terminal["summary"];
@@ -7718,6 +7726,55 @@ mod tests {
         );
         assert_eq!(scan["directory_scan_complete"], true);
         assert_eq!(scan["cursor_deferred"], true);
+    }
+
+    #[rstest::rstest]
+    #[case::before_janitor(ManagedRootSetupBoundary::CoordinatorOpened)]
+    #[case::after_janitor(ManagedRootSetupBoundary::ReclaimFinished)]
+    fn quint_startup_janitor_cancellation_at_handoff(#[case] stop_at: ManagedRootSetupBoundary) {
+        use crate::quint_itf::number;
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let _entered = runtime.enter();
+        let control = RunControl::new();
+        let timing = PreparationToken::new(Duration::from_secs(30), control.clone());
+        let parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
+        let [behind_cursor, reclaimed, preserved] = quint_janitor_shell_fixture(parent);
+        let last = std::cell::Cell::new(None);
+        let result = create_managed_shell_roots_controlled(
+            parent,
+            &|boundary| {
+                last.set(Some(boundary));
+                if boundary == stop_at {
+                    control.cancel();
+                }
+            },
+            Some(&timing),
+        );
+        assert!(matches!(
+            result,
+            Err(PreparationError::Stopped(ShutdownCause::Cancellation))
+        ));
+        assert_eq!(last.get(), Some(stop_at));
+        let trace = shell_janitor_trace();
+        let boundary_state = if stop_at == ManagedRootSetupBoundary::ReclaimFinished {
+            trace.last().unwrap()
+        } else {
+            trace.first().unwrap()
+        };
+        let removals = number(&boundary_state["summary"]["reclaimed"]);
+        assert_eq!(u64::from(!reclaimed.exists()), removals);
+        assert!(behind_cursor.is_dir());
+        assert!(preserved.is_dir());
+        let managed_entries = std::fs::read_dir(behind_cursor.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != ".hoimin-coordinator")
+            .count();
+        assert_eq!(u64::try_from(managed_entries).unwrap() + removals, 3);
     }
 
     #[tokio::test]

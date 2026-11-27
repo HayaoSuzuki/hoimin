@@ -190,7 +190,7 @@ each boundary.
 
 | Boundary | Existing model and implementation correspondence | Model work remaining |
 | --- | --- | --- |
-| Startup invocation, shared deadline, and report handoff | `janitor_selection.qnt` covers stop before selection and while enumerating. `janitor_reclaim.qnt` covers the inspected boundary and the actual shell report | Stop between janitor completion and shell report handoff |
+| Startup invocation, shared deadline, and report handoff | `janitor_selection.qnt` covers selection stops. The shell replays pre- and post-janitor cancellation and the published report using `janitor_reclaim.qnt` | A single model of startup through publication |
 | Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Input listings remain stable within each modelled scan |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy | Windows mutation barrier needs native Rust verification |
@@ -234,6 +234,10 @@ when the observable classification or summary contract changes.
 seeds the real cursor, then checks the counters and typed diagnostic in the
 published disk report. It exercises successful execution cleanup and a failure
 that omits the execution cleanup record.
+Cancellation is also replayed immediately before and after the janitor runs.
+The shell returns a preparation stop at either boundary. Comparing the
+directory contents with the initial or terminal model state checks that an
+acknowledged removal survives the stop and that no execution roots are created.
 
 The registry runs these janitor checks with Quint simulation and checks the ITF
 fixtures for freshness. `acknowledgementLostStep` suppresses the effect of an
