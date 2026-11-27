@@ -244,4 +244,9 @@ theorem measurement_error_stops (ctx : Context) (s : State) (e : Event) (p : Pro
   simp only [step, active, Bool.false_eq_true, ↓reduceIte]
   split <;> simp_all
 
+theorem finishDiff_removes_only_published (reportPublished : Bool) (diff : DiffPublication) :
+    finishDiff reportPublished diff ≠ diff ↔
+      reportPublished = false ∧ diff = .published := by
+  cases reportPublished <;> cases diff <;> decide
+
 end HoiminOracle.ReduceSpec

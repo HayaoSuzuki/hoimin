@@ -102,7 +102,9 @@ pub(super) async fn run(args: ReduceArgs) -> Result<i32, String> {
             "Evidence is restricted to the selected mutants, sources, tests and execution conditions; future fault detection and global optimality are not guaranteed."]});
     let bytes = serde_json::to_vec_pretty(&report).map_err(|e| e.to_string())?;
     if let Err(error) = runner.publish("report.json", &bytes).await {
-        let _ = runner.artifacts.remove("proposal.diff");
+        if let Some(name) = diff {
+            let _ = runner.artifacts.remove(name);
+        }
         return Ok(error.exit_code);
     }
     Ok(code)

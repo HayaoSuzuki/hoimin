@@ -146,6 +146,9 @@ def compareWrappingProducts (num den original reduced : Nat) : Bool :=
 def replaceOnTie (previous candidate : Proposal) : Option Proposal :=
   if median candidate.exploration ≤ median previous.exploration then some candidate else some previous
 
+def discardDiffOnReportFailure (reportPublished : Bool) (diff : DiffPublication) : DiffPublication :=
+  if reportPublished then diff else .missing
+
 def sensitivity : List (String × Bool × Bool) := [
   ("atomicity/publish-before-complete", stateSafe (step baseContext {deadline:=4}
     {tick:=3,proposal:=some pending}), stateSafe (brokenEarlyPublish {deadline:=4}
@@ -181,6 +184,8 @@ def sensitivity : List (String × Bool × Bool) := [
     some slower == some good),
   ("selection/replace-tie", chooseBest (some good) tied == some good,
     replaceOnTie good tied == some good),
+  ("publication/remove-foreign-diff", finishDiff false .foreign == .foreign,
+    discardDiffOnReportFailure false .foreign == .foreign),
   ("precedence/deadline-equality", (step baseContext {deadline:=1}
     {tick:=1,proposal:=some good}).best.isSome,
     (brokenEarlyPublish {deadline:=1} {tick:=1,proposal:=some good}).best.isSome) ]

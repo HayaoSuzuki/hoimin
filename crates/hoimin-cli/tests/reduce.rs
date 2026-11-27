@@ -135,6 +135,32 @@ async fn loss_of_original_kill_produces_no_diff() {
 }
 
 #[tokio::test]
+async fn report_failure_preserves_a_diff_the_session_did_not_publish() {
+    // Arrange
+    // The test child creates the conflicts after reduce opens its fresh output directory.
+    let project = Project::new(REDUNDANT).await;
+    let output = project.artifacts.path().join("reduced");
+    let checks = format!(
+        "from pathlib import Path\noutput = Path({:?})\n(output / 'proposal.diff').write_bytes(b'independent diff')\n(output / 'report.json').write_bytes(b'independent report')\ndef test_fails():\n    assert False\n",
+        output.to_str().unwrap(),
+    );
+    std::fs::write(project.root.path().join("checks.py"), checks).unwrap();
+    // Act
+    let code = project.reduce("checks.py:test_fails", "5", "20s").await;
+    // Assert
+    assert_eq!(code, 3);
+    assert_eq!(
+        std::fs::read(output.join("report.json")).unwrap(),
+        b"independent report"
+    );
+    assert_eq!(
+        std::fs::read(output.join("proposal.diff"))
+            .expect("rollback must preserve an independently created diff"),
+        b"independent diff"
+    );
+}
+
+#[tokio::test]
 async fn editing_mutation_source_is_input_error() {
     // Arrange
     let project = Project::new(REDUNDANT).await;

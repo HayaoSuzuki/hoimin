@@ -172,4 +172,15 @@ def run (ctx : Context) : State → List Event → State
 def Safe (ctx : Context) (s : State) : Prop :=
   ∀ p, s.best = some p → Certified ctx p ∧ p.completedAt < s.deadline
 
+inductive DiffPublication where
+  | missing | foreign | published
+  deriving DecidableEq, BEq
+
+-- The receipt records a successful publish by this session. The file it names
+-- is assumed to stay bound to that receipt until report delivery finishes.
+def finishDiff (reportPublished : Bool) (diff : DiffPublication) : DiffPublication :=
+  match reportPublished, diff with
+  | false, .published => .missing
+  | _, diff => diff
+
 end HoiminOracle.ReduceSpec

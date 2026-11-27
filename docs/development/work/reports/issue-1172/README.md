@@ -18,6 +18,17 @@ Rust の `pair_pass` には、Lean から生成した `u128` 上限付近の6入
 cargo test --locked -p hoimin-core --test lean_reduce_spec_oracle --test reduce_policy
 ```
 
+## レポート公開に失敗したときの diff の扱い
+
+`finishDiff_removes_only_published` は、レポートの公開に失敗し、かつ今回のセッションが diff の公開に成功していた場合にだけ、diff を取り消すことを示す。モデルは、レポートの公開処理が終わるまで、diff の名前が同じファイルを指すと仮定する。負の対照では、公開の成否を確かめずに削除して、別の処理が作った diff を失う。[Lean の証明](../../../../../formal/HoiminOracle/HoiminOracle/ReduceSpecProofs.lean)
+
+公開 CLI の試験は、子プロセスが出力ディレクトリに独立した `proposal.diff` と `report.json` を置く。探索が失敗した後、既存のレポートとの競合で公開は終了コード3になり、修正前は diff が消えた。修正後は両ファイルの内容が保持される。[CLI の照合](../../../../../crates/hoimin-cli/tests/reduce.rs)
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_reduce_spec -- --sensitivity)
+cargo test --locked -p hoimin-cli --test reduce report_failure_preserves_a_diff_the_session_did_not_publish -- --exact
+```
+
 ## 結果
 
 `reduce` の採用判定と成果物保持をモデル化し、22 個の一般定理を Lean 4.32.2 の kernel で検査した。952 行の期待値付き JSONL オラクルを Lean から生成し、再生成との一致を確認した。意図的に壊した 14 種の判定をすべて検出した。
