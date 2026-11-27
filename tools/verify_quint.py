@@ -131,6 +131,7 @@ MODELS = (
             "recoveredCursorStep",
             "capacityStep",
             "namespaceLimitStep",
+            "unavailableStep",
         ),
         scenario_steps=24,
         simulation_only=True,

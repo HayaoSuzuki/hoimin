@@ -191,7 +191,7 @@ each boundary.
 | Boundary | Existing model and implementation correspondence | Model work remaining |
 | --- | --- | --- |
 | Startup invocation, shared deadline, and report handoff | Rust shell and controlled-startup fixtures | Stop before selection, after observation, and before reporting |
-| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadline checkpoints, and both enumeration and page quotas against directory entries | Scan errors, coordinator contention, and uninspected selected roots at the handoff |
+| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, and cursor read errors | Directory enumeration errors and uninspected selected roots at the handoff |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow. `janitor_selection.qnt` follows a write failure through the cleanup report | Recovery after reported partial writes and sync errors is verified at the slot boundary |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers lease absence, type, lock errors, malformed markers, retention, readiness, and heartbeat evidence | Candidate directory open and identity errors, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
@@ -319,6 +319,10 @@ wrapped bucket when the selected page contains only a single name.
 `namespaceLimitStep` distinguishes 100,000 raw directory entries from
 100,001 with no matching names. Its Rust replay reuses the existing native
 namespace fixture for both observations.
+`unavailableStep` holds the coordinator lock or injects a cursor read error.
+Both outcomes leave the cursor and inspected-root count unchanged. The
+startup report distinguishes coordinator contention from a selection failure
+and records a diagnostic for the read error.
 
 The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
 in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.

@@ -2,7 +2,7 @@
 // The coordinator serializes scans. The available names can change between scans.
 module JanitorSelection {
   type Phase = Idle | Scanning | Eof | BeforePersist | Published | PersistFailed |
-    ExpiredScan | ExpiredEof | ExpiredPersist | NamespaceLimited
+    ExpiredScan | ExpiredEof | ExpiredPersist | NamespaceLimited | CoordinatorBusy | SelectionReadFailed
   type Scan = { phase: Phase, listing: Set[int], seen: Set[int], chosen: List[int],
     rawEntries: int, complete: bool, limited: bool, cursorDeferred: bool, scans: int }
   type Cursor = { name: int, generation: int }
@@ -26,7 +26,8 @@ module JanitorSelection {
   }
 
   pure def terminal(phase: Phase): bool =
-    Set(Published, PersistFailed, ExpiredScan, ExpiredEof, ExpiredPersist, NamespaceLimited)
+    Set(Published, PersistFailed, ExpiredScan, ExpiredEof, ExpiredPersist, NamespaceLimited,
+      CoordinatorBusy, SelectionReadFailed)
       .contains(phase)
 
   action begin(listing: Set[int]): bool = all {
@@ -186,6 +187,13 @@ module JanitorSelection {
     boundaryScan(Set(), namespaceLimit + scan.scans),
   }
 
+  action unavailableStep =
+    if (scan.phase == Scanning and scan.scans == 2)
+      publish({ ...scan, phase: CoordinatorBusy }, saved)
+    else if (scan.phase == Scanning and scan.scans == 3)
+      publish({ ...scan, phase: SelectionReadFailed }, saved)
+    else advanceScenario
+
   val publishedAfterCursor = scan.phase == Published and scan.cursorDeferred
   val wrapped = scan.phase == Published and scan.chosen.length() > 0 and
     scan.chosen.select(name => name <= startCursor.name).length() > 0
@@ -216,6 +224,7 @@ module JanitorSelection {
     scan.rawEntries >= scan.seen.size(),
     (scan.phase == NamespaceLimited) == (scan.rawEntries > namespaceLimit),
     scan.rawEntries <= namespaceLimit + 1,
+    Set(CoordinatorBusy, SelectionReadFailed).contains(scan.phase) implies scan.rawEntries == 0,
     scan.complete == Set(Eof, BeforePersist, Published, PersistFailed, ExpiredEof, ExpiredPersist).contains(scan.phase),
     scan.complete implies scan.seen == scan.listing,
     scan.limited == bucketOverflow(scan.seen, startCursor),

@@ -130,6 +130,7 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
 #[case::eof_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_eofDeadlineStep_0.itf.json"))]
 #[case::persist_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_persistDeadlineStep_0.itf.json"))]
 #[case::capacity(include_str!("../../../../../../formal/quint/traces/janitor_selection_capacityStep_0.itf.json"))]
+#[case::unavailable(include_str!("../../../../../../formal/quint/traces/janitor_selection_unavailableStep_0.itf.json"))]
 fn quint_history_matches_candidate_selection(#[case] trace: &str) {
     replay_selection(trace);
 }
@@ -142,18 +143,25 @@ fn replay_selection(trace: &str) {
     let mut finished = 0;
     for row in states(trace) {
         let scan = &row["scan"];
+        let phase = scan["phase"]["tag"].as_str().unwrap();
         if !matches!(
-            scan["phase"]["tag"].as_str().unwrap(),
-            "Published" | "PersistFailed" | "ExpiredScan" | "ExpiredEof" | "ExpiredPersist"
+            phase,
+            "Published"
+                | "PersistFailed"
+                | "ExpiredScan"
+                | "ExpiredEof"
+                | "ExpiredPersist"
+                | "CoordinatorBusy"
+                | "SelectionReadFailed"
         ) {
             continue;
         }
         update_listing(&coordinator, &mut previous, &scan["listing"]);
         assert_cursor(&coordinator, &row["startCursor"]);
-        if scan["phase"]["tag"].as_str().unwrap() == "PersistFailed" {
-            check_cursor_failure_handoff(&coordinator, scan);
-        } else {
-            check_scan(&coordinator, scan);
+        match phase {
+            "PersistFailed" => check_cursor_failure_handoff(&coordinator, scan),
+            "CoordinatorBusy" | "SelectionReadFailed" => check_unavailable(&coordinator, phase),
+            _ => check_scan(&coordinator, scan),
         }
         assert_cursor(&coordinator, &row["saved"]);
         finished += 1;
@@ -162,6 +170,49 @@ fn replay_selection(trace: &str) {
         finished, 3,
         "trace must include three complete scan outcomes"
     );
+}
+
+fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str) {
+    let before = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let busy = phase == "CoordinatorBusy";
+    let guard = busy.then(|| CoordinatorLockGuard::acquire(coordinator).unwrap());
+    let fault = (!busy).then(|| io_faults::arm("cursor.read"));
+    let report = ManagedRunRoot::reclaim_abandoned_controlled(
+        coordinator,
+        SystemTime::now(),
+        tokio::time::Instant::now() + Duration::from_secs(2),
+        &|| false,
+    );
+    let (reason, details) = if busy {
+        (JanitorReason::CoordinatorBusy, vec![])
+    } else {
+        assert!(fault.unwrap().triggered());
+        (
+            JanitorReason::SelectionFailed,
+            vec![JanitorReason::SelectionFailed],
+        )
+    };
+    if let Some(guard) = guard {
+        guard.unlock(&coordinator.path).unwrap();
+    }
+    assert_eq!(
+        report.scan,
+        JanitorScan {
+            stop_reason: Some(reason),
+            ..JanitorScan::default()
+        },
+    );
+    assert_eq!(report.inspected_roots, 0);
+    assert_eq!(report.removed_entries, 0);
+    assert_eq!(
+        report
+            .details
+            .iter()
+            .map(|detail| detail.reason)
+            .collect::<Vec<_>>(),
+        details,
+    );
+    assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
 }
 
 fn check_cursor_failure_handoff(coordinator: &ManagedRootCoordinator, expected: &Value) {
