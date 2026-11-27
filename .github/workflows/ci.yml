@@ -562,6 +562,9 @@ jobs:
             HoiminOracle.AstDepthCases
             HoiminOracle.SymbolCatalogModel
             HoiminOracle.SymbolCatalogCases
+            HoiminOracle.LineCoverageModel
+            HoiminOracle.CandidateSelectionModel
+            HoiminOracle.CandidateSelectionCases
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             HoiminOracle.ChangedConfigModel
@@ -576,7 +579,6 @@ jobs:
             HoiminOracle.DiscoveryScopeCases
             HoiminOracle.BoundedFileDiscoveryModel
             HoiminOracle.BoundedFileDiscoveryCases
-            HoiminOracle.LineCoverageModel
             HoiminOracle.LineCoverageCases
             HoiminOracle.GitInventoryModel
             HoiminOracle.GitInventoryCases
@@ -805,6 +807,8 @@ jobs:
             lake exe generate_candidate_span -- --check-ast-depth corpus/ast-depth.jsonl
           run_guard check-symbol-catalog \
             lake exe generate_candidate_span -- --check-symbol-catalog corpus/symbol-catalog.jsonl
+          run_guard check-candidate-selection \
+            lake exe generate_candidate_span -- --check-candidate-selection corpus/candidate-selection.jsonl
           run_guard check-exception-acquisition \
             lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl
           run_guard check-import-roots \

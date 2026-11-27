@@ -467,3 +467,45 @@ Rust run took 6.8 seconds and peaked at 482,592 KiB under its 3 GiB cap.
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --test reference_mutations
 ```
+
+## Lean model of combined line and symbol admission
+
+Line selection asks whether the query shares an inclusive line with at least
+one valid requested range. An empty input allows all lines. A nonempty input
+whose ranges all run backwards allows none. The symbol predicate from the
+catalog model applies in conjunction with the line predicate.
+
+Lean proves that the start cutoff selects a prefix of the sorted ranges.
+It then proves that the largest end among that prefix answers the same query
+as scanning every requested range. The proof covers empty inputs, filtered
+inputs, overlaps, and nested ranges. The test uses Hoimin's prepared selection
+index and compares 6,732 results across 11 range sets, six selector sets,
+17 spans, and six enclosing scopes. The endpoint fixtures include zero and
+the largest supported line number.
+
+The regex fixtures observe two decisions in the actual analyzer. Pattern
+inspection can begin when the requested lines overlap a literal or its flags.
+The final mode-switch edit uses its start line as the selection anchor, even
+when the edit covers bytes on later lines. The test observes whether the
+literal was decoded and whether a candidate was emitted. For candidates it
+compares the byte span, text, anchor line, and symbol. The 324 queries use
+six combinations of LF, CRLF, or CR and pattern/flags order in a nested
+function. Test-only inspection counters make these internal fixtures.
+
+Six sensitivity checks detect treating an empty filtered list as
+unrestricted, using only the last eligible end, excluding equal endpoints,
+using a union with symbol selection, admitting inspection only on the first
+line, and emitting an edit on any intersecting line.
+
+On macOS, all queries matched. Of the regex queries, 90 decoded the pattern
+and emitted a candidate, 90 decoded it without emitting a candidate, and
+144 skipped decoding. The Rust library suite passed 5,218 tests with 5 ignored.
+The CI workflow suite passed 222 tests. Guarded Lean checks peaked at
+1,331,360 KiB under a 2 GiB cap and 20-second timeout. The Rust run took
+43 seconds and peaked at 2,636,672 KiB under a 3 GiB cap with one build job.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-candidate-selection corpus/candidate-selection.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
+```

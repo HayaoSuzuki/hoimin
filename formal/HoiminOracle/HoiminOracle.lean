@@ -80,6 +80,7 @@ import HoiminOracle.FormatSpecModel
 import HoiminOracle.FormatRemovalModel
 import HoiminOracle.AstDepthModel
 import HoiminOracle.SymbolCatalogModel
+import HoiminOracle.CandidateSelectionModel
 import HoiminOracle.CandidateSpanProofs
 import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel
