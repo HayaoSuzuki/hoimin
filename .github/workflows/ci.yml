@@ -558,6 +558,8 @@ jobs:
             HoiminOracle.FormatSpecCases
             HoiminOracle.FormatRemovalModel
             HoiminOracle.FormatRemovalCases
+            HoiminOracle.AstDepthModel
+            HoiminOracle.AstDepthCases
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             HoiminOracle.ChangedConfigModel
@@ -797,6 +799,8 @@ jobs:
             lake exe generate_candidate_span -- --check-format-spec corpus/format-spec.jsonl
           run_guard check-format-removal \
             lake exe generate_candidate_span -- --check-format-removal corpus/format-removal.jsonl
+          run_guard check-ast-depth \
+            lake exe generate_candidate_span -- --check-ast-depth corpus/ast-depth.jsonl
           run_guard check-exception-acquisition \
             lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl
           run_guard check-import-roots \

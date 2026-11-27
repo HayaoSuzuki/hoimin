@@ -10,6 +10,10 @@ use ruff_text_size::TextRange;
 
 use super::AnalysisError;
 
+#[cfg(test)]
+#[path = "depth/oracle_tests.rs"]
+mod oracle_tests;
+
 /// The module is depth 1; every child reported by Ruff's source-order visitor adds 1,
 /// including auxiliary nodes (parameters, type parameters, patterns and string elements).
 pub(crate) const MAX_ANALYSIS_DEPTH: usize = 128;

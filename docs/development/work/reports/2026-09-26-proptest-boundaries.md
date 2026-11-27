@@ -381,3 +381,47 @@ the method's `__class__` reference, respectively. Lean used a 2 GiB cap and
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --test reference_mutations
 ```
+
+## Lean model of AST depth admission
+
+The model starts the module at depth 1 and increases depth by one for each
+child reported by the source-order visitor. The Rust visitor pushes children
+in source order onto a LIFO worklist. Lean proves that taking a frame and
+pushing its children preserves the remaining visit schedule, and that a
+worklist with sufficient fuel has the same result and poll count as scanning
+that schedule. Without cancellation, acceptance is equivalent to every
+scheduled node lying at or below the limit.
+
+The checked parse rejects invalid syntax before it calls the traversal's
+cancellation predicate. Each visited node polls once before the depth test.
+Lean proves that cancellation wins at the same node as a depth rejection and
+that a node at the depth limit can proceed. The model applies to the checked
+parser helper, after any cancellation checks owned by its callers.
+
+The 40 `internal-fixture` inputs pair Python source with ordered trees for
+assignment expressions, annotations, parameters, type parameters, nested
+interpolations in f-strings and t-strings, class patterns, and nested
+statements. They include an empty module, a wide shallow module, and syntax
+errors after both shallow and deep statements. The 266 queries vary the
+cancellation checkpoint around the first and last polls and the first
+depth failure. The Rust test calls the ordinary parser helper and compares
+the outcome and exact count, including zero polls for invalid syntax.
+
+Six sensitivity checks detect visiting siblings in the opposite order,
+starting the module at zero, rejecting at the exact limit, confusing depth
+with node count, checking depth before cancellation, and traversing invalid
+syntax. The observed scope is parser admission and polling. The existing
+bounded-stack Rust tests supply evidence for disposal of large rejected trees.
+
+On macOS, all 266 queries matched. This included 181 cancellations,
+57 acceptances, 20 depth failures, and 8 syntax failures. The Rust library
+suite passed 5,217 tests with 5 ignored, and the CI workflow suite passed
+222 tests. Guarded Lean commands used a 2 GiB cap and a 20-second timeout
+and peaked at 1,233,360 KiB. The single-job Rust run finished in 42 seconds
+and peaked at 2,533,312 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-ast-depth corpus/ast-depth.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
+```
