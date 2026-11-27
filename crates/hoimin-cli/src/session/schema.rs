@@ -52,7 +52,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, SchemaError> {
         admit(&connection, &expected)?;
     }
     let mut connection = Connection::open(path)?;
-    configure_with_schema(&mut connection, &expected, || {})?;
+    configure_with_schema(&mut connection, &expected, |_| {}, |_| {})?;
     Ok(connection)
 }
 
@@ -152,15 +152,20 @@ fn immutable_uri(path: &Path) -> Result<String, rusqlite::Error> {
 
 #[cfg(test)]
 pub(crate) fn configure(connection: &mut Connection) -> Result<(), SchemaError> {
-    configure_observed(connection, || {})
+    configure_observed(connection, |_| {})
 }
 
 #[cfg(test)]
 fn configure_observed(
     connection: &mut Connection,
-    after_initial_version_read: impl FnOnce(),
+    after_initial_version_read: impl FnOnce(i64),
 ) -> Result<(), SchemaError> {
-    configure_with_schema(connection, &current_schema()?, after_initial_version_read)
+    configure_with_schema(
+        connection,
+        &current_schema()?,
+        after_initial_version_read,
+        |_| {},
+    )
 }
 
 type SchemaObjects = Vec<(String, String, String, Option<String>)>;
@@ -231,18 +236,21 @@ fn admit_observed(
 fn configure_with_schema(
     connection: &mut Connection,
     expected: &SchemaObjects,
-    after_initial_version_read: impl FnOnce(),
+    after_initial_version_read: impl FnOnce(i64),
+    after_writer_version_read: impl FnOnce(i64),
 ) -> Result<(), SchemaError> {
     const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
     connection.busy_timeout(BUSY_TIMEOUT)?;
     connection.pragma_update(None, "foreign_keys", "ON")?;
     let version = admit(connection, expected)?;
-    after_initial_version_read();
+    after_initial_version_read(version);
     if version == 0 {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         // Another initializer may have committed after the first inspection.
-        if admit(&transaction, expected)? == 0 {
+        let writer_version = admit(&transaction, expected)?;
+        after_writer_version_read(writer_version);
+        if writer_version == 0 {
             initialize(&transaction)?;
         }
         transaction.commit()?;
@@ -338,6 +346,7 @@ fn is_lock_contention(error: &rusqlite::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
     use std::path::Path;
     use std::sync::{Arc, Condvar, Mutex, PoisonError};
     use std::thread;
@@ -917,7 +926,7 @@ mod tests {
         let mut connection = Connection::open(&path).unwrap();
         let mut before = None;
 
-        let result = configure_observed(&mut connection, || {
+        let result = configure_observed(&mut connection, |_| {
             let other = Connection::open(&path).unwrap();
             other.execute_batch("CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep');").unwrap();
             before = Some(database_snapshot(&other));
@@ -929,6 +938,80 @@ mod tests {
         );
         assert_eq!(user_version(&connection), 0);
         assert_eq!(database_snapshot(&connection), before.unwrap());
+    }
+
+    #[test]
+    fn initialization_replays_the_forced_stale_read() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.sqlite3");
+        let mut right = Connection::open(&path).unwrap();
+        let expected = current_schema().unwrap();
+        let versions = RefCell::new(Vec::new());
+
+        configure_with_schema(
+            &mut right,
+            &expected,
+            |observed| {
+                assert_eq!(observed, 0);
+                let mut left = Connection::open(&path).unwrap();
+                configure_with_schema(
+                    &mut left,
+                    &expected,
+                    |observed| assert_eq!(observed, 0),
+                    |version| versions.borrow_mut().push(version),
+                )
+                .unwrap();
+            },
+            |version| versions.borrow_mut().push(version),
+        )
+        .unwrap();
+
+        let diagnostics: i64 = right
+            .query_row("SELECT count(*) FROM diagnostics", [], |row| row.get(0))
+            .unwrap();
+        assert_schema_oracle(
+            "stale_reread",
+            ["ok", "ok"],
+            &versions.into_inner(),
+            user_version(&right),
+            diagnostics > 0,
+        );
+    }
+
+    fn assert_schema_oracle(
+        scenario: &str,
+        open_results: [&str; 2],
+        writer_versions: &[i64],
+        final_version: i64,
+        legacy_row: bool,
+    ) {
+        let row = include_str!(
+            "../../../../formal/HoiminOracle/corpus/schema-migration-concurrency.jsonl"
+        )
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|row| row["scenario"] == scenario)
+        .unwrap();
+        let version_name = |version| {
+            if version == SCHEMA_VERSION {
+                "current"
+            } else {
+                assert_eq!(version, 0);
+                "fresh"
+            }
+        };
+        let writer_versions: Vec<_> = writer_versions.iter().copied().map(version_name).collect();
+        assert_eq!(row["mode"], "internal-fixture");
+        assert_eq!(
+            row["expected_open_results"],
+            serde_json::json!(open_results)
+        );
+        assert_eq!(
+            row["expected_writer_versions"],
+            serde_json::json!(writer_versions)
+        );
+        assert_eq!(row["expected_version"], version_name(final_version));
+        assert_eq!(row["expected_legacy_row"], legacy_row);
     }
 
     #[test]
@@ -1060,11 +1143,26 @@ mod tests {
         let files_before = directory_bytes(temp.path());
         // fingerprints and its primary-key index fit, but runs cannot be
         // allocated. This fails inside initialization after admission succeeds.
+        let writer_version = Cell::new(None);
+        let error = configure_with_schema(
+            &mut connection,
+            &current_schema().unwrap(),
+            |version| assert_eq!(version, 0),
+            |version| writer_version.set(Some(version)),
+        )
+        .unwrap_err();
         assert!(matches!(
-            configure(&mut connection),
-            Err(SchemaError::Database(_))
+            error,
+            SchemaError::Database(rusqlite::Error::SqliteFailure(failure, _))
+                if failure.code == ErrorCode::DiskFull
         ));
-        assert_eq!(user_version(&connection), 0);
+        assert_schema_oracle(
+            "disk_full_rollback",
+            ["database_error", "not_run"],
+            &[writer_version.get().unwrap()],
+            user_version(&connection),
+            false,
+        );
         assert!(
             database_snapshot(&connection).is_empty(),
             "failed initialization retained schema objects"
@@ -1203,7 +1301,7 @@ mod tests {
                     let mut connection =
                         Connection::open(path).map_err(|error| error.to_string())?;
                     start.arrive_and_wait();
-                    configure_observed(&mut connection, || {
+                    configure_observed(&mut connection, |_| {
                         initialization.arrive_and_wait();
                     })
                     .map_err(

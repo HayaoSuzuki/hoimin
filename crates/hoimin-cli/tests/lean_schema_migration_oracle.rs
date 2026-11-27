@@ -27,6 +27,7 @@ struct OracleCase {
     expected_version: String,
     expected_legacy_row: bool,
     expected_open_results: Vec<String>,
+    expected_writer_versions: Option<Vec<String>>,
 }
 
 fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
@@ -53,13 +54,23 @@ fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
 fn validate_case(item: &OracleCase) -> Result<(), String> {
     if item.schema != 1
         || item.id.is_empty()
-        || !matches!(item.mode.as_str(), "strict" | "model-only")
+        || !matches!(
+            item.mode.as_str(),
+            "strict" | "model-only" | "internal-fixture"
+        )
         || item.expected_open_results.len() != 2
         || item.trace.is_empty()
         || item.trace.iter().any(|event| !known_event(event))
     {
         return Err(format!(
             "{} has an invalid schema initialization case",
+            item.id
+        ));
+    }
+    let writer_versions = item.expected_writer_versions.as_deref();
+    if item.mode != "internal-fixture" && writer_versions.is_some() {
+        return Err(format!(
+            "{} has unexpected writer version evidence",
             item.id
         ));
     }
@@ -73,12 +84,22 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
                 && results_are(item, "ok", "ok")
         }
         "stale_reread" => {
-            item.mode == "model-only"
+            item.mode == "internal-fixture"
                 && item.initial_version == "fresh"
                 && !item.initial_legacy_row
                 && item.expected_version == "current"
                 && !item.expected_legacy_row
                 && results_are(item, "ok", "ok")
+                && writer_versions.is_some_and(|versions| versions == ["fresh", "current"])
+        }
+        "disk_full_rollback" => {
+            item.mode == "internal-fixture"
+                && item.initial_version == "fresh"
+                && !item.initial_legacy_row
+                && item.expected_version == "fresh"
+                && !item.expected_legacy_row
+                && results_are(item, "database_error", "not_run")
+                && writer_versions.is_some_and(|versions| versions == ["fresh"])
         }
         "rollback" => {
             // The abstract transaction can fail after beginning initialization;
@@ -126,8 +147,15 @@ fn known_event(value: &str) -> bool {
 #[test]
 fn lean_schema_migration_corpus_is_valid() {
     let cases = parse_corpus(CORPUS).expect("Lean schema migration corpus must be valid");
-    assert_eq!(cases.len(), 8);
+    assert_eq!(cases.len(), 9);
     assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 6);
+    assert_eq!(
+        cases
+            .iter()
+            .filter(|item| item.mode == "internal-fixture")
+            .count(),
+        2
+    );
 }
 
 #[test]

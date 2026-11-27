@@ -35,9 +35,17 @@ private def eventName : Event → String
 private def stringsJson (items : List String) : Lean.Json :=
   .arr (items.toArray.map Lean.Json.str)
 
+private def writerVersions (item : OracleCase) : List String :=
+  let before := initial item.initialVersion item.legacyRow
+  let states := item.trace.scanl step before
+  (item.trace.zip (states.drop 1)).filterMap fun (event, state) =>
+    match event with
+    | .begin _ => state.txVersion.map versionName
+    | _ => none
+
 private def caseJson (item : OracleCase) : Lean.Json :=
   let result := caseResult item
-  Lean.Json.mkObj [
+  let fields := [
     ("schema", Lean.toJson item.schema),
     ("id", .str item.id),
     ("mode", .str item.mode),
@@ -51,6 +59,9 @@ private def caseJson (item : OracleCase) : Lean.Json :=
       phaseName result.leftPhase, phaseName result.rightPhase
     ])
   ]
+  Lean.Json.mkObj (if item.mode == "internal-fixture" then
+    fields ++ [("expected_writer_versions", stringsJson (writerVersions item))]
+    else fields)
 
 def renderCorpus : String :=
   String.join (cases.map fun item => (caseJson item).compress ++ "\n")

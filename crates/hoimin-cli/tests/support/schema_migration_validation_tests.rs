@@ -50,6 +50,30 @@ fn validator_rejects_scenario() {
 }
 
 #[test]
+fn validator_requires_writer_versions_for_internal_fixtures() {
+    let mut case = case_for("stale_reread");
+    case.expected_writer_versions = None;
+
+    assert!(
+        validate_case(&case)
+            .unwrap_err()
+            .contains("mismatched correspondence")
+    );
+}
+
+#[test]
+fn validator_rejects_writer_versions_on_public_cases() {
+    let mut case = case_for("concurrent_fresh");
+    case.expected_writer_versions = Some(vec!["fresh".into(), "current".into()]);
+
+    assert!(
+        validate_case(&case)
+            .unwrap_err()
+            .contains("unexpected writer version evidence")
+    );
+}
+
+#[test]
 fn event_rejects_invalid_syntax() {
     let actual_0 = known_event("invalid");
 
