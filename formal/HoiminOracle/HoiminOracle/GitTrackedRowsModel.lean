@@ -1,4 +1,5 @@
 import HoiminOracle.GitWorktreeModel
+import HoiminOracle.PathOrderModel
 
 namespace HoiminOracle.GitTrackedRows
 
@@ -27,8 +28,9 @@ def collect (read : String × List Span → Except Failure (Option (String × Li
   (rows.mapM read).map (·.filterMap id)
 
 def scanWith (read : String × List Span → Except Failure (Option (String × List Span)))
-    (rootAvailable : Bool) (scope : Scope) (rows : Rows) : Except Failure Rows :=
-  match (selected scope rows).mergeSort (fun left right => left.1 ≤ right.1) with
+    (rootAvailable : Bool) (scope : Scope) (rows : Rows)
+    (order : String → String → Bool := PathOrder.le) : Except Failure Rows :=
+  match (selected scope rows).mergeSort (fun left right => order left.1 right.1) with
   | [] => .ok []
   | kept => if rootAvailable then collect read kept else .error (.source .rootUnavailable)
 

@@ -158,8 +158,8 @@ async fn git_tracked_rows_against_worktree_match_lean() {
         };
         assert_eq!(observed, fixture.expected, "{}", fixture.id);
     }
-    assert_eq!(ids.len(), 154);
-    assert_eq!(skipped, if cfg!(unix) { 0 } else { 4 });
+    assert_eq!(ids.len(), 157);
+    assert_eq!(skipped, if cfg!(unix) { 0 } else { 6 });
 }
 
 #[tokio::test]
@@ -196,6 +196,6 @@ async fn git_worktree_collection_matches_lean() {
             fixture.id
         );
     }
-    assert_eq!(ids.len(), 134);
-    assert_eq!(skipped, if cfg!(unix) { 0 } else { 3 });
+    assert_eq!(ids.len(), 136);
+    assert_eq!(skipped, if cfg!(unix) { 0 } else { 5 });
 }

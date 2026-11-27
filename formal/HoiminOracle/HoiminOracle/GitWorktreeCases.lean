@@ -1,4 +1,5 @@
 import HoiminOracle.GitWorktreeModel
+import HoiminOracle.PathOrderModel
 import Lean.Data.Json
 
 namespace HoiminOracle.GitWorktree
@@ -57,6 +58,13 @@ private def fixtures : List Fixture := cases ++ [
   { id := "scoped-first-failure-follows-targets", inventory := [.path blockedZ,.path blockedA],
     scope := some [⟨blockedA, []⟩, ⟨blockedZ, []⟩],
     files := [(blockedA,.blockedParent),(blockedZ,.blockedParent)], unixOnly := true },
+  { id := "unscoped-nested-errors-follow-git-record-order",
+    inventory := [.path "pkg/a.py/child.py", .path "pkg/a/child.py"],
+    files := [("pkg/a.py/child.py", .blockedParent), ("pkg/a/child.py", .blockedParent)], unixOnly := true },
+  { id := "scoped-nested-errors-follow-explicit-target-order",
+    inventory := [.path "pkg/a.py/child.py", .path "pkg/a/child.py"],
+    scope := some [⟨"pkg/a/child.py", []⟩, ⟨"pkg/a.py/child.py", []⟩],
+    files := [("pkg/a.py/child.py", .blockedParent), ("pkg/a/child.py", .blockedParent)], unixOnly := true },
   { id := "lexical-failure-precedes-read-failure", inventory := [.path blockedZ,.invalidUtf8],
     files := [(blockedZ,.blockedParent)] },
   { id := "scope-filters-blocked-parent-before-read", inventory := [.path blockedZ,.path a],
@@ -135,6 +143,11 @@ def sensitivity : IO UInt32 := do
       ("worktree_accept_nul_content", fun item => expected { item with files := item.files.map fun
         | (path, .file bytes) => (path, .file (bytes.filter (· != 0)))
         | file => file }),
+      ("worktree_reorder_unscoped_reads_by_path", fun item =>
+        if item.scope.isNone && item.rootAvailable then
+          publish initial ((selectPaths item.scope item.inventory).bind fun paths =>
+            collect item.files (paths.mergeSort PathOrder.le))
+        else expected item),
       ("worktree_publish_before_reads_complete", publishEarly)] do
     match fixtures.find? (fun item =>
       (observationJson (broken item)).compress != (observationJson (expected item)).compress) with

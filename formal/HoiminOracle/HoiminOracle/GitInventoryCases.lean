@@ -1,4 +1,5 @@
 import HoiminOracle.GitInventoryModel
+import HoiminOracle.PathOrderModel
 import Lean.Data.Json
 
 namespace HoiminOracle.GitInventory
@@ -39,6 +40,7 @@ private def fixtures : List Fixture := statusCases ++ [
   ⟨"empty-scope", [], [(.renamed, "old.py", some "new.py"), (.modified, "src/file.py", none)]⟩,
   ordinary "deduplicated-and-sorted"
     ["z.py", "literal[1].py", "space name.py", "z.py", "-first.py", "a.py", "literal[1].py"],
+  ordinary "nested-pathspec-string-order" ["pkg/a/child.py", "pkg/a.py"],
   ordinary "128-paths" (numbered 128 0).reverse,
   ordinary "129-paths" (numbered 129 0).reverse,
   ordinary "129-paths-at-64-bytes-each" (numbered 129 57).reverse,
@@ -85,6 +87,10 @@ def sensitivity : IO UInt32 := do
         planWith { gitLimits with bytes := gitLimits.bytes - 1 } item.scope item.inventory),
       ("inventory_use_character_count", fun item =>
         planWith { gitLimits with measure := String.length } item.scope item.inventory),
+      ("inventory_sort_pathspecs_by_components", fun item =>
+        match plan item.scope item.inventory with
+        | .legacy => .legacy
+        | .scoped batches => .scoped (pack gitLimits (batches.flatten.mergeSort PathOrder.le))),
       ("inventory_omit_oversized_fallback", fun item =>
         let selected := item.inventory.filter fun record => item.scope.contains (destination record)
         if selected.any (requiresLegacy ∘ Prod.fst) then .legacy

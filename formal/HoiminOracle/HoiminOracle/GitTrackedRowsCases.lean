@@ -51,6 +51,15 @@ private def fixtures : List Fixture := matrix ++ [
   { id := "sorted-range-error-precedes-out-of-order-read-error", rows := [(blocked, first), (a, third)],
     files := [(a, .file [10]), (blocked, .blockedParent)],
     scope := some [⟨blocked, []⟩, ⟨a, []⟩], unixOnly := true },
+  { id := "component-order-read-error-before-suffixed-range-error",
+    rows := [(a, third), ("pkg/a/child.py", first)],
+    files := [(a, .file [10]), ("pkg/a/child.py", .blockedParent)], unixOnly := true },
+  { id := "component-order-range-error-before-suffixed-read-error",
+    rows := [("pkg/a.py/child.py", first), ("pkg/a/child.py", third)],
+    files := [("pkg/a.py/child.py", .blockedParent), ("pkg/a/child.py", .file [10])], unixOnly := true },
+  { id := "scope-skips-first-component-ordered-error",
+    rows := [(a, third), ("pkg/a/child.py", first)],
+    files := [(a, .file [10]), ("pkg/a/child.py", .blockedParent)], scope := some [⟨a, []⟩] },
   { id := "scope-skips-error-before-read", rows := [(a, first), (blocked, first)],
     files := [(a, readable), (blocked, .blockedParent)], scope := some [⟨a, []⟩] },
   { id := "symlink-is-skipped-even-with-live-destination", rows := [(a, third), (b, first)],
@@ -99,7 +108,10 @@ def sensitivity : IO UInt32 := do
         scanWith ignoreStale item.rootAvailable item.scope item.rows),
       ("tracked_rows_use_input_order_for_errors", fun item =>
         if item.rootAvailable then collect (projectFile item.files translate) (selected item.scope item.rows)
-        else expected item)] do
+        else expected item),
+      ("tracked_rows_use_flat_path_order_for_errors", fun item =>
+        scanWith (projectFile item.files translate) item.rootAvailable item.scope item.rows
+          (order := fun left right => left ≤ right))] do
     match fixtures.find? (fun item =>
       (observationJson (broken item)).compress != (observationJson (expected item)).compress) with
     | some item => IO.println s!"family={name} detected=true case={item.id}"

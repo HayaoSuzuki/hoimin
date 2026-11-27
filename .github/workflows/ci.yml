@@ -548,6 +548,7 @@ jobs:
             HoiminOracle.ChangedConfigCases
             HoiminOracle.SelectorSyntaxModel
             HoiminOracle.SelectorSyntaxCases
+            HoiminOracle.PathOrderModel
             HoiminOracle.SymbolResolutionModel
             HoiminOracle.SymbolResolutionCases
             HoiminOracle.LineCoverageModel

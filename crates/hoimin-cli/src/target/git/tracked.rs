@@ -295,7 +295,7 @@ mod tests {
             assert_eq!(actual, expected, "{}", fixture.id);
             assert!(ids.insert(fixture.id));
         }
-        assert_eq!(ids.len(), 50);
+        assert_eq!(ids.len(), 51);
     }
 }
 

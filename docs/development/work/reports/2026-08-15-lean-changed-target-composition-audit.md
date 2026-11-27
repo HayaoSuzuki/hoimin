@@ -318,7 +318,7 @@ the fixed Git flags or argument separators.
 | Resolved selection | Scope of canonical relative paths | `GitPathScope` built from the same target paths |
 | Fallback or batches | Branch and complete ordered batch contents | Exact `DiffPlan` equality at the owned parser seam |
 
-All 50 cases use `internal-fixture` mode. The matrix crosses all nine status
+The initial 50 cases use `internal-fixture` mode. The matrix crosses all nine status
 kinds with four scopes, and 14 additional cases exercise empty input and scope,
 duplicates, ordering, separator aliases, and the count and byte boundaries.
 In particular, the fixture with two UTF-8 names fits under the character count
@@ -338,8 +338,8 @@ scope, keeping duplicates, treating either limit as exclusive, counting
 characters, and omitting the oversized-path fallback. These are pure planning
 decisions, with no concurrent or durable effects in the model.
 
-All 50 plans matched. The focused Rust Git unit suite passed 110 tests and
-the real-Git scope suite passed 19 tests on macOS. Lean commands were run
+All 50 plans matched in the initial audit. On macOS, the focused Rust Git unit
+suite passed 110 tests and the real-Git scope suite passed 19. Lean commands ran
 serially with a 20-second deadline and a 2 GiB process-tree RSS limit. The
 final Lean checks peaked at 1,212,464 KiB, with a longest command of 5.4 s.
 The single-job Rust checks peaked at 2,250,816 KiB under a 3 GiB limit.
@@ -360,7 +360,7 @@ Missing files, directories, symlinks, empty files, and files with a NUL byte
 contribute no ranges. For other files, it converts Git LF rows to Python
 physical rows before applying any line selector. A read failure or a range
 outside the current bytes aborts the conversion. The resolver reports the
-first failure in path order and returns no partial map.
+first failure in path component order and returns no partial map.
 
 | Premise or observation | Lean representation | Rust correspondence |
 | --- | --- | --- |
@@ -373,7 +373,7 @@ Lean proves that scope filtering preserves input membership, an empty scope
 succeeds without a root, skipped files bypass row conversion, and a late
 failure returns an error even after a successful prefix. The 144 matrix cases
 combine six scopes, eight source states, and three normalized range patterns
-over two paths. Ten additional cases cover missing roots, line selection,
+over two paths. The initial ten focused cases cover missing roots, line selection,
 late failures, competing diagnostics, and live and dangling symlinks. Four
 cases use Unix-specific filesystem behavior. The six sensitivity checks cover
 ignoring scope, opening the root prematurely, keeping Git line numbers,
@@ -386,8 +386,8 @@ worktree read and the range conversion run through production code. Concurrent
 changes during a read and platform-specific case equivalence are outside
 these cases.
 
-Rust matched all 126 successful maps and 28 errors on macOS. The Git unit
-suite passed 122 tests, the two changed-target integration suites passed 37,
+In the initial audit, Rust matched 126 successful maps and 28 errors on macOS.
+The Git unit suite passed 122 tests, the two changed-target integration suites passed 37,
 and the CI workflow suite passed 222. The longest source fixture was 12 bytes.
 Guarded Lean checks peaked at 1,264,048 KiB under a 2 GiB limit and a 20-second
 timeout. Single-job Rust checks peaked at 2,342,512 KiB under a 3 GiB limit.
@@ -397,6 +397,47 @@ timeout. Single-job Rust checks peaked at 2,342,512 KiB under a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
+```
+
+### Path order and the first diagnostic
+
+Lean and Rust initially disagreed when reading `pkg/a/child.py` failed and a
+range in `pkg/a.py` extended beyond its current source. Rust reported the
+child path's read error. The Lean model compared entire path strings and
+predicted the range error first. It now shares the component comparator used
+by the symbol resolution model. Lean proves that a shared ancestor prefix
+leaves the comparison unchanged and that an ancestor precedes a descendant.
+
+| Operation | Order observed in Rust | Added cases |
+| --- | --- | --- |
+| Tracked range projection | Components of keys in the `Utf8PathBuf` map | Two competing errors with their kinds swapped, plus scope excluding the earlier error |
+| Unborn or untracked worktree reads | Git record order without a scope, resolved target order with a scope | The same two blocked paths in both modes |
+| Literal Git pathspec batches | Full strings in the `BTreeSet<String>` | One batch containing `pkg/a.py` and `pkg/a/child.py` |
+
+The new sensitivity checks detect sorting tracked paths as whole strings,
+reordering unscoped worktree reads, and using component order for literal
+pathspecs. The symbols corpus stays byte-identical after sharing the comparator.
+The cases use canonical slash-separated paths. The competing read errors use
+Unix fixtures with a regular file where a parent directory would be needed.
+
+On macOS, all 157 tracked projection cases, 136 worktree cases, and 51
+inventory cases matched. The Git unit suite passed 122 tests, the two
+changed-target integration suites passed 37, the core target suite passed 52,
+and the CI workflow suite passed 222. Guarded Lean checks peaked at
+1,225,744 KiB under a 2 GiB limit and a 20-second timeout. Single-job Rust
+checks peaked at 2,307,712 KiB under a 3 GiB limit, including the initial
+reproduction.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-tracked-rows corpus/git-tracked-rows.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-worktree corpus/git-worktree.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-git-inventory corpus/git-inventory.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-symbol-resolution corpus/symbol-resolution.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test target_policy
 ```
 
 ## Git patch section transport

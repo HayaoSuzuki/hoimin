@@ -1,3 +1,5 @@
+import HoiminOracle.PathOrderModel
+
 namespace HoiminOracle.SymbolResolution
 
 structure File where
@@ -45,8 +47,7 @@ def containsPath (source path : String) : Bool :=
 
 def attachSymbols (sources : List String) (files : List File) (bindings : List Binding) : List Target :=
   let paths := (files.filter fun file => file.isPython && sources.any (containsPath · file.path)).map (·.path)
-  let componentOrder := fun (left right : String) => compare (left.splitOn "/") (right.splitOn "/") != .gt
-  paths.eraseDups.mergeSort componentOrder |>.map fun path =>
+  paths.eraseDups.mergeSort PathOrder.le |>.map fun path =>
     ⟨path, (bindings.filterMap fun (assigned, qualname) => if assigned == path then some qualname else none)
       |>.eraseDups.mergeSort (· ≤ ·)⟩
 
