@@ -15,6 +15,11 @@ sources:
   revision: 5a8dc6ab7339ca9d5c27948ff62216b0bec19124
   working_tree: clean
   sha256: 4026882d70e8225a1785dee693729079bd8a1e64455408be6070b077e4dc66da
+- id: schema-admission-matrix
+  resource: ../../../../crates/hoimin-cli/tests/lean_schema_migration_oracle.rs
+  revision: b58cc4faa328f76885a8cab2e81703fc665e61a8
+  working_tree: clean
+  sha256: 1ef130031dd2180e712312e2e25e1c9c1fa3956ef439ad1ce5de9d3e75158804
 - id: development
   resource: ../../guides/contributing.md
   revision: a7daea0b557cd435c1e55b540392fbdd116348e1
@@ -62,7 +67,9 @@ hoiminのLean監査では、モデル内の性質を証明する作業と、Rust
 
 Issue #882で旧session DBの移行対応を終了した。
 上記は2026-08-11の監査範囲の説明である。
-現行の同名モデルと事例集は、schema 5 の直接初期化と未対応版の拒否を扱う。公開 API で比較する6件に加え、書き込みロック取得後の版の再確認と、`SQLITE_FULL` 後の巻き戻しを、実際の SQLite を使う `internal-fixture` で比較する。過去の抽象的な巻き戻し事例は `model-only` の記録として残す。[^current-initialization][^schema-internal-fixtures]
+現行の同名モデルと事例集は、schema 5 の直接初期化と未対応版の拒否を扱う。公開 API の48件のうち42件は、版・`application_id`・テーブル構成の組み合わせを比較する。拒否された DB と付随ファイルはバイト単位で比較する。[^current-initialization][^schema-admission-matrix]
+
+書き込みロック取得後の版の再確認と `SQLITE_FULL` 後の巻き戻しは、実際の SQLite を使う `internal-fixture` で比較する。過去の抽象的な巻き戻し事例は `model-only` の記録として残す。[^schema-internal-fixtures]
 
 資源の後始末を扱う監査では、真偽値による抽象モデルと、独立した内部Rust試験を組み合わせている。strictな対応試験や生成corpusによる比較はなく、モデルの成功とRust試験の成功はそれぞれの証拠として読む。[^cleanup]
 
@@ -89,3 +96,4 @@ CI監査報告には、キャッシュなしのビルドでのRSS（常駐メモ
 
 [^current-initialization]: [現行session初期化モデル](../../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationModel.lean)。
 [^schema-internal-fixtures]: [SQLite のロック取得と容量不足を構成する内部テスト](../../../../crates/hoimin-cli/src/session/schema.rs)。
+[^schema-admission-matrix]: [SQLite の受理条件を公開 API で比較するアダプター](../../../../crates/hoimin-cli/tests/lean_schema_migration_oracle.rs)。
