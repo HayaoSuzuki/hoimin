@@ -1418,3 +1418,52 @@ under a 3 GiB cap.
 (cd formal/HoiminOracle && lake exe generate_workspace_restore -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::reset -- --test-threads=2
 ```
+
+## Lean model of worker recovery after failure
+
+The model starts with one active worker and a bound copy reservation.
+A failed reset releases the worker if discard succeeds. A failed
+discard keeps the worker pending and keeps its copy charge. A foreign
+grant is rejected before cleanup of any pending worker. An authorized
+retry cleans up the old worker before copying a replacement. A failed
+copy releases the new charge, while rejection of a copied import root
+leaves the new worker pending for cleanup. The model covers one slot
+with sequential requests and observes the owned task before execution,
+after execution, and after acceptance.
+
+| Premise or observation | Lean | Rust fixture and evidence |
+| --- | --- | --- |
+| Reset and discard failures | Missing snapshot, blocked discard, or excessive depth | Remove the saved file, arm the directory enumeration fault, or extend the tree one level past the limit |
+| Retry admission or materialization failure | Foreign grant, blocked cleanup, failed copy write, or rejected import root | Use a grant from a second preflight, arm cleanup or copy faults, or configure an absent import root |
+| Ownership and copy charge | Registered owner, live generation, slot count and charged bytes | Observe both handler entry points, including the registry and live roots at each owned task boundary |
+| Diagnostics | Effect code and ordered failure stages | Compare the returned effect and the positions of its diagnostic markers |
+
+All schedules use `internal-fixture` correspondence. The fault hooks
+run at the production I/O boundaries. Fixtures repair the snapshot or
+remove the over-depth leaf after observing the outcome, so subsequent
+operations exercise the retry protocol. The larger workspace lifecycle
+model covers scheduling across slots and task completions.
+
+Lean proves that any finite trace preserves the generation order, a
+successful retry has a fresh owner, and one owned slot carries at most
+one logical copy charge. It also proves the retained and released
+charges for a failed discard and a failed replacement respectively.
+The 48 schedules contain 100 transitions from ten operations. They
+cover all applicable schedules of lengths one and two from the initial
+state and five recovery schedules of length four. Seven deliberately
+incorrect variants have witnesses, including `discard_fault/copy_fault`
+for retaining the old charge and `discard_fault/foreign_with_cleanup_fault`
+for cleanup before grant validation.
+
+On macOS all 48 schedules matched on both the synchronous and the
+owned task paths. The task suite passed 26 tests with and without
+contracts enabled. The workspace handler and workspace recovery suites
+passed 60 and 39 tests respectively. The workflow suite passed 222
+tests. Lean ran under a 2 GiB limit and single-job Rust ran under a
+3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_worker_recovery -- --check corpus/worker-recovery.jsonl)
+(cd formal/HoiminOracle && lake exe generate_worker_recovery -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::task_tests -- --test-threads=2
+```

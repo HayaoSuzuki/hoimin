@@ -161,6 +161,7 @@ import HoiminOracle.PlanDiscoveryBudgetModel
 import HoiminOracle.VerifySelectionFlowModel
 import HoiminOracle.WorkspaceIntegrityModel
 import HoiminOracle.WorkspaceRestoreModel
+import HoiminOracle.WorkerRecoveryModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

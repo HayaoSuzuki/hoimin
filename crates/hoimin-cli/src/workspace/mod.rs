@@ -1612,6 +1612,8 @@ fn effect_failed(id: EffectId, error: WorkspaceError) -> EffectFailed {
 
 #[cfg(test)]
 mod task_tests {
+    mod worker_recovery_oracle;
+
     use camino::Utf8Path;
     use hoimin_core::{
         ApplyMutation, BudgetLedger, ByteSpan, CANDIDATE_SCHEMA_VERSION, CandidateIdentity,

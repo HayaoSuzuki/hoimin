@@ -259,6 +259,10 @@ name = "generate_workspace_restore"
 root = "WorkspaceRestoreAuditMain"
 
 [[lean_exe]]
+name = "generate_worker_recovery"
+root = "WorkerRecoveryAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 
