@@ -198,6 +198,25 @@ def meterReasons (owned maxOwned minFree : Nat) (capacities : List (Nat × Nat))
   | none => [.measurementFailed]
   | some free => observationReasons owned maxOwned free minFree
 
+structure StatsReading where
+  owned : Nat
+  elapsedMs : Nat
+  capacities : List (Nat × Nat)
+  deriving DecidableEq
+
+inductive StatsSample where
+  | reading (value : StatsReading)
+  | measurementFailed
+  | refreshFailed
+
+def recordStats (history : List StatsReading) (sample : StatsSample) : List StatsReading :=
+  match sample with
+  | .reading value => if value.capacities.isEmpty then history else history ++ [value]
+  | .measurementFailed | .refreshFailed => history
+
+def historicalCapacities (history : List StatsReading) : List (Nat × Nat) :=
+  history.flatMap StatsReading.capacities
+
 def allSafetySucceeded (state : State) : Bool :=
   state.processDrain == .succeeded && state.outputDrain == .succeeded &&
     state.monitorJoin == .succeeded

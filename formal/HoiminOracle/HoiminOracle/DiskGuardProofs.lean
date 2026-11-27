@@ -313,4 +313,32 @@ theorem any_capacity_at_reserve_stops (capacities : List (Nat × Nat))
     have reached := Nat.le_trans least reserve
     by_cases size : owned ≥ maxOwned <;> simp [meterReasons, minimum, observationReasons, reached, size]
 
+theorem rejected_samples_preserve_history (history : List StatsReading) (value : StatsReading)
+    (empty : value.capacities = []) :
+    recordStats history .measurementFailed = history ∧ recordStats history .refreshFailed = history ∧
+      recordStats history (.reading value) = history := by
+  simp [recordStats, empty]
+
+theorem extending_capacity_history_preserves_minimum_bound (before added : List (Nat × Nat))
+    (previous : Nat) (sampled : minimumCapacity before = some previous) :
+    ∃ current, minimumCapacity (before ++ added) = some current ∧ current ≤ previous := by
+  have wasPresent : previous ∈ before.map Prod.snd := List.min?_mem sampled
+  have present : previous ∈ (before ++ added).map Prod.snd := by simp [wasPresent]
+  cases minimum : minimumCapacity (before ++ added) with
+  | none =>
+    have empty := List.min?_eq_none_iff.mp minimum
+    simp [empty] at present
+  | some current =>
+    exact ⟨current, rfl, (List.min?_eq_some_iff.mp minimum).2 previous present⟩
+
+theorem accepted_samples_do_not_raise_minimum (history : List StatsReading) (value : StatsReading)
+    (previous : Nat) (sampled : minimumCapacity (historicalCapacities history) = some previous) :
+    ∃ current, minimumCapacity (historicalCapacities (recordStats history (.reading value))) =
+      some current ∧ current ≤ previous := by
+  by_cases empty : value.capacities.isEmpty = true
+  · exact ⟨previous, by simpa [recordStats, empty] using sampled, Nat.le_refl _⟩
+  · simpa [recordStats, empty, historicalCapacities] using
+      extending_capacity_history_preserves_minimum_bound (historicalCapacities history)
+        value.capacities previous sampled
+
 end HoiminOracle.DiskGuard

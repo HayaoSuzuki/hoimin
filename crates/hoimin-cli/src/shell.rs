@@ -6439,17 +6439,17 @@ mod tests {
     async fn pre_dispatch_sample_stops_before_analyzer_dispatch() {
         let project = tempfile::tempdir().unwrap();
         let config = shell_setup_test_config(&project);
-        let reading = |available_bytes, milliseconds| MeterReading {
-            owned_bytes: 0,
+        let reading = |owned_bytes, available_bytes, milliseconds| MeterReading {
+            owned_bytes,
             available_by_filesystem: BTreeMap::from([(FilesystemKey(7), available_bytes)]),
             conservative_entries: false,
             elapsed: Duration::from_millis(milliseconds),
         };
         let control = RunControl::with_disk_meter_and_interval(
             ScriptedDiskMeter(std::sync::Mutex::new(VecDeque::from([
-                reading(u64::MAX, 1),
-                reading(1, 1),
-                reading(1, 2),
+                reading(3, u64::MAX, 1),
+                reading(0, 1, 1),
+                reading(0, 1, 2),
             ]))),
             Duration::from_secs(60),
         );
@@ -6464,7 +6464,9 @@ mod tests {
         assert_eq!(observed.dispatched_effect_count(), 0);
         assert_eq!(observed.max_process_tasks(), 0);
         let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
-        let primary = &report["summary"]["disk"]["stop"];
+        let disk = &report["summary"]["disk"];
+        assert_disk_summary_statistics(disk);
+        let primary = &disk["stop"];
         assert_eq!(primary["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
         let secondaries: Vec<hoimin_core::DiskSecondary> =
             serde_json::from_value(primary["secondary"].clone()).unwrap();
@@ -6483,6 +6485,37 @@ mod tests {
                 },
             }]
         );
+    }
+
+    fn assert_disk_summary_statistics(disk: &serde_json::Value) {
+        let case = include_str!("../../../formal/HoiminOracle/corpus/disk-statistics.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|case| case["id"] == "shutdown_report")
+            .unwrap();
+        let expected = case["expected"].as_array().unwrap().last().unwrap();
+        for key in [
+            "sample_count",
+            "peak_owned_bytes",
+            "maximum_measurement_ms",
+            "minimum_available_bytes",
+        ] {
+            assert_eq!(disk[key], expected[key], "{key}");
+        }
+        let filesystems = disk["filesystems"].as_array().unwrap();
+        let expected_filesystems = expected["filesystems"].as_object().unwrap();
+        assert_eq!(filesystems.len(), expected_filesystems.len());
+        for filesystem in filesystems {
+            let key = filesystem["key"].as_str().unwrap();
+            assert_eq!(
+                filesystem["start_available_bytes"],
+                expected_filesystems[key]["start"]
+            );
+            assert_eq!(
+                filesystem["minimum_available_bytes"],
+                expected_filesystems[key]["minimum"]
+            );
+        }
     }
 
     async fn wait_for_live_process<F>(run: &mut F, ready: impl Fn() -> bool) -> Result<(), String>

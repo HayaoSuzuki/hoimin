@@ -227,6 +227,65 @@ private def meterSensitivity : Bool :=
     decide (meterCapacities shared ≠ meterCapacities shared.reverse) &&
     minimumCapacity split != split.head?.map Prod.snd
 
+private def statsSampleJson : StatsSample → Lean.Json
+  | .reading value => Lean.Json.mkObj [
+      ("kind", .str "reading"), ("owned_bytes", Lean.toJson value.owned),
+      ("elapsed_ms", Lean.toJson value.elapsedMs),
+      ("capacities", Lean.Json.arr (value.capacities.map fun (key, bytes) =>
+        Lean.Json.arr #[Lean.toJson key, Lean.toJson bytes]).toArray)]
+  | .measurementFailed => Lean.Json.mkObj [("kind", .str "measurement_failed")]
+  | .refreshFailed => Lean.Json.mkObj [("kind", .str "refresh_failed")]
+
+private def statsJson (history : List StatsReading) : Lean.Json :=
+  let capacities := historicalCapacities history
+  let filesystems := (capacities.map Prod.fst).eraseDups.filterMap fun key =>
+    let values := capacities.filterMap fun (id, bytes) => if id == key then some bytes else none
+    values.head?.map fun first => (toString key, Lean.Json.mkObj [
+      ("start", Lean.toJson first), ("minimum", Lean.toJson (values.min?.getD first))])
+  Lean.Json.mkObj [
+    ("sample_count", Lean.toJson (min history.length (2^64 - 1))),
+    ("peak_owned_bytes", Lean.toJson ((history.map StatsReading.owned).max?.getD 0)),
+    ("maximum_measurement_ms", Lean.toJson ((history.map StatsReading.elapsedMs).max?.getD 0)),
+    ("minimum_available_bytes", optionNatJson (minimumCapacity capacities)),
+    ("filesystems", Lean.Json.mkObj filesystems)]
+
+private def statsObservations : List StatsReading → List StatsSample → List Lean.Json
+  | history, [] => [statsJson history]
+  | history, sample :: rest => statsJson history :: statsObservations (recordStats history sample) rest
+
+private def statsCase (id : String) (samples : List StatsSample) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"), ("id", .str id),
+    ("samples", Lean.Json.arr (samples.map statsSampleJson).toArray),
+    ("expected", Lean.Json.arr (statsObservations [] samples).toArray)]
+
+private def initialStatsReading : StatsSample := .reading ⟨3, 20, [(7, 900), (8, 700)]⟩
+private def laterStatsReading : StatsSample := .reading ⟨10, 2, [(8, 400), (9, 800)]⟩
+private def zeroStatsReading : StatsSample := .reading ⟨5, 4, [(7, 0)]⟩
+private def emptyStatsReading : StatsSample := .reading ⟨999, 999, []⟩
+
+def renderStatisticsCorpus : String :=
+  let fixed := [statsCase "unmeasured" [],
+    statsCase "different_maxima_and_missing_filesystems"
+      [initialStatsReading, laterStatsReading, zeroStatsReading, initialStatsReading],
+    statsCase "zero_then_recovery" [zeroStatsReading, laterStatsReading],
+    statsCase "shutdown_report" [.reading ⟨3, 1, [(7, 2^64 - 1)]⟩,
+      .reading ⟨0, 1, [(7, 1)]⟩, .reading ⟨0, 2, [(7, 1)]⟩]]
+  let rejections := [
+    ("measurement_failed", StatsSample.measurementFailed),
+    ("refresh_failed", StatsSample.refreshFailed),
+    ("missing_capacity", emptyStatsReading) ]
+  let scenarios := rejections.flatMap fun (name, sample) =>
+    [statsCase s!"{name}_before_first_reading" [sample, laterStatsReading],
+     statsCase s!"{name}_after_first_reading" [initialStatsReading, sample, laterStatsReading]]
+  String.join ((fixed ++ scenarios).map fun item => item.compress ++ "\n")
+
+private def statsSensitivity : Bool :=
+  let history := recordStats (recordStats [] zeroStatsReading) laterStatsReading
+  let current := recordStats [] laterStatsReading
+  minimumCapacity (historicalCapacities history) != minimumCapacity (historicalCapacities current) &&
+    (recordStats history emptyStatsReading).length != history.length + 1
+
 private def familyEvents : List Event := [
   .dispatch, .observe 9 10 11 10, .processDrainSucceeded, .outputDrained,
   .monitorJoined, .requestCleanup executionRoot, .reportSucceeded, .finish]
@@ -308,7 +367,7 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
   unless rootRenamingCasesPass && payloadSymmetryCasesPass do
     IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
-  unless sensitivityPasses && reportEvidenceSensitivity && meterSensitivity do
+  unless sensitivityPasses && reportEvidenceSensitivity && meterSensitivity && statsSensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
   return .ok ()
@@ -383,10 +442,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check-report-evidence", path] => checkCorpus path renderReportEvidenceCorpus
   | ["--output-meter", path] => writeCorpus path renderMeterCorpus
   | ["--check-meter", path] => checkCorpus path renderMeterCorpus
+  | ["--output-statistics", path] => writeCorpus path renderStatisticsCorpus
+  | ["--check-statistics", path] => checkCorpus path renderStatisticsCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-meter | --check-meter) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-meter | --check-meter | --output-statistics | --check-statistics) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

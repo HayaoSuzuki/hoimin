@@ -1167,3 +1167,25 @@ lake exe generate_disk_guard -- --check-meter corpus/disk-meter.jsonl
 cd ../..
 cargo test --locked -p hoimin-cli --lib native_disk_meter_and_stop_policy_match_lean
 ```
+
+## Statistics retained from accepted measurements
+
+Lean derives the report statistics from the ordered history of accepted
+measurements. Refresh failure, measurement failure, and a measurement with
+no capacity entries preserve that history. The historical minimum cannot
+increase after another sample, including when a previously observed filesystem
+is absent from the new reading.
+
+Ten histories compare all statistics after every sample through the Rust
+sampler. They cover independent peaks in owned bytes and measurement duration,
+zero capacity, and loss and reappearance of filesystem keys. The shutdown
+history also checks the serialized final report, including each filesystem's
+initial and minimum capacity values.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-statistics corpus/disk-statistics.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib disk_statistics_match_lean_after_every_sample
+cargo test --locked -p hoimin-cli --lib pre_dispatch_sample_stops_before_analyzer_dispatch
+```
