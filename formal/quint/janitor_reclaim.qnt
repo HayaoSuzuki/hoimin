@@ -114,12 +114,15 @@ module JanitorReclaim {
 
   // The first selected root is acknowledged as removed. The second can
   // remain uninspected at this prefix or be observed absent on a later visit.
-  action selectedRootsStep =
+  action selectedRootsScenario(second: Outcome, afterInspection: Command): bool =
     if (summary.inspected == 0) inspect
     else if (evidence.get(0).outcome == Pending)
       record({ root: 0, examined: 0, removed: 1, deleted: true, absent: false })
     else if (summary.inspected == 1) inspect
-    else classify(1, Absent, NoticeAbsence(1))
+    else classify(1, second, afterInspection)
+
+  action selectedRootsStep = selectedRootsScenario(Absent, NoticeAbsence(1))
+  action shellReportStep = selectedRootsScenario(Preserved, Hold(1))
 
   val inspectedSecond = summary.inspected == 2
   val preservedRoot = summary.preserved > 0

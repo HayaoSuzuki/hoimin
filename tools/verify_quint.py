@@ -99,7 +99,12 @@ MODELS = (
         "janitor_reclaim.qnt",
         "JanitorReclaim",
         "janitor_reclaim",
-        scenarios=("acknowledgedStep", "partialStep", "selectedRootsStep"),
+        scenarios=(
+            "acknowledgedStep",
+            "partialStep",
+            "selectedRootsStep",
+            "shellReportStep",
+        ),
         simulation_only=True,
         simulation_mutant_step="acknowledgementLostStep",
     ),

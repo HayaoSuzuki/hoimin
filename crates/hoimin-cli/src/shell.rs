@@ -7594,8 +7594,13 @@ mod tests {
         assert!(error.starts_with("workspace.cleanup.failed:"), "{error}");
     }
 
+    #[rstest::rstest]
+    #[case::clean(false)]
+    #[case::recordless_cleanup_failure(true)]
     #[tokio::test]
-    async fn startup_janitor_evidence_survives_recordless_execution_cleanup_failure() {
+    async fn quint_startup_janitor_evidence_reaches_the_published_report(
+        #[case] recordless_cleanup: bool,
+    ) {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
         let mut args = vec![
@@ -7620,12 +7625,24 @@ mod tests {
         }));
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
         let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
+        let managed = managed_parent.join("hoimin-workspaces-v2");
+        let [behind_cursor, reclaimed] =
+            [1_u128, 2].map(|id| managed.join(format!(".deleting-{}", uuid::Uuid::from_u128(id))));
+
+        // Populate the cursor through the real janitor, then rebuild the first name.
+        std::fs::create_dir(&behind_cursor).unwrap();
+        let seed = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        assert_eq!(seed.reclaimed_roots, 1);
+        std::fs::create_dir(&behind_cursor).unwrap();
+        std::fs::create_dir(&reclaimed).unwrap();
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
-        // A concurrent fork can retain the lease after the owner's handle closes.
+        let preserved_path = preserved.path().to_owned();
         preserved.unlock_fixture_lease();
         drop(preserved);
         drop(coordinator);
-        control.inject_execution_cleanup_failed_without_record();
+        if recordless_cleanup {
+            control.inject_execution_cleanup_failed_without_record();
+        }
         control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
         let stdout = CollectingWriter::default();
@@ -7639,10 +7656,14 @@ mod tests {
             .iter()
             .find(|record| record["root_id"] == "execution")
             .expect("execution cleanup evidence");
-        assert_eq!(
-            execution_cleanup["remaining_root"],
-            observed.managed_root_paths()[0].as_str()
-        );
+        if recordless_cleanup {
+            assert_eq!(
+                execution_cleanup["remaining_root"],
+                observed.managed_root_paths()[0].as_str()
+            );
+        } else {
+            assert_eq!(execution_cleanup["status"], "clean");
+        }
         assert_eq!(
             report["summary"]["disk"]["filesystems"][0]["end_available_bytes"],
             500
@@ -7651,16 +7672,52 @@ mod tests {
             report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
             -500
         );
-        assert_eq!(report["summary"]["disk"]["janitor"]["preserved_roots"], 1);
-        assert_eq!(
-            report["summary"]["disk"]["janitor"]["preserved_by_reason"]["young"],
-            1
-        );
-        let details = report["summary"]["disk"]["janitor"]["details"]
-            .as_array()
-            .unwrap();
+        let janitor = &report["summary"]["disk"]["janitor"];
+        assert_quint_janitor_report(janitor);
+        assert_eq!(janitor["preserved_by_reason"]["young"], 1);
+        let details = janitor["details"].as_array().unwrap();
         assert_eq!(details.len(), 1);
         assert_eq!(details[0]["reason"], "young");
+        assert!(behind_cursor.is_dir());
+        assert!(!reclaimed.exists());
+        assert!(preserved_path.is_dir());
+    }
+
+    fn assert_quint_janitor_report(janitor: &serde_json::Value) {
+        use crate::quint_itf::{number, states};
+
+        let trace = states(include_str!(
+            "../../../formal/quint/traces/janitor_reclaim_shellReportStep_0.itf.json"
+        ));
+        let terminal = trace.last().unwrap();
+        assert_eq!(terminal["command"]["tag"], "Hold");
+        let summary = &terminal["summary"];
+        for (field, model) in [
+            ("inspected_roots", "inspected"),
+            ("reclaimed_roots", "reclaimed"),
+            ("absent_roots", "absent"),
+            ("preserved_roots", "preserved"),
+            ("unresolved_roots", "unresolved"),
+            ("examined_entries", "examined"),
+            ("removed_entries", "removed"),
+        ] {
+            assert_eq!(janitor[field], number(&summary[model]), "{field}");
+        }
+        let scan = &janitor["scan"];
+        for (field, model) in [
+            ("uninspected_selected_roots", "uninspected"),
+            ("selection_omitted_observed_entries", "omitted"),
+        ] {
+            assert_eq!(scan[field], number(&summary[model]), "{field}");
+        }
+        let selected = number(&summary["inspected"]) + number(&summary["uninspected"]);
+        assert_eq!(scan["selected_roots"], selected);
+        assert_eq!(
+            scan["observed_matching_entries"],
+            selected + number(&summary["omitted"])
+        );
+        assert_eq!(scan["directory_scan_complete"], true);
+        assert_eq!(scan["cursor_deferred"], true);
     }
 
     #[tokio::test]

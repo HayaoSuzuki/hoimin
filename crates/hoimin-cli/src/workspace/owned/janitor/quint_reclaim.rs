@@ -124,6 +124,7 @@ const SELECTED: &str = include_str!(
 #[case::acknowledged(ACKNOWLEDGED)]
 #[case::partial(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_partialStep_0.itf.json"))]
 #[case::selected(SELECTED)]
+#[case::shell(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_shellReportStep_0.itf.json"))]
 fn quint_history_matches_reclaim_summary(#[case] trace: &str) {
     assert_eq!(replay(trace, false), Ok(()));
 }
