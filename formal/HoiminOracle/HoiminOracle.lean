@@ -79,6 +79,7 @@ import HoiminOracle.RegexLiteralSpanModel
 import HoiminOracle.FormatSpecModel
 import HoiminOracle.FormatRemovalModel
 import HoiminOracle.AstDepthModel
+import HoiminOracle.SymbolCatalogModel
 import HoiminOracle.CandidateSpanProofs
 import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel

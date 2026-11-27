@@ -425,3 +425,45 @@ and peaked at 2,533,312 KiB under a 3 GiB cap.
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
 ```
+
+## Lean model of symbol catalogs and candidate selection
+
+The model assigns each function, async function, and class the names of its
+lexically enclosing definitions followed by its own name. Ordinary suites
+keep the existing qualifier. Lean proves that a definition qualifies its body
+while preserving the surrounding qualifier for subsequent statements. The
+catalog deduplicates names. Separate occurrences of a repeated definition
+can still carry candidates with the same qualifier at different offsets.
+
+Candidate selection uses whole name components. An unqualified selector
+admits its named scope and descendant scopes. A module-qualified selector
+also requires a whole-component suffix of the analyzer's current module
+path. The `__init__.py` stem is omitted from that path. Lean proves that a
+selected ancestor admits its descendants, that a distinct next component
+prevents ancestry, and that the unrestricted selection admits module-level
+sites. A nonempty selection excludes module-level sites.
+
+The 21 strict fixtures render functions and classes in lexical and control
+flow suites, including branches, handlers, match cases, async suites, empty
+and unreachable definitions, and redefinitions. They also exercise
+decorators and defaults, class headers, CRLF and Unicode, and package
+initializers. The adapter invokes `definition_names` and the public mutation
+analyzer on the same source. It selects the Boolean literal operator to
+observe enclosing scope and compares the byte start, original, replacement,
+and attached symbol of each candidate in emission order. CLI module discovery
+and reporting have their own oracle.
+
+The corpus compares 81 catalog entries and 440 candidate records across 248
+selector queries. Six sensitivity checks detect exact-only selection,
+character-prefix selection, ignoring the module qualifier, character-suffix
+module matching, treating a filtered-out selector list as unrestricted,
+and dropping enclosing names from definitions. On macOS, all cases matched,
+42 Rust integration tests passed, and 222 CI workflow tests passed.
+Lean checks used a 2 GiB cap and 20-second timeout per command. The single-job
+Rust run took 6.8 seconds and peaked at 482,592 KiB under its 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-symbol-catalog corpus/symbol-catalog.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --test reference_mutations
+```
