@@ -191,14 +191,14 @@ each boundary.
 | Boundary | Existing model and implementation correspondence | Model work remaining |
 | --- | --- | --- |
 | Startup invocation, shared deadline, and report handoff | Rust shell and controlled-startup fixtures | Stop before selection, after observation, and before reporting |
-| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, and cursor read errors | Directory enumeration errors and uninspected selected roots at the handoff |
+| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, and cursor read errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Directory enumeration errors |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers lease absence, type, lock errors, malformed markers, retention, readiness, and heartbeat evidence | Candidate directory open and identity errors, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, diagnostics, surviving entries, and acknowledged deletions across claim and slice interruptions | Startup selection and reporting across multiple roots |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion | Windows lease reacquisition needs native Rust verification |
 | Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, and partial deletion with a small tree. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Integration of the Windows pinned handle, pending rounds, and report accounting |
 | Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler and replays a stalled round with real deletion slices | Pending progress through final report publication |
-| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results and retained details | End-to-end aggregation across selection, claim, and cleanup |
+| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results and retained details. A replay uses the real selector and two cleanup outcomes | Publication by the shell and final reporting for deferred slices |
 
 Existing host-specific tests remain part of the implementation evidence. Quint
 models use small representative directories and explicit filesystem outcomes
@@ -220,9 +220,15 @@ The Rust adapter replays each bounded prefix through the real ledger and checks
 its finished summary. A negative control drops the root deletion acknowledgement
 and checks that the same history reports a state mismatch. Measurements and
 filesystem results are injected as observations. The model covers the report
-ledger boundary. The janitor's traversal, OS locks, and deletion effects have
-their own tests. Update this model and regenerate its ITF fixtures when the
-observable classification or summary contract changes.
+ledger boundary.
+
+`selectedRootsStep` also runs the real selector and cleanup on three deleting
+directories. One name stays behind the cursor. Of the two selected roots, the
+first is removed in both scenarios. The second remains uninspected if time
+expires, or becomes observed absent if it disappears after selection. The
+replay compares these outcomes against the two corresponding prefixes of
+the same model history. Update the model and regenerate its ITF fixtures
+when the observable classification or summary contract changes.
 
 The registry runs these janitor checks with Quint simulation and checks the ITF
 fixtures for freshness. `acknowledgementLostStep` suppresses the effect of an
