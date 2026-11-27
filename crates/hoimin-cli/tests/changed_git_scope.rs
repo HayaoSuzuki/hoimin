@@ -76,6 +76,13 @@ impl Repository {
         self.git(&["add", "."]).await;
         self.git(&["commit", "-qm", "fixture"]).await;
     }
+
+    async fn oid(&self, args: &[&str]) -> String {
+        String::from_utf8(self.git(args).await)
+            .unwrap()
+            .trim_ascii()
+            .to_owned()
+    }
     fn selection(&self) -> Selection {
         Selection {
             root: Utf8PathBuf::from_path_buf(self.root().to_owned()).unwrap(),
@@ -263,9 +270,9 @@ async fn scoped_changes_preserve_modification_deletion_binary_and_untracked_sele
 }
 
 #[rstest::rstest]
-#[case::corrupt_object(false, Some(b"not a git object".as_slice()), "git rev-parse --verify --quiet HEAD^{commit}")]
+#[case::corrupt_object(false, Some(b"not a git object".as_slice()), "git rev-parse --verify --end-of-options")]
 #[case::dangling_branch(false, None, "git show-ref --verify --quiet -- HEAD")]
-#[case::dangling_detached_head(true, None, "git symbolic-ref HEAD")]
+#[case::dangling_detached_head(true, None, "git show-ref --verify --quiet -- HEAD")]
 #[tokio::test]
 async fn unreadable_head_stops_changed_target_resolution(
     #[case] detached: bool,
@@ -306,9 +313,93 @@ async fn unreadable_head_stops_changed_target_resolution(
     let error = TargetHandler::resolve(&selection).await.unwrap_err();
     let text = error.to_string();
     assert!(
-        text.contains(&format!("{failing_command} exited with")) && text.contains("128"),
+        text.contains(failing_command) && text.contains("exited with") && text.contains("128"),
         "{text}"
     );
+}
+
+#[tokio::test]
+async fn head_tag_does_not_supply_an_unborn_head_commit() {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 4\nc = 5 + 6\n");
+    repo.commit().await;
+    let seed = repo.oid(&["rev-parse", "HEAD"]).await;
+    repo.git(&["update-ref", "refs/tags/HEAD", &seed]).await;
+    repo.git(&["symbolic-ref", "HEAD", "refs/heads/unborn"])
+        .await;
+
+    let selected = TargetHandler::resolve(&repo.selection()).await.unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].lines, [LineRange { start: 1, end: 3 }]);
+}
+
+#[tokio::test]
+async fn diff_base_cannot_substitute_a_tag_for_an_unborn_head() {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\n");
+    repo.commit().await;
+    let seed = repo.oid(&["rev-parse", "HEAD"]).await;
+    repo.git(&["update-ref", "refs/tags/HEAD", &seed]).await;
+    repo.git(&["symbolic-ref", "HEAD", "refs/heads/unborn"])
+        .await;
+
+    let mut selection = repo.selection();
+    selection.changed = Some(hoimin_core::ChangedSelection::new(0, Some(seed)).unwrap());
+    let error = TargetHandler::resolve(&selection).await.unwrap_err();
+    assert!(error.to_string().contains("unable to get HEAD"), "{error}");
+}
+
+#[rstest::rstest]
+#[case::unrelated(false, "no merge base found")]
+#[case::criss_cross(true, "multiple merge bases found")]
+#[tokio::test]
+async fn diff_base_requires_a_unique_common_ancestor(
+    #[case] criss_cross: bool,
+    #[case] diagnostic: &str,
+) {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\n");
+    repo.commit().await;
+    let base = repo.oid(&["rev-parse", "HEAD"]).await;
+    let tree = repo.oid(&["rev-parse", "HEAD^{tree}"]).await;
+    let compare = if criss_cross {
+        let left = repo
+            .oid(&["commit-tree", &tree, "-p", &base, "-m", "left"])
+            .await;
+        let right = repo
+            .oid(&["commit-tree", &tree, "-p", &base, "-m", "right"])
+            .await;
+        let head = repo
+            .oid(&[
+                "commit-tree",
+                &tree,
+                "-p",
+                &left,
+                "-p",
+                &right,
+                "-m",
+                "head",
+            ])
+            .await;
+        repo.git(&["update-ref", "HEAD", &head]).await;
+        repo.oid(&[
+            "commit-tree",
+            &tree,
+            "-p",
+            &right,
+            "-p",
+            &left,
+            "-m",
+            "compare",
+        ])
+        .await
+    } else {
+        repo.oid(&["commit-tree", &tree, "-m", "unrelated"]).await
+    };
+    let mut selection = repo.selection();
+    selection.changed = Some(hoimin_core::ChangedSelection::new(0, Some(compare)).unwrap());
+    let error = TargetHandler::resolve(&selection).await.unwrap_err();
+    assert!(error.to_string().contains(diagnostic), "{error}");
 }
 
 #[tokio::test]

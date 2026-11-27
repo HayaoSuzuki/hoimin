@@ -82,7 +82,7 @@ fn scoped_args<'a>(args: &[&'a str], paths: &'a [String]) -> Vec<&'a str> {
             *arg
         }
     }));
-    scoped.push("--");
+    // The comparison command already ends with the revision/path separator.
     scoped.extend(paths.iter().map(String::as_str));
     scoped
 }

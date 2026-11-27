@@ -3,14 +3,10 @@ import Lean.Data.Json
 
 namespace HoiminOracle.GitResolution
 
-private def comparisonArgs : Comparison → List String
-  | .head => ["HEAD"]
-  | .mergeBase oid => ["--merge-base", oid]
-
 private def decorate (paths : List String) (args : List String) : List String :=
   if paths.isEmpty then args else
     "--literal-pathspecs" ::
-      (args.map (fun arg => if arg == "--find-renames" then "--no-renames" else arg) ++ "--" :: paths)
+      (args.map (fun arg => if arg == "--find-renames" then "--no-renames" else arg) ++ paths)
 
 private def diffOptions : List String :=
   ["--no-color", "--no-ext-diff", "--no-textconv", "--src-prefix=a/", "--dst-prefix=b/", "--find-renames",
@@ -18,16 +14,18 @@ private def diffOptions : List String :=
 
 private def args : Request → List String
   | .worktree => ["rev-parse", "--is-inside-work-tree"]
-  | .head => ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]
+  | .head => ["show-ref", "--verify", "--hash", "--", "HEAD"]
   | .symbolicHead => ["symbolic-ref", "HEAD"]
   | .headReference => ["show-ref", "--verify", "--quiet", "--", "HEAD"]
   | .revision name => ["rev-parse", "--verify", "--end-of-options", name ++ "^{commit}"]
-  | .inventory base => ["diff", "--name-status", "-z"] ++ diffOptions ++ comparisonArgs base
+  | .peelHead oid => ["rev-parse", "--verify", "--end-of-options", oid ++ "^{commit}"]
+  | .mergeBase base head => ["merge-base", "--all", base, head]
+  | .inventory base => ["diff", "--name-status", "-z"] ++ diffOptions ++ [base, "--"]
   | .patch base context paths =>
-    decorate paths (["diff", s!"--unified={context}"] ++ diffOptions ++ comparisonArgs base)
+    decorate paths (["diff", s!"--unified={context}"] ++ diffOptions ++ [base, "--"])
   | .numstat base paths => decorate paths
     (["diff", "--numstat", "-z", "--no-ext-diff", "--no-textconv", "--find-renames", "-l0", "--relative"] ++
-      comparisonArgs base)
+      [base, "--"])
   | .indexed => ["ls-files", "-z"]
   | .untracked => ["ls-files", "--others", "--exclude-standard", "-z"]
 
@@ -38,8 +36,8 @@ private def scopes : List (String × Option (List String)) :=
 private def matrix : List (String × Input) :=
   let inputs : List (String × Input) := [
     ("head", { context := 2, changedPatch := true }),
-    ("indexed", { headStatus := some 1 }),
-    ("base", { revision := some "topic", headStatus := some 128, changedPatch := true, context := 7 })]
+    ("indexed", { headStatus := some 128 }),
+    ("base", { revision := some "topic", changedPatch := true, context := 7 })]
   inputs.flatMap fun (name, input) => scopes.map fun (suffix, scope) =>
     (name ++ "-" ++ suffix, { input with scope })
 
@@ -66,25 +64,37 @@ private def fixtures : List (String × Input) := matrix ++ [
     scope := some [selectedPath], inventory := .renamed, changedPatch := true, context := 12 }),
   ("scoped-unrelated-rename-skips-diff", { scope := some [untrackedPath], inventory := .renamed }),
   ("malformed-inventory-even-with-empty-scope", { scope := some [], inventory := .malformed }),
-  ("inventory-command-fails", { scope := some [selectedPath], failAt := some (.inventory .head) }),
-  ("patch-command-fails", { failAt := some (.patch .head 0 []) }),
+  ("inventory-command-fails", { scope := some [selectedPath], failAt := some (.inventory headCommitOid) }),
+  ("patch-command-fails", { failAt := some (.patch headCommitOid 0 []) }),
   ("scoped-patch-command-fails", {
     scope := some [selectedPath],
-    failAt := some (.patch .head 0 [selectedPath]) }),
-  ("numstat-command-fails", { failAt := some (.numstat .head []), changedPatch := true }),
+    failAt := some (.patch headCommitOid 0 [selectedPath]) }),
+  ("numstat-command-fails", { failAt := some (.numstat headCommitOid []), changedPatch := true }),
   ("invalid-patch-hunk", { corruptPatch := true }),
-  ("indexed-command-fails", { headStatus := some 1, failAt := some .indexed }),
+  ("indexed-command-fails", { headStatus := some 128, failAt := some .indexed }),
   ("untracked-command-fails-after-patch", { changedPatch := true, failAt := some .untracked }),
-  ("untracked-command-fails-after-indexed", { headStatus := some 1, failAt := some .untracked }),
+  ("untracked-command-fails-after-indexed", { headStatus := some 128, failAt := some .untracked }),
   ("head-execution-failure", { headStatus := some 2 }),
-  ("corrupt-head-even-with-empty-scope", { headStatus := some 128, scope := some [] }),
+  ("corrupt-head-even-with-empty-scope", { headCommit := .exited 128, scope := some [] }),
   ("head-terminated-by-signal", { headStatus := none }),
-  ("head-symbolic-read-error", { headStatus := some 1, symbolicStatus := some 128 }),
-  ("head-symbolic-status-one", { headStatus := some 1, symbolicStatus := some 1 }),
-  ("head-symbolic-terminated", { headStatus := some 1, symbolicStatus := none }),
-  ("head-reference-present", { headStatus := some 1, referenceStatus := some 0 }),
-  ("head-reference-lookup-error", { headStatus := some 1, referenceStatus := some 128 }),
-  ("head-reference-terminated", { headStatus := some 1, referenceStatus := none })]
+  ("head-symbolic-read-error", { headStatus := some 128, symbolicStatus := some 128 }),
+  ("head-symbolic-status-one", { headStatus := some 128, symbolicStatus := some 1 }),
+  ("head-symbolic-terminated", { headStatus := some 128, symbolicStatus := none }),
+  ("head-reference-present", { headStatus := some 128, referenceStatus := some 0 }),
+  ("head-reference-lookup-error", { headStatus := some 128, referenceStatus := some 128 }),
+  ("head-reference-terminated", { headStatus := some 128, referenceStatus := none }),
+  ("exact-lookup-status-one", { headStatus := some 1 }),
+  ("exact-head-invalid-utf8", { headBytes := [255] }),
+  ("exact-head-invalid-id", { headBytes := utf8 "--help\n" }),
+  ("exact-head-sha256", {
+    headBytes := List.replicate 64 98 ++ [10], headCommit := .exited 0 (List.replicate 64 99 ++ [10]) }),
+  ("explicit-base-with-unborn-head", { revision := some "topic", headStatus := some 128 }),
+  ("merge-no-common-ancestor", { revision := some "topic", merge := .exited 1 }),
+  ("merge-empty-success", { revision := some "topic", merge := .exited 0 }),
+  ("merge-multiple-ancestors", {
+    revision := some "topic", merge := .exited 0 (utf8 (baseOid ++ "\n" ++ mergeBaseOid ++ "\n")) }),
+  ("merge-invalid-id", { revision := some "topic", merge := .exited 0 (utf8 "invalid\n") }),
+  ("merge-command-failed", { revision := some "topic", merge := .exited 128 })]
 
 private def failureText : Failure → String
   | .repository => "repository"
@@ -93,6 +103,9 @@ private def failureText : Failure → String
   | .oidForm => "oid_form"
   | .inventory => "inventory"
   | .hunk => "hunk"
+  | .missingHead => "missing_head"
+  | .noMergeBase => "no_merge_base"
+  | .multipleMergeBases => "multiple_merge_bases"
 
 private def resultJson (input : Input) (calls : List Exchange) : Lean.Json :=
   match calls.getLast?.bind (·.failure) with
@@ -125,11 +138,15 @@ def sensitivity : IO UInt32 := do
       execute (requests { input with headStatus := some 0 })),
     ("resolution_treat_fatal_head_as_missing", fun input =>
       execute (requests (match headRoute input.headStatus with
-        | .error _ => { input with headStatus := some 1 }
+        | .error _ => { input with headStatus := some 128 }
         | .ok _ => input))),
     ("resolution_index_without_confirming_unborn_head", fun input =>
       (execute (requests { input with symbolicStatus := some 0, referenceStatus := some 1 })).filter
         (fun call => call.request != .symbolicHead && call.request != .headReference)),
+    ("resolution_diff_against_unpeeled_head", fun input =>
+      execute (requests { input with headCommit := .exited 0 input.headBytes })),
+    ("resolution_diff_against_requested_base_without_merge", fun input =>
+      execute (requests { input with merge := input.oid })),
     ("resolution_omit_untracked", fun input => (execute (requests input)).filter (·.request != .untracked))] do
     match fixtures.find? (fun (_, input) => (wrong input).map Exchange.request !=
         (execute (requests input)).map Exchange.request) with

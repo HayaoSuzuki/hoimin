@@ -46,6 +46,9 @@ enum Outcome {
     OidForm,
     Inventory,
     Hunk,
+    MissingHead,
+    NoMergeBase,
+    MultipleMergeBases,
 }
 
 #[derive(serde::Deserialize)]
@@ -73,9 +76,14 @@ fn observe(error: GitError, id: &str) -> Outcome {
         GitError::Failed(TargetError::GitRepositoryRequired) => Outcome::Repository,
         GitError::Failed(TargetError::GitFailed(message)) => match message.as_str() {
             "Git commit ID is not valid UTF-8" => Outcome::OidUtf8,
-            "git rev-parse returned an invalid commit ID" => Outcome::OidForm,
+            "git rev-parse returned an invalid commit ID"
+            | "git show-ref returned an invalid commit ID"
+            | "git merge-base returned an invalid commit ID" => Outcome::OidForm,
             "invalid Git name-status inventory" => Outcome::Inventory,
             "invalid Git hunk start" => Outcome::Hunk,
+            "unable to get HEAD" => Outcome::MissingHead,
+            "no merge base found" => Outcome::NoMergeBase,
+            "multiple merge bases found" => Outcome::MultipleMergeBases,
             message if message.starts_with("git ") && message.ends_with(": fixture failure") => {
                 Outcome::Command
             }
@@ -153,7 +161,7 @@ async fn replay(evidence: &Path) {
         };
         assert_eq!(outcome, fixture.expected, "{}", fixture.id);
     }
-    assert_eq!(ids.len(), 45);
+    assert_eq!(ids.len(), 55);
     fs::write(evidence.join("replayed"), ids.len().to_string()).unwrap();
 }
 
@@ -200,6 +208,6 @@ async fn git_resolution_calls_match_lean() {
     );
     assert_eq!(
         fs::read_to_string(directory.path().join("replayed")).unwrap(),
-        "45"
+        "55"
     );
 }

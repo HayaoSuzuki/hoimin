@@ -298,22 +298,23 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --
 
 ## Git resolution command sequence
 
-Changed-target resolution first checks that Git reports a worktree. An
-explicit base is verified as a commit before any comparison, and the resolved
-object ID is passed to the merge-base diff commands. Without an explicit base,
-a successful `HEAD` probe selects the HEAD comparison. When quiet commit
-verification returns 1, Hoimin checks that HEAD is symbolic and verifies the
-exact HEAD reference. Only a successful symbolic check followed by status 1
-from the reference check selects the indexed-file route. A present reference
-that failed commit verification surfaces the original commit probe diagnostic.
-Fatal exit codes and signal termination stop resolution at their own command.
+Changed-target resolution first checks that Git reports a worktree and verifies
+an explicit revision when supplied. An exact `show-ref --verify --hash -- HEAD`
+lookup then supplies the HEAD object ID, which Hoimin verifies as a commit.
+After status 128 from the exact lookup, status 1 from its quiet variant and
+a successful symbolic check establish an unborn HEAD. An unborn repository
+uses the index for ordinary `--changed` and fails the explicit-base comparison.
+Other command failures surface the relevant Git diagnostic.
 [Git rev-parse implementation](https://github.com/git/git/blob/v2.39.0/builtin/rev-parse.c#L519-L525),
 [Git symbolic-ref implementation](https://github.com/git/git/blob/v2.39.0/builtin/symbolic-ref.c#L13-L35),
 [Git show-ref implementation](https://github.com/git/git/blob/v2.39.0/builtin/show-ref.c#L182-L197)
 
-A successful resolution ends by reading
-untracked files. Tracked resolution with an explicit scope first requests the
-name-status inventory, then uses it to decide which diff requests to send.
+For an explicit base, `merge-base --all` uses the two resolved commit IDs and
+must yield one common ancestor. The inventory, patch, and numstat commands
+all take the same resolved comparison ID and a revision/path separator.
+A successful resolution ends by reading untracked files.
+[Git merge-base options](https://git-scm.com/docs/git-merge-base#_options),
+[Git's diff merge-base checks](https://github.com/git/git/blob/v2.43.0/diff-lib.c#L527-L564)
 
 | Premise or observation | Lean representation | Rust correspondence |
 | --- | --- | --- |
@@ -322,33 +323,43 @@ name-status inventory, then uses it to decide which diff requests to send.
 | Request sequence | Ordered argv vectors and replies through the first semantic failure | Exact NUL-delimited argv captured by the fixture Git executable |
 | Final result | Physical range map or failure class | Actual result of `resolve_changed_scoped` against temporary source files |
 
-The 45 `internal-fixture` cases use a subprocess-local fixture Git and run on
+The 55 `internal-fixture` cases use a subprocess-local fixture Git and run on
 Unix. They cover tracked, explicit-base, and indexed routes over four scopes,
 plus revision validation, rename fallback, literal pathspec flags, and failure
 at individual requests. Commit ID validation distinguishes unsuccessful
 commands, malformed UTF-8, and invalid hexadecimal form and accepts 40- and
-64-byte hexadecimal IDs. The model uses observable HEAD probe status. A real
-Git probe returned status 1 for both an unborn HEAD and a dangling commit ID.
-The additional probes distinguish these repositories. The corpus includes
-detachment, a present but unresolved reference, status 2, status 128, and
-signal termination during the initial and follow-up probes.
-Git supplies the merge-base and rename outcomes for the command dispatcher.
+64-byte hexadecimal IDs. The fixture supplies distinct IDs for the raw HEAD
+object, the peeled HEAD commit, the requested base, and the merge base. The
+corpus checks missing and multiple merge bases, failure during HEAD lookup
+and verification, and signal termination. Git supplies the graph and rename
+outcomes for the command dispatcher.
 
 Lean proves that an explicit revision appears directly after the worktree
 check in the planned sequence and that execution stops at the first failure
-for every command list. It proves that the first HEAD probe fails for exactly
-the statuses other than exit codes 0 and 1. After status 1, the indexed request
-occurs exactly when the symbolic probe succeeds and the exact reference check
-returns 1. Seven sensitivity checks detect substituting HEAD for
+for every command list, including when merge-base resolution fails. After the
+exact HEAD lookup returns 128, the indexed
+request occurs exactly when the quiet exact lookup returns 1 and the symbolic
+check succeeds. Nine sensitivity checks detect substituting HEAD for
 an explicit base, bypassing the inventory, continuing after an error,
 attempting a patch when HEAD is absent, treating a fatal HEAD probe as a
-missing commit, indexing without confirming an unborn HEAD, and omitting
+missing commit, indexing without confirming an unborn HEAD, using the raw
+HEAD object or requested base directly as a comparison, and omitting
 untracked discovery.
 
-All 45 cases matched Rust on macOS. The Git unit suite passed 115 tests and
-the five integration suites passed 80 tests. Lean ran serially with a
-20-second deadline and a 2 GiB RSS limit, peaking at 1,236,096 KiB. The
-single-job Rust checks peaked at 2,340,272 KiB under a 3 GiB limit.
+### A tag named HEAD
+
+In a temporary repository with a staged three-line file, a symbolic HEAD aimed
+at an unborn branch produced three candidates. Adding `refs/tags/HEAD` with
+the seed commit caused the earlier resolver to pick that commit and return
+zero candidates. An explicit base also succeeded in that state. The real-Git
+regressions check the repaired three-line result and require an explicit-base
+error. Separate commit graphs with no common ancestor and with two best
+common ancestors exercise the old and new diagnostic contract.
+
+All 55 generated cases matched Rust on macOS. The Git unit suite passed 115
+tests and the integration suites passed 84. Lean ran serially under a
+20-second deadline and 2 GiB RSS limit. The single-job Rust checks peaked at
+2,421,856 KiB under a 3 GiB limit.
 
 ### Corrupt HEAD counterexample
 
@@ -358,20 +369,20 @@ Before the repair, the control selected only changed line 2, and the corrupt
 case succeeded with lines 1, 2, and 3. The regression reproduced that range
 expansion before the implementation change.
 
-After the repair, target resolution reports the failing HEAD command and
-its stderr. The same reproduction exits at target resolution with CLI status 2.
+After the repair, target resolution reports the failing object lookup or
+commit verification command and its stderr. The same reproduction exits at
+target resolution with CLI status 2.
 
 Removing the loose object instead of corrupting its bytes made the commit
 probe return 1. The regression reproduced the same expansion to lines 1–3
-on both a symbolic branch and a detached HEAD. The repaired branch case
-reports the missing object from `show-ref`. The detached case stops at
-`symbolic-ref`. The unborn repository fixtures still read staged and
-untracked Python sources.
+on both a symbolic branch and a detached HEAD. The repaired cases report
+the missing object from the exact `show-ref` check. The unborn repository
+fixtures still read staged and untracked Python sources.
 
 Manual CLI replay with Git 2.56.1 confirmed status 0 and all three staged
 lines for an unborn branch. A missing object, a malformed branch ref, and
 a branch ref pointing at a blob each returned CLI status 2 with empty stdout
-and the diagnostic of the corresponding failed Git command.
+and a Git diagnostic.
 
 Reproduce in an isolated temporary repository with a built debug CLI.
 

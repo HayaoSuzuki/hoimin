@@ -78,6 +78,18 @@ pub(crate) async fn resolve_changed_scoped(
     cancellation: &ProcessCancellation,
 ) -> Result<BTreeMap<Utf8PathBuf, Vec<LineRange>>, GitError> {
     ensure_git_worktree(root, runner, cancellation).await?;
+    let explicit_base = match diff_base {
+        Some(revision) => Some(resolve_commit(root, revision, runner, cancellation).await?),
+        None => None,
+    };
+    let head = resolve_head(root, runner, cancellation).await?;
+    let comparison = match (explicit_base, head) {
+        (None, head) => head,
+        (Some(_), None) => return Err(TargetError::GitFailed("unable to get HEAD".into()).into()),
+        (Some(base), Some(head)) => {
+            Some(resolve_merge_base(root, &base, &head, runner, cancellation).await?)
+        }
+    };
     let scope = GitPathScope::new(eligible_targets);
     // Git clips context to current-file bounds and includes both sides of deletion gaps.
     let unified = format!("--unified={context}");
@@ -106,27 +118,9 @@ pub(crate) async fn resolve_changed_scoped(
         "-l0",
         "--relative",
     ];
-    let tracked_ranges = if let Some(base) = diff_base {
-        let base = resolve_commit(root, base, runner, cancellation).await?;
-        diff_args.push("--merge-base");
-        diff_args.push(&base);
-        numstat_args.push("--merge-base");
-        numstat_args.push(&base);
-        Some(
-            tracked::collect(
-                root,
-                &diff_args,
-                &numstat_args,
-                &scope,
-                eligible_targets.is_some(),
-                runner,
-                cancellation,
-            )
-            .await?,
-        )
-    } else if head_exists(root, runner, cancellation).await? {
-        diff_args.push("HEAD");
-        numstat_args.push("HEAD");
+    let tracked_ranges = if let Some(commit) = comparison.as_deref() {
+        diff_args.extend([commit, "--"]);
+        numstat_args.extend([commit, "--"]);
         Some(
             tracked::collect(
                 root,
@@ -177,37 +171,76 @@ async fn resolve_commit(
         cancellation,
     )
     .await?;
+    parse_git_oid(&output, "rev-parse")
+}
+
+fn parse_git_oid(output: &[u8], subcommand: &str) -> Result<String, GitError> {
     let oid = std::str::from_utf8(output.trim_ascii())
         .map_err(|_| TargetError::GitFailed("Git commit ID is not valid UTF-8".into()))?;
     if matches!(oid.len(), 40 | 64) && oid.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         Ok(oid.to_owned())
     } else {
-        Err(TargetError::GitFailed("git rev-parse returned an invalid commit ID".into()).into())
+        Err(
+            TargetError::GitFailed(format!("git {subcommand} returned an invalid commit ID"))
+                .into(),
+        )
     }
 }
 
-async fn head_exists(
+async fn resolve_head(
     root: &Utf8Path,
     runner: &GitRunner,
     cancellation: &ProcessCancellation,
-) -> Result<bool, GitError> {
-    const COMMIT_ARGS: &[&str] = &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"];
-    const REF_ARGS: &[&str] = &["show-ref", "--verify", "--quiet", "--", "HEAD"];
-    let commit = runner.output(root, COMMIT_ARGS, cancellation).await?;
-    match commit.status.code() {
-        Some(0) => return Ok(true),
-        Some(1) => {}
-        _ => return Err(git_exit_error(COMMIT_ARGS, &commit)),
+) -> Result<Option<String>, GitError> {
+    const EXACT_ARGS: &[&str] = &["show-ref", "--verify", "--hash", "--", "HEAD"];
+    const QUIET_ARGS: &[&str] = &["show-ref", "--verify", "--quiet", "--", "HEAD"];
+    let exact = runner.output(root, EXACT_ARGS, cancellation).await?;
+    match exact.status.code() {
+        Some(0) => {
+            let oid = parse_git_oid(&exact.stdout, "show-ref")?;
+            return resolve_commit(root, &oid, runner, cancellation)
+                .await
+                .map(Some);
+        }
+        // Non-quiet exact lookup also reports 128 for an absent reference.
+        Some(128) => {}
+        _ => return Err(git_exit_error(EXACT_ARGS, &exact)),
     }
 
-    // An unborn HEAD must be symbolic and have no resolvable reference.
-    run_git(root, &["symbolic-ref", "HEAD"], runner, cancellation).await?;
-    let reference = runner.output(root, REF_ARGS, cancellation).await?;
+    let reference = runner.output(root, QUIET_ARGS, cancellation).await?;
     match reference.status.code() {
-        Some(1) => Ok(false),
-        Some(0) => Err(git_exit_error(COMMIT_ARGS, &commit)),
-        _ => Err(git_exit_error(REF_ARGS, &reference)),
+        Some(1) => {
+            run_git(root, &["symbolic-ref", "HEAD"], runner, cancellation).await?;
+            Ok(None)
+        }
+        Some(0) => Err(git_exit_error(EXACT_ARGS, &exact)),
+        _ => Err(git_exit_error(QUIET_ARGS, &reference)),
     }
+}
+
+async fn resolve_merge_base(
+    root: &Utf8Path,
+    base: &str,
+    head: &str,
+    runner: &GitRunner,
+    cancellation: &ProcessCancellation,
+) -> Result<String, GitError> {
+    let args = ["merge-base", "--all", base, head];
+    let output = runner.output(root, &args, cancellation).await?;
+    if output.status.code() == Some(1) {
+        return Err(TargetError::GitFailed("no merge base found".into()).into());
+    }
+    if !output.status.success() {
+        return Err(git_exit_error(&args, &output));
+    }
+    let bases = output.stdout.trim_ascii();
+    if bases.is_empty() {
+        return Err(TargetError::GitFailed("no merge base found".into()).into());
+    }
+    if bases.contains(&b'\n') {
+        return Err(TargetError::GitFailed("multiple merge bases found".into()).into());
+    }
+    parse_git_oid(bases, "merge-base")
 }
 
 async fn ensure_git_worktree(
