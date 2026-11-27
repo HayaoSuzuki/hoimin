@@ -299,7 +299,10 @@ cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_selecti
 Each valid slot contains a generation and cursor rank. A save writes the
 inactive slot and preserves the current slot. Reopening chooses the highest
 valid generation, uses slot zero for the initial identical pair, and rejects
-a file with both slots invalid. After the newest digest is damaged, recovery
+both an entirely invalid file and a valid pair that disagrees at the same
+generation. `conflictingGenerationStep` checks that the reader and coordinator
+open both reject that conflicting pair without rewriting the file.
+After the newest digest is damaged, recovery
 uses the preceding slot, and the next save increments that recovered generation.
 `preferOlderStep` selects the older slot after a successful save and violates
 `Safety`.

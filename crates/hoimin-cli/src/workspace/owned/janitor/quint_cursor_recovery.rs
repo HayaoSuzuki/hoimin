@@ -115,6 +115,11 @@ fn assert_slots_and_reopen(parent: &Utf8Path, path: &Utf8Path, expected: &Value)
                 matches!(opened, Err(WorkspaceError::InvalidPath { .. })),
                 "{opened:?}"
             );
+            let raw = fs::File::open(path).unwrap();
+            assert!(matches!(
+                read_coordinator_state(&raw, path),
+                Err(WorkspaceError::InvalidPath { .. })
+            ));
         }
         other => panic!("unknown coordinator reading {other}"),
     }
@@ -134,6 +139,14 @@ fn replay_step(parent: &Utf8Path, path: &Utf8Path, expected: &Value) {
             path,
             usize::try_from(number(&command["value"]["index"])).unwrap(),
         ),
+        "InstallConflict" => {
+            let mut bytes = fs::read(path).unwrap();
+            let conflicting = record(&command["value"]);
+            let encoded =
+                coordinator_slot_bytes(conflicting.generation, &conflicting.cursor).unwrap();
+            bytes[slot_range(1)].copy_from_slice(&encoded);
+            fs::write(path, bytes).unwrap();
+        }
         other => panic!("unknown cursor operation {other}"),
     }
     assert_slots_and_reopen(parent, path, expected);
@@ -150,6 +163,7 @@ const RECOVERY: &str = include_str!(
 #[case::trace_3(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_3.itf.json"))]
 #[case::recover(RECOVERY)]
 #[case::interrupted_write(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_interruptedWriteStep_0.itf.json"))]
+#[case::conflicting_generation(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_conflictingGenerationStep_0.itf.json"))]
 fn quint_history_matches_coordinator_cursor_recovery(#[case] trace: &str) {
     let directory = tempfile::tempdir().unwrap();
     let parent = Utf8Path::from_path(directory.path()).unwrap();

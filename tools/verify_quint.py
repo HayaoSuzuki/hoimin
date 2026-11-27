@@ -40,7 +40,7 @@ MODELS = (
         "janitor_cursor_recovery.qnt",
         "JanitorCursorRecovery",
         "janitor_cursor_recovery",
-        scenarios=("recoverStep", "interruptedWriteStep"),
+        scenarios=("recoverStep", "interruptedWriteStep", "conflictingGenerationStep"),
         simulation_only=True,
         simulation_mutant_step="preferOlderStep",
     ),

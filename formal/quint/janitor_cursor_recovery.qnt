@@ -6,7 +6,7 @@ module JanitorCursorRecovery {
   type Reading = Unusable | Readable({ index: int, record: Record })
   type WriteMode = Commit | BeforeWrite | Torn | SyncError
   type Request = { cursor: int, mode: WriteMode }
-  type Command = Init | Save(Request) | Damage({ index: int, wasCurrent: bool })
+  type Command = Init | Save(Request) | Damage({ index: int, wasCurrent: bool }) | InstallConflict(Record)
   type Journal = { slots: int -> Slot, observed: Reading, command: Command, operations: int }
 
   pure val slotIds = Set(0, 1)
@@ -28,13 +28,17 @@ module JanitorCursorRecovery {
   pure def currentSlot(slots: int -> Slot): int =
     if (generation(slots.get(0)) >= generation(slots.get(1))) 0 else 1
 
+  pure def conflictingPair(slots: int -> Slot): bool =
+    generation(slots.get(0)) == generation(slots.get(1)) and slots.get(0) != slots.get(1)
+
   pure def read(slots: int -> Slot, preferOlder: bool): Reading = {
     val newest = currentSlot(slots)
     val fallback = 1 - newest
     val index = if (preferOlder and slots.get(fallback) != Invalid) fallback else newest
-    match slots.get(index) {
-      | Invalid => Unusable
-      | Valid(record) => Readable({ index: index, record: record })
+    if (conflictingPair(slots)) Unusable
+    else match slots.get(index) {
+        | Invalid => Unusable
+        | Valid(record) => Readable({ index: index, record: record })
     }
   }
 
@@ -93,6 +97,15 @@ module JanitorCursorRecovery {
 
   action preferOlderStep = save({ cursor: 1, mode: Commit }, true)
 
+  action conflictingGenerationStep = {
+    val conflicting = { generation: 0, cursor: 1 }
+    all {
+      s.operations == 0,
+      publish(s.slots.set(1, Valid(conflicting)), InstallConflict(conflicting), false),
+    }
+  }
+
+  val rejectedConflict = conflictingPair(s.slots) and s.observed == Unusable
   val savedCursor = s.observed == Readable({ index: 1, record: { generation: 1, cursor: 1 } })
   val fellBackAfterDamage = match s.command {
     | Damage(event) => event.wasCurrent and s.observed != Unusable
@@ -113,8 +126,9 @@ module JanitorCursorRecovery {
   }
 
   val Safety = match s.observed {
-    | Unusable => slotIds.forall(index => s.slots.get(index) == Invalid)
+    | Unusable => conflictingPair(s.slots) or slotIds.forall(index => s.slots.get(index) == Invalid)
     | Readable(entry) => all {
+      not(conflictingPair(s.slots)),
       s.slots.get(entry.index) == Valid(entry.record),
       slotIds.forall(index => generation(s.slots.get(index)) <= entry.record.generation),
       (generation(s.slots.get(0)) == generation(s.slots.get(1))) implies entry.index == 0,
