@@ -1,4 +1,5 @@
 import HoiminOracle.CandidateSpanCases
+import HoiminOracle.SourceCoordinatesCases
 import Lean.Data.Json
 
 open HoiminOracle.CandidateSpan
@@ -99,15 +100,23 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["--output", path] => writeCorpus path
   | ["--check", path] => checkCorpus path
+  | ["--check-source-coordinates", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.SourceCoordinates.corpus then pure 0
+      else IO.eprintln "source coordinates corpus is stale" *> pure 1
+  | ["--output-source-coordinates", path] =>
+      IO.FS.writeFile path HoiminOracle.SourceCoordinates.corpus *> pure 0
   | ["--cases"] => printCases
-  | ["--sensitivity"] => printSensitivity
+  | ["--sensitivity"] =>
+      let status ← printSensitivity
+      if status != 0 then return status
+      HoiminOracle.SourceCoordinates.sensitivity
   | ["--stats"] =>
       IO.println s!"fixed_cases={cases.length}"
       IO.println "sensitivity_families=12"
       IO.println "strict_cases=3"
       return 0
   | _ =>
-      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --cases | --sensitivity | --stats"
+      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --output-source-coordinates PATH | --check-source-coordinates PATH | --cases | --sensitivity | --stats"
       return 2
 
 end HoiminOracle.CandidateSpan.Executable

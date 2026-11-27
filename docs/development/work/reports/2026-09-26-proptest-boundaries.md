@@ -62,3 +62,49 @@ The ownership assertions now run in a bounded subprocess, with the fixture creat
 1. Controlled inheritance RED failed the original strict assertion; release/reap control passed. The original CI seed was tested both before and after the fix, and its pre-fix local success is retained as a reproduction limitation.
 2. Zero-test negative control failed as intended. The final isolated test passed 100/100 executions. Final pinned-nightly library run with the original shuffle seed passed 738 tests, zero failures, 12 ignored on macOS.
 3. Exact workspace Clippy, formatting and diff checks passed after the sentinel change. The prior full-workspace evidence predates this test-only follow-up; remote CI is rerun for the final branch. No temporary probe, assertion mutation or artificial seed remains in the diff.
+
+## Lean model of source coordinate boundaries
+
+The model represents each Unicode scalar by its width in the original source
+and in decoded UTF-8. Conversion walks complete scalars and maps a boundary to
+the corresponding sum of widths. This admits the start and end boundaries and
+rejects offsets inside a scalar or beyond the source. In Latin-1 every raw byte
+is one scalar. Bytes below 128 occupy one UTF-8 byte, and the other bytes occupy
+two. UTF-8 and ASCII use the same widths on both sides. A leading UTF-8 BOM is
+part of the decoded text and contributes three bytes to the coordinates.
+
+Lean proves that reversing a successful conversion recovers the original
+offset for any list of positive widths. It also proves that the boundary after
+an arbitrary prefix maps to the sum of the output widths in that prefix. For
+Latin-1, this gives the raw offset plus the number of non-ASCII bytes strictly
+before it. The Rust implementation keeps those expansion positions in a sparse
+index. The model computes positions directly from scalar widths.
+
+The 154 fixtures declare an encoding and render original bytes, decoded text,
+and expected offsets in both directions. The Latin-1 cases cover every sequence
+of up to three bytes from four boundary values, all 256 byte values in one file,
+and longer mixed or consecutive expansions. The UTF-8 cases cover one- through
+four-byte scalars, with and without a BOM. ASCII cases include controls and
+CRLF. The Rust adapter calls `decode_python_source`, compares every offset from
+zero through one byte past the end in each representation, and checks that
+encoding the decoded text recovers the original bytes.
+
+Five sensitivity checks detect using a decoded coordinate as a raw one,
+accepting interior UTF-8 bytes, counting an expansion at its start, rejecting
+the end boundary, and dropping the BOM from the coordinate layout. The input
+fixtures use recognized encoding declarations and valid payloads. Declaration
+recognition and invalid byte sequences have separate Rust coverage.
+
+On macOS, all 154 cases matched across 3,771 raw offsets and 4,019 decoded
+offsets. The largest fixture contains 274 raw bytes and 402 decoded UTF-8
+bytes. Rust passed 690 core tests and 31 CLI integration tests. The CI
+workflow suite passed 222 tests. Guarded Lean checks peaked at 1,262,960 KiB
+under a 2 GiB limit and 20-second timeout. Single-job Rust checks peaked at
+985,888 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-source-coordinates corpus/source-coordinates.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test source_encoding --test source_encoding_properties --test candidate_policy
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test analyzer_handler
+```

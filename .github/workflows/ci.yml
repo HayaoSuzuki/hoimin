@@ -544,6 +544,8 @@ jobs:
             MethodCallRemoveAuditMain
             FunctionReturnConstantAuditMain
             SourceOrderAuditMain
+            HoiminOracle.SourceCoordinatesModel
+            HoiminOracle.SourceCoordinatesCases
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             HoiminOracle.ChangedConfigModel
@@ -769,6 +771,8 @@ jobs:
             lake exe generate_worker_metrics -- --check-validation corpus/metrics-validation.jsonl
           run_guard check-resource-sizes \
             lake exe generate_timeout_limit -- --check-resource-sizes corpus/resource-sizes.jsonl
+          run_guard check-source-coordinates \
+            lake exe generate_candidate_span -- --check-source-coordinates corpus/source-coordinates.jsonl
           run_guard check-exception-acquisition \
             lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl
           run_guard check-import-roots \

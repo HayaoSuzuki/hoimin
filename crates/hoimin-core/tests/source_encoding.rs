@@ -3,6 +3,9 @@ use hoimin_core::{
     ByteSpan, CandidateDescriptor, PythonSourceEncoding, decode_python_source, validate_candidate,
 };
 
+#[path = "support/source_coordinates_oracle.rs"]
+mod source_coordinates_oracle;
+
 #[rstest::rstest]
 #[case::value_1(1)]
 #[case::value_2(2)]
