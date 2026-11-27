@@ -1,0 +1,1033 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": []
+        },
+        "phase": {
+          "tag": "Idle",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "0"
+        },
+        "scans": {
+          "#bigint": "0"
+        },
+        "seen": {
+          "#set": []
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "0"
+        },
+        "scans": {
+          "#bigint": "1"
+        },
+        "seen": {
+          "#set": []
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "1"
+        },
+        "scans": {
+          "#bigint": "1"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "2"
+        },
+        "scans": {
+          "#bigint": "1"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": true,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Eof",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "2"
+        },
+        "scans": {
+          "#bigint": "1"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          }
+        ],
+        "complete": true,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "BeforePersist",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "2"
+        },
+        "scans": {
+          "#bigint": "1"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          }
+        ],
+        "complete": true,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Published",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "2"
+        },
+        "scans": {
+          "#bigint": "1"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "0"
+        },
+        "scans": {
+          "#bigint": "2"
+        },
+        "seen": {
+          "#set": []
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "1"
+        },
+        "scans": {
+          "#bigint": "2"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "EnumerationInterrupted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "1"
+        },
+        "scans": {
+          "#bigint": "2"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 10
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "0"
+        },
+        "scans": {
+          "#bigint": "3"
+        },
+        "seen": {
+          "#set": []
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "1"
+        },
+        "scans": {
+          "#bigint": "3"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "2"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "2"
+        },
+        "scans": {
+          "#bigint": "3"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 13
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Scanning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "3"
+        },
+        "scans": {
+          "#bigint": "3"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 14
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": true,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Eof",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "3"
+        },
+        "scans": {
+          "#bigint": "3"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 15
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      },
+      "scan": {
+        "chosen": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "complete": true,
+        "cursorDeferred": true,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "BeforePersist",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "3"
+        },
+        "scans": {
+          "#bigint": "3"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "2"
+        },
+        "name": {
+          "#bigint": "3"
+        }
+      },
+      "scan": {
+        "chosen": [
+          {
+            "#bigint": "3"
+          }
+        ],
+        "complete": true,
+        "cursorDeferred": true,
+        "limited": false,
+        "listing": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        },
+        "phase": {
+          "tag": "Published",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "3"
+        },
+        "scans": {
+          "#bigint": "3"
+        },
+        "seen": {
+          "#set": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            },
+            {
+              "#bigint": "3"
+            }
+          ]
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "1"
+        },
+        "name": {
+          "#bigint": "2"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "scan",
+    "saved",
+    "startCursor"
+  ]
+}

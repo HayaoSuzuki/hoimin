@@ -13,7 +13,7 @@ use crate::quint_itf::{number, set, states};
 use camino::Utf8Path;
 use hoimin_core::{JanitorReason, JanitorScan, JanitorSummary};
 use serde_json::Value;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -83,7 +83,7 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
         deadline,
         &clock,
         &|| after_eof.set(Some(0)),
-        &|| {},
+        &|_| {},
     );
     guard.unlock(&coordinator.path).unwrap();
     assert_eq!(
@@ -136,6 +136,7 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
 #[case::unavailable(include_str!("../../../../../../formal/quint/traces/janitor_selection_unavailableStep_0.itf.json"))]
 #[case::startup_stop(include_str!("../../../../../../formal/quint/traces/janitor_selection_startupStopsStep_0.itf.json"))]
 #[case::enumeration_failure(include_str!("../../../../../../formal/quint/traces/janitor_selection_enumerationErrorStep_0.itf.json"))]
+#[case::partial_enumeration(include_str!("../../../../../../formal/quint/traces/janitor_selection_partialEnumerationStep_0.itf.json"))]
 fn quint_history_matches_candidate_selection(#[case] trace: &str) {
     replay_selection(trace);
 }
@@ -179,7 +180,13 @@ fn replay_selection(trace: &str) {
             | "SelectionReadFailed"
             | "EnumerationFailed"
             | "EnumerationInterrupted" => {
-                check_unavailable(&coordinator, phase, scan);
+                if phase == "EnumerationInterrupted"
+                    && set(&scan["seen"]).len() < set(&scan["listing"]).len()
+                {
+                    check_partial_enumeration(&coordinator, scan);
+                } else {
+                    check_unavailable(&coordinator, phase, scan);
+                }
             }
             "ExpiredStartup" | "ExpiredDuringEnumeration" => {
                 check_initial_deadline(&coordinator, phase);
@@ -237,6 +244,56 @@ fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str, expected
     if let Some(guard) = guard {
         guard.unlock(&coordinator.path).unwrap();
     }
+    assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
+}
+
+fn check_partial_enumeration(coordinator: &ManagedRootCoordinator, expected: &Value) {
+    let expected_observed = set(&expected["seen"]).len();
+    let matching_names: BTreeSet<_> = set(&expected["listing"])
+        .iter()
+        .map(|rank| name(number(rank)))
+        .collect();
+    let before = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let start = Instant::now();
+    let observed = Cell::new(0);
+    let fault = RefCell::new(None);
+    let report = ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
+        coordinator,
+        SystemTime::now(),
+        start,
+        &|_| Duration::ZERO,
+        &|scan| {
+            let guard = CoordinatorLockGuard::acquire(coordinator).unwrap();
+            let result = select_reclaim_candidates_locked_until_with_hooks(
+                coordinator,
+                scan,
+                start + Duration::from_secs(1),
+                &|| start,
+                &|| {},
+                &|entry| {
+                    if entry
+                        .to_str()
+                        .is_some_and(|name| matching_names.contains(name))
+                    {
+                        observed.set(observed.get() + 1);
+                        if observed.get() == expected_observed {
+                            fault.replace(Some(io_faults::arm("janitor.selection_next")));
+                        }
+                    }
+                },
+            );
+            guard.unlock(&coordinator.path).unwrap();
+            result
+        },
+    );
+    assert!(fault.into_inner().unwrap().triggered());
+    assert_eq!(observed.get(), expected_observed);
+    assert_scan_stopped(
+        &report,
+        JanitorReason::SelectionFailed,
+        &[JanitorReason::SelectionFailed],
+        u64::try_from(expected_observed).unwrap(),
+    );
     assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
 }
 

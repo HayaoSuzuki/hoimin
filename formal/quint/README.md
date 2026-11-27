@@ -374,6 +374,10 @@ the directory yields its first entry. Both stop before inspection. Only the
 latter produces a selection diagnostic. `enumerationErrorStep` injects an
 I/O failure at open or when reading the end of the listing. Already observed
 matches remain in the report as omissions. No page or cursor is published.
+`partialEnumerationStep` interrupts a scan after its first matching entry
+while other names remain. The Rust replay injects the error based on the name
+actually yielded by the directory iterator. The report retains that one
+observation, and the following scan selects from the previous cursor.
 
 The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
 in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.

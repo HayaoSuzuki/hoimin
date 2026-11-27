@@ -160,6 +160,7 @@ MODELS = (
             "unavailableStep",
             "startupStopsStep",
             "enumerationErrorStep",
+            "partialEnumerationStep",
         ),
         scenario_steps=24,
         simulation_only=True,

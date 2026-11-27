@@ -2988,7 +2988,7 @@ fn janitor_selection_matches_the_quint_namespace_limit() {
             now + Duration::from_secs(1),
             &|| now,
             &|| {},
-            &|| observed.set(observed.get() + 1),
+            &|_| observed.set(observed.get() + 1),
         );
         assert_eq!(observed.get(), number(&scan_state["rawEntries"]));
         assert_eq!(
@@ -3114,7 +3114,7 @@ fn selection_deadline_at_each_checkpoint_preserves_the_coordinator_cursor(
         deadline,
         &clock,
         &<() as Default>::default,
-        &<() as Default>::default,
+        &|_| {},
     )
     .unwrap_err();
 

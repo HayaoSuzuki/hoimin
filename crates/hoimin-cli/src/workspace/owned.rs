@@ -3109,7 +3109,7 @@ mod tests {
 mod windows;
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::atomic::{AtomicU8, Ordering};
@@ -6955,7 +6955,7 @@ fn select_reclaim_candidates_controlled_with_hooks(
         deadline,
         &now,
         &|| {},
-        after_entry,
+        &|_| after_entry(),
     );
     let unlock = guard.unlock(&coordinator.path);
     match (selection, unlock) {
@@ -7010,7 +7010,7 @@ fn select_reclaim_candidates_locked_with_hooks(
         deadline,
         now,
         after_enumeration,
-        &|| {},
+        &|_| {},
     )
 }
 
@@ -7022,7 +7022,7 @@ fn select_reclaim_candidates_locked_until_with_hooks(
     deadline: std::time::Instant,
     now: &dyn Fn() -> std::time::Instant,
     after_enumeration: &dyn Fn(),
-    after_entry: &dyn Fn(),
+    after_entry: &dyn Fn(&OsStr),
 ) -> Result<(Vec<String>, Option<String>), WorkspaceError> {
     ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     let coordinator_path = coordinator.path.join(COORDINATOR_FILE);
@@ -7047,7 +7047,7 @@ fn select_reclaim_candidates_locked_until_with_hooks(
         else {
             break;
         };
-        after_entry();
+        after_entry(&entry);
         ensure_selection_deadline(coordinator, scan, deadline, &now)?;
         // The preceding iteration returned if its count exceeded 100,000,
         // so this increment cannot overflow any supported usize.

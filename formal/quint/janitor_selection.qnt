@@ -216,6 +216,11 @@ module JanitorSelection {
       publish({ ...scan, phase: EnumerationInterrupted }, saved)
     else advanceScenario
 
+  action partialEnumerationStep =
+    if (scan.phase == Scanning and scan.scans == 2 and scan.seen.size() == 1)
+      publish({ ...scan, phase: EnumerationInterrupted }, saved)
+    else advanceScenario
+
   val publishedAfterCursor = scan.phase == Published and scan.cursorDeferred
   val wrapped = scan.phase == Published and scan.chosen.length() > 0 and
     scan.chosen.select(name => name <= startCursor.name).length() > 0
