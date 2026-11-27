@@ -287,6 +287,10 @@ name = "generate_workspace_selection"
 root = "WorkspaceSelectionAuditMain"
 
 [[lean_exe]]
+name = "generate_fingerprint_preflight"
+root = "FingerprintPreflightAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

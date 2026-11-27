@@ -1736,3 +1736,45 @@ host. Lean used a 2 GiB limit and single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_workspace_selection -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace_selection_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of saved-plan fingerprint preflight
+
+Verification records which fingerprint inputs were selected for workspace
+copying. During preflight, the live input records must equal the verified
+records. Each matching input in the pending snapshot must have verified
+content, and every input selected for copying at preparation must still
+be present there. An input excluded from copying can be absent from the
+snapshot. The pending tree must contain every target source and agree
+with a fresh manifest of the copy scope before publication.
+
+Lean proves these publication conditions and the precedence of live
+resolution failures and live record drift over snapshot failures. The
+finite fixture uses one glob, one exact config path, one optionally
+protected source, and one unprotected note. It models regular file
+contents as strings and compares exact bytes. Rust compares BLAKE3
+records and inspects the published worker files.
+
+The 79 cases create and verify a saved plan through the ordinary plan
+APIs. They apply file edits before copying, before validation, and after
+validation. The adapter calls the preflight handler and the shell's
+fingerprint helpers in execution order. It compares the prepared input
+records, selected copy membership, pending manifest, and typed outcome.
+It also checks worker contents on acceptance and verifies that rejected
+preflight leaves no plan. Six sensitivity checks cover the live and
+snapshot comparisons, membership in the pending copy, the permissive
+handling of excluded inputs, source presence, and final manifest
+comparison. The fixture covers explicit selectors and copy exclusions.
+This includes changes that are reverted before the live check. A
+previously copied input that is changed or missing in the pending
+snapshot still causes rejection after restoration.
+
+All 79 cases matched on macOS in both Rust build configurations. The
+Lean library, corpus freshness, six sensitivity checks, and all 222
+workflow tests passed. Lean used a 2 GiB limit and single-job Rust used
+a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_fingerprint_preflight -- --check corpus/fingerprint-preflight.jsonl)
+(cd formal/HoiminOracle && lake exe generate_fingerprint_preflight -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib fingerprint_preflight_matches_lean_oracle -- --test-threads=1
+```
