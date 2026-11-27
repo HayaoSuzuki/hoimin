@@ -295,6 +295,10 @@ name = "generate_session_artifacts"
 root = "SessionArtifactsAuditMain"
 
 [[lean_exe]]
+name = "generate_session_admission"
+root = "SessionAdmissionAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

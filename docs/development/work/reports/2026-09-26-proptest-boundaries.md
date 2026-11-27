@@ -1831,3 +1831,45 @@ Rust ran under a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_session_artifacts -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_artifacts_match_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of SQLite session admission
+
+SQLite session admission inspects the journal, WAL, and shared-memory
+files in that order before checking the database. A missing companion
+or a regular single-link companion can pass. A directory or symlink
+is rejected as a nonregular companion. A shared database or companion
+is rejected before inspecting its SQLite schema. For a valid SQLite
+image, an unsupported version takes precedence over application ID and
+schema mismatches. A supported image must have application ID zero and
+either an empty version-zero schema or the canonical current schema.
+
+Lean proves that the first rejected companion determines the outcome,
+that a companion failure takes precedence over a database failure, and
+that every accepted SQLite image satisfies the version and identity
+conditions. The 98 cases include pairs of competing failures as well as
+the schema and version combinations for closed rollback and WAL files.
+Seven broken variants exercise the modeled precedence and admission
+conditions.
+
+The adapter seeds actual SQLite files and calls the Rust schema entry
+point. It compares the rejection variant, including the companion name
+or version when available. It checks names, contents, permissions,
+links, and directory entries before and after rejection. For acceptance,
+it compares the opened schema, version, journal mode, foreign-key flag,
+and preexisting fingerprint row. This fixture covers stable file layouts
+and closed SQLite images. Concurrent initialization is covered in the
+schema migration audit.
+
+All 98 cases matched on macOS in the default and `contracts`
+configurations, with 9 accepted and 89 rejected. The schema suite
+passed 84 tests including this adapter. The `session_hardlinks` target
+passed 31 tests and the workflow suite passed 222. Twelve symlink
+cases require Unix. The remaining cases describe portable layouts
+and were executed on macOS. Lean used a 2 GiB limit and single-job
+Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_admission -- --check corpus/session-admission.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_admission -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_admission_matches_lean_oracle -- --test-threads=1
+```

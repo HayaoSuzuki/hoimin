@@ -6,6 +6,9 @@ use std::time::{Duration, Instant};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use thiserror::Error;
 
+#[cfg(test)]
+mod admission_oracle_tests;
+
 pub(crate) const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Debug, Error)]

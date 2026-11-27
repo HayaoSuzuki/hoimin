@@ -151,6 +151,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_workspace_selection": "corpus/workspace-selection.jsonl",
     "generate_fingerprint_preflight": "corpus/fingerprint-preflight.jsonl",
     "generate_session_artifacts": "corpus/session-artifacts.jsonl",
+    "generate_session_admission": "corpus/session-admission.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

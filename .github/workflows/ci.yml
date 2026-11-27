@@ -747,6 +747,9 @@ jobs:
             HoiminOracle.SessionArtifactsModel
             HoiminOracle.SessionArtifactsCases
             SessionArtifactsAuditMain
+            HoiminOracle.SessionAdmissionModel
+            HoiminOracle.SessionAdmissionCases
+            SessionAdmissionAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -845,6 +848,7 @@ jobs:
             'generate_workspace_selection|corpus/workspace-selection.jsonl|sensitivity'
             'generate_fingerprint_preflight|corpus/fingerprint-preflight.jsonl|sensitivity'
             'generate_session_artifacts|corpus/session-artifacts.jsonl|sensitivity'
+            'generate_session_admission|corpus/session-admission.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'
