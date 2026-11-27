@@ -5,10 +5,10 @@ use super::{
 };
 use hoimin_core::{
     CandidateLoaded, CandidateReadTarget, EffectId, IntegrityCheckpoint, MachineError,
-    MutationApplied, MutationOutcome, MutationStatus, OutputEmitted, OutputEvent, OutputSpoolRef,
-    PersistResult, ProcessFinished, ProcessOutputState, ProcessTermination, ResourceMode,
-    ResultPersisted, RunEffect, RunEvent, RunPhase, RunState, SessionDiagnostic,
-    StoredResultLoaded, WorkerReset, transition,
+    MutationApplied, MutationOutcome, MutationStatus, OutputEmitted, OutputEvent, PersistResult,
+    ProcessFinished, ProcessOutputState, ProcessTermination, ResourceMode, ResultPersisted,
+    RunEffect, RunEvent, RunPhase, RunState, SessionDiagnostic, StoredResultLoaded, WorkerReset,
+    transition,
 };
 use serde_json::Value;
 use std::time::Duration;
@@ -65,19 +65,18 @@ fn completion(id: EffectId, evidence: &Value) -> ProcessFinished {
         "ExitOne" => ProcessTermination::Exit(1),
         "TimedOut" => ProcessTermination::Timeout,
         "MemoryExhausted" => ProcessTermination::OutOfMemory,
+        "ProcessCountExhausted" => ProcessTermination::ProcessLimit,
+        "CancelledProcess" => ProcessTermination::Cancelled,
         other => panic!("unknown process termination {other}"),
     };
     let mut finished = process_finished(id, termination);
-    finished.output_state = if evidence["closeTimedOut"] == true {
-        ProcessOutputState::CloseTimedOut
+    "fixture-captured-output".clone_into(&mut finished.output.token);
+    if evidence["closeTimedOut"] == true {
+        finished.output_state = ProcessOutputState::CloseTimedOut;
     } else {
-        ProcessOutputState::Complete
-    };
-    finished.output = OutputSpoolRef {
-        token: "fixture-captured-output".to_owned(),
-        retained: 9,
-        observed: 17,
-    };
+        finished.output.retained = 9;
+        finished.output.observed = 17;
+    }
     finished.elapsed = Duration::from_millis(123);
     finished.resource_mode = ResourceMode::BestEffort;
     finished
@@ -106,6 +105,8 @@ fn check_evidence(
         "Killed" => MutationStatus::Killed,
         "Timeout" => MutationStatus::Timeout,
         "OutOfMemory" => MutationStatus::OutOfMemory,
+        "ProcessLimit" => MutationStatus::ProcessLimit,
+        "NotRun" => MutationStatus::NotRun,
         "Error" => MutationStatus::Error,
         other => panic!("unknown process status {other}"),
     };
@@ -197,14 +198,30 @@ fn check(
 fn check_summary(state: &RunState, expected: &Value) {
     let summary = state.summary();
     let counted = quint::number(&expected["counted"]);
-    let [killed, survived, timed_out, out_of_memory, error] =
-        ["Killed", "Survived", "Timeout", "OutOfMemory", "Error"].map(|wanted| {
-            if expected["status"]["tag"] == wanted {
-                counted
-            } else {
-                0
-            }
-        });
+    let [
+        killed,
+        survived,
+        timed_out,
+        out_of_memory,
+        process_limit,
+        not_run,
+        error,
+    ] = [
+        "Killed",
+        "Survived",
+        "Timeout",
+        "OutOfMemory",
+        "ProcessLimit",
+        "NotRun",
+        "Error",
+    ]
+    .map(|wanted| {
+        if expected["status"]["tag"] == wanted {
+            counted
+        } else {
+            0
+        }
+    });
     assert_eq!(
         [
             summary.killed,
@@ -222,9 +239,9 @@ fn check_summary(state: &RunState, expected: &Value) {
             timed_out,
             out_of_memory,
             error,
-            0,
-            0,
-            timed_out + out_of_memory + error
+            not_run,
+            process_limit,
+            timed_out + out_of_memory + process_limit + not_run + error
         ]
     );
     assert_eq!(
@@ -332,11 +349,17 @@ fn replay(history: &[Value]) {
 #[case::output_timeout(include_str!("../../../../formal/quint/traces/process_result_outputTimeoutStep_0.itf.json"))]
 #[case::process_timeout(include_str!("../../../../formal/quint/traces/process_result_processTimeoutStep_0.itf.json"))]
 #[case::memory(include_str!("../../../../formal/quint/traces/process_result_memoryStep_0.itf.json"))]
+#[case::process_limit(include_str!("../../../../formal/quint/traces/process_result_processLimitStep_0.itf.json"))]
+#[case::process_limit_output_timeout(include_str!("../../../../formal/quint/traces/process_result_processLimitOutputTimeoutStep_0.itf.json"))]
+#[case::process_cancelled(include_str!("../../../../formal/quint/traces/process_result_processCancelledStep_0.itf.json"))]
+#[case::process_cancelled_output_timeout(include_str!("../../../../formal/quint/traces/process_result_processCancelledOutputTimeoutStep_0.itf.json"))]
 #[case::identities(include_str!("../../../../formal/quint/traces/process_result_identitiesStep_0.itf.json"))]
 #[case::cancel_persist(include_str!("../../../../formal/quint/traces/process_result_cancelPersistStep_0.itf.json"))]
 #[case::cancel_finish(include_str!("../../../../formal/quint/traces/process_result_cancelFinishStep_0.itf.json"))]
+#[case::process_cancelled_then_stop(include_str!("../../../../formal/quint/traces/process_result_processCancelledThenStopStep_0.itf.json"))]
 fn result_history_matches_public_transition(#[case] trace: &str) {
     let history = quint::states(trace);
     assert!(history.len() > 1);
+    assert_eq!(history.last().unwrap()["s"]["phase"]["tag"], "Verifying");
     replay(&history);
 }

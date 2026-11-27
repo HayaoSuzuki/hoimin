@@ -66,7 +66,7 @@
         "value": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -81,7 +81,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -109,7 +109,7 @@
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -121,30 +121,33 @@
         "index": 2
       },
       "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Cancel",
+        "tag": "Persist",
         "value": {
-          "#tup": []
+          "tag": "Correct",
+          "value": {
+            "#tup": []
+          }
         }
       },
       "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
+        "cancelled": false,
         "counted": {
           "#bigint": "1"
         },
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
           }
         },
         "exit": {
-          "#bigint": "130"
+          "#bigint": "4"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -162,7 +165,7 @@
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -172,6 +175,171 @@
     {
       "#meta": {
         "index": 3
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "WrongMutantId",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": false,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "4"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Finishing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Cancel",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Finishing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "Correct",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Finishing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Ack",
@@ -187,7 +355,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -197,7 +365,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -215,166 +383,7 @@
           }
         },
         "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 4
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "EndOfSpool",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Accepted",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 5
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Accepted",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 6
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Accepted",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -386,9 +395,12 @@
         "index": 7
       },
       "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
+        "tag": "Persist",
         "value": {
-          "#tup": []
+          "tag": "WrongRunId",
+          "value": {
+            "#tup": []
+          }
         }
       },
       "ProcessResult::ProcessResultModel::s": {
@@ -399,7 +411,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -409,25 +421,25 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
         },
         "phase": {
-          "tag": "Verifying",
+          "tag": "Reading",
           "value": {
             "#tup": []
           }
         },
         "result": {
-          "tag": "Accepted",
+          "tag": "Duplicate",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -455,7 +467,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -465,25 +477,25 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
         },
         "phase": {
-          "tag": "Verifying",
+          "tag": "Reading",
           "value": {
             "#tup": []
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Duplicate",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -493,59 +505,6 @@
     {
       "#meta": {
         "index": 9
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 10
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
@@ -564,7 +523,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -574,25 +533,25 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
         },
         "phase": {
-          "tag": "Verifying",
+          "tag": "Reading",
           "value": {
             "#tup": []
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Duplicate",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -601,60 +560,7 @@
     },
     {
       "#meta": {
-        "index": 11
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 12
+        "index": 10
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
@@ -673,7 +579,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -683,7 +589,60 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Reading",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 11
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "EndOfSpool",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -695,13 +654,66 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Accepted",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -726,7 +738,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -736,7 +748,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -748,13 +760,13 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Accepted",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -766,12 +778,9 @@
         "index": 14
       },
       "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Persist",
+        "tag": "Idle",
         "value": {
-          "tag": "Correct",
-          "value": {
-            "#tup": []
-          }
+          "#tup": []
         }
       },
       "ProcessResult::ProcessResultModel::s": {
@@ -782,7 +791,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -792,7 +801,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -804,13 +813,13 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Accepted",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -835,7 +844,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -845,7 +854,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -857,13 +866,13 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Accepted",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -873,6 +882,112 @@
     {
       "#meta": {
         "index": 16
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 17
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Accepted",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 18
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
@@ -891,7 +1006,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -901,7 +1016,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -913,122 +1028,13 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Duplicate",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 17
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Persist",
-        "value": {
-          "tag": "Correct",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 18
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -1053,7 +1059,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -1063,7 +1069,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -1075,13 +1081,13 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Duplicate",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -1095,7 +1101,7 @@
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
         "value": {
-          "tag": "Correct",
+          "tag": "WrongMutantId",
           "value": {
             "#tup": []
           }
@@ -1109,7 +1115,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -1119,7 +1125,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -1131,13 +1137,13 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Duplicate",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }
@@ -1147,165 +1153,6 @@
     {
       "#meta": {
         "index": 21
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 22
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 23
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "ExitZero",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Survived",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 24
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
@@ -1324,7 +1171,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "ExitZero",
+            "tag": "TimedOut",
             "value": {
               "#tup": []
             }
@@ -1334,7 +1181,7 @@
           "#bigint": "130"
         },
         "persistence": {
-          "tag": "Retired",
+          "tag": "Completed",
           "value": {
             "#tup": []
           }
@@ -1346,13 +1193,178 @@
           }
         },
         "result": {
-          "tag": "Late",
+          "tag": "Duplicate",
           "value": {
             "#tup": []
           }
         },
         "status": {
-          "tag": "Survived",
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 22
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "WrongMutantId",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 23
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "WrongMutantId",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "TimedOut",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Completed",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Duplicate",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "Timeout",
           "value": {
             "#tup": []
           }

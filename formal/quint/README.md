@@ -848,20 +848,23 @@ normal path or after cleanup and reporting on the failure paths.
 ## Session process results
 
 `ProcessResult` starts with one running session candidate. It models
-successful and unsuccessful process exits, process timeout, and memory
-exhaustion, each with complete output or an output-close timeout. An
-output-close timeout classifies the result as `Error` and retains the
-original termination and an output diagnostic. One matching persistence
-acknowledgement records the result. A cancellation during persistence or
-finish reporting preserves the classified result exactly once. A callback
-for a retired persistence request returns the retired-effect error.
-The negative model classifies with the process termination alone.
+successful and unsuccessful exits, process timeout, memory exhaustion,
+process-count exhaustion, and cancelled process termination. With complete
+output, the last two classify as `ProcessLimit` and `NotRun` and yield exit
+status 4 once counted. An output-close timeout classifies any termination as
+`Error`, retains the termination, and adds an output diagnostic. The replay
+uses the zero-count fallback spool reference for these cases. The negative
+model classifies with the process termination alone.
 
-Ten ITF histories compare persisted and reported evidence, bad run and
-candidate IDs, retired or duplicate acknowledgements, summary counts,
-and exit status through public transitions. They end at pending
-pre-report verification. Persistence is represented by its request and
-acknowledgement.
+One matching persistence acknowledgement records the result. A cancellation
+of the run during persistence or finish reporting preserves the classified
+result exactly once and yields exit status 130. A callback for a retired
+persistence request returns the retired-effect error.
+
+Fifteen ITF histories compare persisted and reported evidence, bad run and
+candidate IDs, retired or duplicate acknowledgements, summary counts, and
+exit status through public transitions. They end at pending pre-report
+verification. Persistence is represented by its request and acknowledgement.
 
 ```sh
 cargo test --locked -p hoimin-core --test machine quint_worker_failure
