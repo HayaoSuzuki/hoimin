@@ -384,4 +384,40 @@ def finishWaitSensitivity : Bool :=
     rolledBack.session.runs == seed.runs &&
     (loadRun rolledBack.session .h1 .f0).selectedRun == some .r0
 
+private def finishReleaseName : FinishRelease → String
+  | .beforeDeadline => "before_deadline"
+  | .withinGrace => "within_grace"
+  | .afterGrace => "after_grace"
+
+private def finishFlags (state : State) : Lean.Json :=
+  let row := findRun state .r0
+  Lean.Json.mkObj [
+    ("finished", Lean.toJson (row.any RunRow.finished)),
+    ("complete", Lean.toJson (row.any RunRow.complete))]
+
+private def finishDeadlineCase (release : FinishRelease) (complete commit : Bool) : Lean.Json :=
+  let result := finishAcrossShutdown ⟨finishWaitSeed false, true, true⟩ .h0 .r0 release complete commit
+  let name := finishReleaseName release
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"{name}_complete_{complete}_commit_{commit}"),
+    ("release", .str name), ("complete", Lean.toJson complete), ("commit", Lean.toJson commit),
+    ("exit_code", optionalJson Lean.toJson result.exitCode),
+    ("session_acknowledged", Lean.toJson result.sessionAcknowledged),
+    ("commit_failure_observed", Lean.toJson result.commitFailureObserved),
+    ("at_return", finishFlags result.atReturn), ("settled", finishFlags result.settled)]
+
+def renderFinishDeadlineCorpus : String :=
+  let releases : List FinishRelease := [.beforeDeadline, .withinGrace, .afterGrace]
+  let cases := releases.flatMap fun release => [false, true].flatMap fun complete =>
+    [false, true].map fun commit => finishDeadlineCase release complete commit
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+def finishDeadlineSensitivity : Bool :=
+  let pending : PendingFinishWait := { session := finishWaitSeed false }
+  let late := finishAcrossShutdown pending .h0 .r0 .afterGrace true true
+  let timely := finishAcrossShutdown pending .h0 .r0 .withinGrace true true
+  late.exitCode.isNone && !late.sessionAcknowledged && !runComplete late.atReturn .r0 &&
+    runComplete late.settled .r0 && timely.sessionAcknowledged && runComplete timely.atReturn .r0
+
 end HoiminOracle.SessionAudit

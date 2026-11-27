@@ -242,4 +242,17 @@ theorem rolled_back_finish_preserves_runs_and_results (pending : PendingFinishWa
           simp [settleFinishWait, alive, stopHandler, accept, setHandler, clearPendingFor,
             releaseHandler, operation, owner]
 
+theorem expired_session_finish_returns_without_acknowledgement (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete commit : Bool) :
+    let result := finishAcrossShutdown pending handler runId .afterGrace complete commit
+    result.atReturn = pending.session ∧ result.exitCode = none ∧
+      result.sessionAcknowledged = false := by
+  simp [finishAcrossShutdown]
+
+theorem late_session_finish_can_still_commit (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete : Bool) :
+    (finishAcrossShutdown pending handler runId .afterGrace complete true).settled =
+      (stopHandler (finishRun pending.session handler runId complete).state handler).state := by
+  simp [finishAcrossShutdown, settleFinishWait, dropFinishDriver, cancelFinishWait]
+
 end HoiminOracle.SessionAudit

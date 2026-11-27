@@ -953,13 +953,7 @@ async fn replay_finish_wait(case: FinishWaitCase) {
             drop(finish);
             drop(dispatcher);
             check_pending();
-            tokio::time::timeout(Duration::from_secs(2), async {
-                while handler.upgrade().is_some() {
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-            })
-            .await
-            .expect("finished worker must release its handler");
+            SessionDispatcher::wait_for_finish_worker_drop(&handler).await;
             None
         }
     };

@@ -697,7 +697,39 @@ pub(crate) struct SessionDispatcher {
     handler: Arc<Mutex<SessionHandler>>,
 }
 
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct FinishCommitPause {
+    pub(crate) entered: tokio::sync::oneshot::Sender<std::sync::Weak<Mutex<SessionHandler>>>,
+    pub(crate) release: std::sync::mpsc::Receiver<()>,
+}
+
 impl SessionDispatcher {
+    #[cfg(test)]
+    pub(crate) fn pause_finish_before_commit(&self, pause: FinishCommitPause) {
+        let handler = Arc::downgrade(&self.handler);
+        self.handler.lock().unwrap().finish_before_commit = Some(Box::new(move || {
+            pause.entered.send(handler).unwrap();
+            pause
+                .release
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+        }));
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn wait_for_finish_worker_drop(
+        handler: &std::sync::Weak<Mutex<SessionHandler>>,
+    ) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while handler.upgrade().is_some() {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("finished worker must release its handler");
+    }
+
     pub(crate) async fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
         let path = path.as_ref().to_owned();
         let handler = tokio::task::spawn_blocking(move || SessionHandler::open(path))

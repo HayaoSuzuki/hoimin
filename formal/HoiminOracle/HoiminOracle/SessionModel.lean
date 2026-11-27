@@ -448,6 +448,29 @@ def settleFinishWait (pending : PendingFinishWait) (handler : Handler) (runId : 
   { session := if pending.driverAlive then committed else (stopHandler committed handler).state
     reply := if pending.waiterAlive then some commit else none }
 
+inductive FinishRelease where
+  | beforeDeadline | withinGrace | afterGrace
+  deriving DecidableEq
+
+structure FinishShutdown where
+  atReturn : State
+  settled : State
+  exitCode : Option Nat
+  sessionAcknowledged : Bool
+  commitFailureObserved : Bool
+
+-- The final output was already acknowledged and the finish transaction is pending.
+def finishAcrossShutdown (pending : PendingFinishWait) (handler : Handler) (runId : Run)
+    (release : FinishRelease) (complete commit : Bool) : FinishShutdown :=
+  let expired := decide (release = .afterGrace)
+  let waiting := if expired then dropFinishDriver pending else pending
+  let final := settleFinishWait waiting handler runId complete commit
+  { atReturn := if expired then pending.session else final.session
+    settled := final.session
+    exitCode := if expired then none else some (if commit then (if complete then 0 else 4) else 2)
+    sessionAcknowledged := !expired && commit
+    commitFailureObserved := !expired && !commit }
+
 def readLoadCandidate (state : State) (handler : Handler)
     (fingerprint : Fingerprint) : Verdict :=
   if !handlerLive state handler then

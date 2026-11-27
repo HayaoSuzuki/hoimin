@@ -341,6 +341,8 @@ pub struct RunControl {
     #[cfg(test)]
     final_measurement_pause: Option<FinalMeasurementPause>,
     #[cfg(test)]
+    session_finish_pause: Arc<std::sync::Mutex<Option<crate::session::FinishCommitPause>>>,
+    #[cfg(test)]
     post_drain_disk_failure: Arc<std::sync::Mutex<Option<hoimin_core::DiskFailure>>>,
     #[cfg(test)]
     force_execution_cleanup_deferred: Arc<AtomicBool>,
@@ -500,6 +502,8 @@ impl RunControl {
             end_available_override: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(test)]
             final_measurement_pause: None,
+            #[cfg(test)]
+            session_finish_pause: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(test)]
             post_drain_disk_failure: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(test)]
@@ -3491,6 +3495,9 @@ async fn run_loop_context(
                 }
                 #[cfg(test)]
                 if matches!(&effect, RunEffect::FinishSession(_)) {
+                    if let Some(pause) = control.session_finish_pause.lock().unwrap().take() {
+                        context.session.as_ref().expect("session was started").pause_finish_before_commit(pause);
+                    }
                     control.observe_finalization_event("session_finish_requested");
                 }
                 match effect {
@@ -8686,19 +8693,7 @@ mod tests {
         let project = tempfile::tempdir().unwrap();
         let artifacts = tempfile::tempdir().unwrap();
         let session = Utf8PathBuf::from_path_buf(artifacts.path().join("session.sqlite3")).unwrap();
-        let mut config = output_failure_test_config(&project).into_data();
-        std::fs::write(
-            project.path().join("target.py"),
-            "def compute():\n    return 1 + 2\n",
-        )
-        .unwrap();
-        config.limits.max_mutants =
-            std::num::NonZeroUsize::new(if case.run_complete { 100 } else { 1 }).unwrap();
-        config.limits.jobs = std::num::NonZeroUsize::new(1).unwrap();
-        config.session = hoimin_core::SessionMode::Fresh(hoimin_core::SessionConfig {
-            path: session.clone(),
-        });
-        let config = RunConfig::try_from(config).unwrap();
+        let config = delivery_session_test_config(&project, &session, case.run_complete);
         let control = delivery_test_control(case.capacity_ok);
         if !case.cleanup_ok {
             control.inject_delivery_cleanup_identity_failure();
@@ -8762,6 +8757,26 @@ mod tests {
             assert!(original.exists(), "{id}: original delivery root");
         }
         resume_after_final_delivery(config, &session, &prior, &case).await;
+    }
+
+    fn delivery_session_test_config(
+        project: &TempDir,
+        session: &Utf8Path,
+        complete: bool,
+    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
+        let mut config = output_failure_test_config(project).into_data();
+        std::fs::write(
+            project.path().join("target.py"),
+            "def compute():\n    return 1 + 2\n",
+        )
+        .unwrap();
+        config.limits.max_mutants =
+            std::num::NonZeroUsize::new(if complete { 100 } else { 1 }).unwrap();
+        config.limits.jobs = std::num::NonZeroUsize::new(1).unwrap();
+        config.session = hoimin_core::SessionMode::Fresh(hoimin_core::SessionConfig {
+            path: session.to_owned(),
+        });
+        RunConfig::try_from(config).unwrap()
     }
 
     fn delivery_test_control(capacity_ok: bool) -> RunControl {
@@ -9007,6 +9022,202 @@ mod tests {
             "{id}: durable results after resume"
         );
         executed
+    }
+
+    #[derive(PartialEq, Eq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum FinishRelease {
+        BeforeDeadline,
+        WithinGrace,
+        AfterGrace,
+    }
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinishFlags {
+        finished: bool,
+        complete: bool,
+    }
+
+    impl From<&StoredDeliveryRun> for FinishFlags {
+        fn from(run: &StoredDeliveryRun) -> Self {
+            Self {
+                finished: run.finished,
+                complete: run.complete,
+            }
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)] // Inputs and observed acknowledgements vary separately.
+    struct FinishDeadlineCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        release: FinishRelease,
+        complete: bool,
+        commit: bool,
+        exit_code: Option<i32>,
+        session_acknowledged: bool,
+        commit_failure_observed: bool,
+        at_return: FinishFlags,
+        settled: FinishFlags,
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn session_finish_across_cli_shutdown_deadline_matches_lean() {
+        let mut ids = BTreeSet::new();
+        for line in
+            include_str!("../../../formal/HoiminOracle/corpus/session-finish-deadline.jsonl")
+                .lines()
+        {
+            let case: FinishDeadlineCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            replay_finish_deadline(case).await;
+        }
+        assert_eq!(ids.len(), 12);
+    }
+
+    async fn advance_finish_clock(elapsed: Duration) {
+        tokio::time::pause();
+        tokio::time::advance(elapsed).await;
+        tokio::time::resume();
+    }
+
+    async fn replay_finish_deadline(case: FinishDeadlineCase) {
+        let id = &case.id;
+        let project = tempfile::tempdir().unwrap();
+        let artifacts = tempfile::tempdir().unwrap();
+        let session = Utf8PathBuf::from_path_buf(artifacts.path().join("session.sqlite3")).unwrap();
+        let config = delivery_session_test_config(&project, &session, case.complete);
+        let timeout = config.limits.total_timeout.get();
+        let mut control = delivery_test_control(true);
+        let grace = Duration::from_secs(5);
+        control.shutdown_grace = grace;
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, hold) = std::sync::mpsc::channel();
+        *control.session_finish_pause.lock().unwrap() = Some(crate::session::FinishCommitPause {
+            entered,
+            release: hold,
+        });
+        let observed = control.clone();
+        let stdout = CollectingWriter::default();
+        let writer = FinalRecordWriter {
+            fail_write: false,
+            fail_flush: false,
+            record: Vec::new(),
+            progress: FinalRecordProgress::Pending,
+            captured: stdout.clone(),
+            reject_commit: (!case.commit).then(|| session.clone()),
+        };
+        let mut run = Box::pin(run_loop_with_control(config, writer, Vec::new(), control));
+        let handler = tokio::select! {
+            result = &mut run => panic!("{id}: run returned before finish entered: {result:?}"),
+            entered = tokio::time::timeout(Duration::from_secs(5), ready) => entered.unwrap().unwrap(),
+        };
+        let summary = last_jsonl_run_summary(&stdout, id);
+        assert_eq!(
+            summary.complete, case.complete,
+            "{id}: already published report"
+        );
+        let snapshot =
+            || read_delivery_run(&open_delivery_database(&session), summary.run_id.clone());
+        let pending = snapshot();
+        assert!(
+            !pending.finished && !pending.complete,
+            "{id}: transaction is still pending"
+        );
+        assert_ne!(
+            pending.outcomes,
+            BTreeMap::new(),
+            "{id}: durable mutant results"
+        );
+
+        if case.release != FinishRelease::BeforeDeadline {
+            advance_finish_clock(timeout).await;
+            tokio::select! {
+                result = &mut run => panic!("{id}: run returned before grace: {result:?}"),
+                () = coverage_tests::wait_for_finalization_event(&observed, "serial_report_deadline_observed") => {}
+            }
+        }
+        let expired = case.release == FinishRelease::AfterGrace;
+        if expired {
+            advance_finish_clock(grace).await;
+        } else {
+            release.send(()).unwrap();
+        }
+        let result = tokio::time::timeout(Duration::from_secs(4), &mut run)
+            .await
+            .unwrap();
+        drop(run);
+        assert_finish_deadline_return(&result, &observed, &case);
+        let at_return = snapshot();
+        assert_eq!(
+            FinishFlags::from(&at_return),
+            case.at_return,
+            "{id}: state at return"
+        );
+        assert_eq!(
+            at_return.outcomes, pending.outcomes,
+            "{id}: results at return"
+        );
+        if expired {
+            assert!(
+                handler.upgrade().is_some(),
+                "{id}: running commit retains the session"
+            );
+            release.send(()).unwrap();
+            SessionDispatcher::wait_for_finish_worker_drop(&handler).await;
+        }
+        let settled = snapshot();
+        assert_eq!(
+            FinishFlags::from(&settled),
+            case.settled,
+            "{id}: state after settlement"
+        );
+        assert_eq!(
+            settled.outcomes, pending.outcomes,
+            "{id}: results after settlement"
+        );
+    }
+
+    fn assert_finish_deadline_return(
+        result: &Result<i32, String>,
+        observed: &RunControl,
+        case: &FinishDeadlineCase,
+    ) {
+        let id = &case.id;
+        assert_eq!(
+            result.as_ref().ok().copied(),
+            case.exit_code,
+            "{id}: {result:?}"
+        );
+        if let Err(error) = result {
+            assert!(error.contains("shutdown grace expired"), "{id}: {error}");
+        }
+        let events = observed.finalization_events();
+        assert!(events.contains(&"output_acknowledged"), "{id}");
+        assert!(events.contains(&"session_finish_requested"), "{id}");
+        assert_eq!(
+            events.contains(&"session_finished"),
+            case.session_acknowledged,
+            "{id}"
+        );
+        assert_eq!(
+            events.contains(&"session_finish_commit_failed"),
+            case.commit_failure_observed,
+            "{id}"
+        );
+        assert!(
+            observed
+                .managed_root_paths()
+                .iter()
+                .all(|root| !root.exists()),
+            "{id}"
+        );
     }
 
     #[tokio::test(flavor = "current_thread")]

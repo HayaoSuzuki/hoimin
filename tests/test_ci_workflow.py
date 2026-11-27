@@ -1582,6 +1582,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
     session_companions = {
         "--check-load-recheck": "corpus/session-load-recheck.jsonl",
         "--check-finish-wait": "corpus/session-finish-wait.jsonl",
+        "--check-finish-deadline": "corpus/session-finish-deadline.jsonl",
     }
     expected_remaining.extend(
         ["lake", "exe", "generate_session", "--", "--depth", "4", flag, corpus]

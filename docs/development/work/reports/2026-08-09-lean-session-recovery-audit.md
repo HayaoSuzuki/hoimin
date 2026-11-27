@@ -281,3 +281,29 @@ lake exe generate_session -- --sensitivity
 cd ../..
 cargo test --locked -p hoimin-cli --lib finish_commit_and_ownership_after_waiter_cancellation_match_lean
 ```
+
+## The CLI shutdown deadline while a finish is pending
+
+This replay starts after the final report was acknowledged and the SQLite
+finish has reached the pre-commit gate. It distinguishes release before the
+total timeout, release within shutdown grace, and release after the CLI has
+returned a shutdown error. The model observes the durable flags at CLI
+return and after the worker settles. Lean proves that an expired wait
+returns before acknowledging the finish and that the late worker can
+still commit.
+
+The twelve fixtures combine those release points with complete and
+mutant-limited runs and with successful or rejected commits. The Rust
+fixture advances the Tokio clock after entering the real transaction.
+It compares the reported completion flag, observed acknowledgements,
+CLI result, and durable flags. It checks that prior mutant results survive
+and observes the detached worker's handler until release after CLI return.
+A deferred foreign-key violation injects commit failure on an isolated
+fixture database.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-finish-deadline corpus/session-finish-deadline.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib session_finish_across_cli_shutdown_deadline_matches_lean
+```
