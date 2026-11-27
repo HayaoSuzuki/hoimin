@@ -242,6 +242,31 @@ theorem finished_implies_delivery_clean {start result : State} {events : List Ev
   intro finished
   simpa [finished] using guard
 
+theorem deferred_cleanup_rejects_finish (state : State) (deferred : state.cleanupDeferred ≠ []) :
+    step state .finish = none := by
+  simp [step, transition, deferred]
+
+theorem recorded_cleanup_rejects_another_outcome (state : State) (root : RootId)
+    (recorded : anyOutcomeRecorded state root = true) :
+    step state (.cleanupSucceeded root) = none ∧ step state (.cleanupFailed root) = none ∧
+      step state (.cleanupDeferred root) = none ∧ step state (.cleanupRetained root) = none := by
+  simp [step, transition, recorded]
+
+theorem finished_with_delivery_implies_safety_succeeded {start result : State}
+    {events : List Event} (startValid : Invariant start = true)
+    (accepted : run start events = some result) (finished : result.finished = true)
+    (delivery : result.deliveryRoots ≠ []) : safetyComponentsSucceeded result = true := by
+  have cleaned := finished_implies_delivery_clean startValid accepted finished
+  have safe := destructive_cleanup_implies_components_succeeded startValid accepted
+  cases deliveries : result.deliveryRoots with
+  | nil => exact False.elim (delivery deliveries)
+  | cons root rest =>
+      rw [deliveries] at cleaned
+      simp only [List.all_cons, Bool.and_eq_true] at cleaned
+      cases cleanRoots : result.cleanupClean with
+      | nil => simp [cleanRoots] at cleaned
+      | cons first others => simpa [cleanRoots] using safe
+
 theorem root_renaming_samples_match : rootRenamingCasesPass = true := by native_decide
 
 theorem payload_class_samples_match : payloadSymmetryCasesPass = true := by native_decide

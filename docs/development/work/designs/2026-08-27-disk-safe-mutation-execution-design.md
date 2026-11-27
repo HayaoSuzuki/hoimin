@@ -1117,3 +1117,30 @@ cd ../..
 cargo test --locked -p hoimin-cli --lib disk_report_secondary_merge_matches_lean
 cargo test --locked -p hoimin-cli --lib pre_dispatch_sample_stops_before_analyzer_dispatch
 ```
+
+## Cleanup outcomes and finish admission
+
+The lifecycle corpus crosses four component-settlement schedules with the four
+execution-root outcomes and five delivery-root choices. This supplies 80
+ordered finish schedules, plus eight attempts to replace a recorded deferred
+or retained outcome. Independent finish predicates check the generated cases.
+The new negative controls allow finish after deferral, allow finish with a
+retained delivery root, or rewrite an existing deferred outcome.
+
+Lean proves that any deferral prevents finish and that each recorded cleanup
+outcome rejects a second assignment. A finished lifecycle with a delivery root
+requires successful process drain, output drain, and monitor join. The Rust
+replay drives the production lifecycle with fixture outcomes, checking the full
+snapshot on rejection and the exact cleanup diagnostics for each root. It
+consumes 99 runtime cases from the 110-record corpus. The shell integration test
+exercises execution cleanup deferral and the resulting output acknowledgement
+decision.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check corpus/disk-guard-lifecycle.jsonl
+lake exe generate_disk_guard -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --test lean_disk_shutdown_oracle
+cargo test --locked -p hoimin-cli --lib deferred_execution_cleanup_is_incomplete_without_output_ack_or_outer_retry
+```

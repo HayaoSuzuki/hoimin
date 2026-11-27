@@ -129,7 +129,7 @@ private def caseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
   ("expected", expectedJson item.expected)]
 
 def renderCorpus : String :=
-  String.join (fixedCases.map fun item => (caseJson item).compress ++ "\n")
+  String.join (oracleCases.map fun item => (caseJson item).compress ++ "\n")
 
 private def stopCode : StopReason → String
   | .sizeExceeded => "workspace.size.exceeded"
@@ -227,6 +227,9 @@ private def familyName : BrokenFamily → String
   | .destructiveAfterFailure => "destructive_cleanup_after_failure"
   | .finishAfterReportFailure => "finish_after_report_failure"
   | .finishAfterDeliveryFailure => "finish_after_delivery_failure"
+  | .finishAfterDeferred => "finish_after_deferred_cleanup"
+  | .finishAfterDeliveryRetained => "finish_after_delivery_retained"
+  | .rewriteDeferred => "rewrite_deferred_outcome"
 
 private def traceStates (next : State → Event → Option State) :
     State → List Event → List State
@@ -325,7 +328,7 @@ private def printStats (resourceStats : System.FilePath) : IO UInt32 := do
         ("event_family_count", Lean.toJson familyEvents.length),
         ("bounded_skeleton_count", Lean.toJson boundedSkeletonCount),
         ("fixed_case_count", Lean.toJson fixedCases.length),
-        ("total_corpus_records", Lean.toJson fixedCases.length),
+        ("total_corpus_records", Lean.toJson oracleCases.length),
         ("accepted_trace_count", Lean.toJson accepted),
         ("reachable_state_count", Lean.toJson states),
         ("checked_transition_count", Lean.toJson checkedTransitionCount),

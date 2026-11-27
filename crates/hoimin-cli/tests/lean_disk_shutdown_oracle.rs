@@ -103,7 +103,7 @@ fn every_rust_runtime_oracle_case_executes_and_matches_the_complete_observation(
     }
 
     assert_eq!(executed, expected);
-    assert_eq!(executed.len(), 12);
+    assert_eq!(executed.len(), 99);
 }
 
 #[test]
@@ -146,7 +146,14 @@ fn assert_runtime_case(case: &CorpusCase) {
     let mut accepted = true;
     let mut rejected_at = None;
     for (index, event) in case.events.iter().enumerate() {
+        let before = lifecycle.snapshot();
         if !lifecycle.apply(runtime_event(event, &case.id)) {
+            assert_eq!(
+                lifecycle.snapshot(),
+                before,
+                "{} rejected event {index}",
+                case.id
+            );
             accepted = false;
             rejected_at = Some(index);
             break;
@@ -202,6 +209,48 @@ fn assert_terminal_observation(
     );
     assert_root_observation(snapshot, &expected.state, id);
     assert_component_observation(snapshot, &expected.state, id);
+    assert_cleanup_diagnostics(snapshot, &expected.state, id);
+}
+
+fn cleanup_message(root: &str) -> String {
+    format!("oracle cleanup: {root}")
+}
+
+fn assert_cleanup_diagnostics(snapshot: &DiskLifecycleSnapshot, expected: &State, id: &str) {
+    use hoimin_core::{WORKSPACE_CLEANUP_DEFERRED, WORKSPACE_CLEANUP_FAILED};
+
+    let expected = [
+        (WORKSPACE_CLEANUP_FAILED, &expected.cleanup_failed),
+        (WORKSPACE_CLEANUP_DEFERRED, &expected.cleanup_deferred),
+    ]
+    .into_iter()
+    .flat_map(|(code, roots)| roots.iter().map(move |root| (code, cleanup_message(root))))
+    .collect::<BTreeSet<_>>();
+    let actual = snapshot
+        .secondary
+        .iter()
+        .filter_map(|evidence| match evidence {
+            DiskSecondary::Error { code, message }
+                if matches!(
+                    code.as_str(),
+                    WORKSPACE_CLEANUP_FAILED | WORKSPACE_CLEANUP_DEFERRED
+                ) =>
+            {
+                Some((code.as_str(), message.clone()))
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        actual.len(),
+        expected.len(),
+        "{id} cleanup diagnostic count"
+    );
+    assert_eq!(
+        actual.into_iter().collect::<BTreeSet<_>>(),
+        expected,
+        "{id} cleanup diagnostics"
+    );
 }
 
 fn assert_root_observation(snapshot: &DiskLifecycleSnapshot, expected: &State, id: &str) {
@@ -242,11 +291,11 @@ fn assert_root_observation(snapshot: &DiskLifecycleSnapshot, expected: &State, i
                 ),
                 (
                     expected.cleanup_failed.contains(name),
-                    DiskCleanupOutcome::Failed("oracle fixture".into()),
+                    DiskCleanupOutcome::Failed(cleanup_message(name)),
                 ),
                 (
                     expected.cleanup_deferred.contains(name),
-                    DiskCleanupOutcome::Deferred("oracle fixture".into()),
+                    DiskCleanupOutcome::Deferred(cleanup_message(name)),
                 ),
                 (
                     expected.cleanup_retained.contains(name),
@@ -318,11 +367,11 @@ fn runtime_event(event: &Event, id: &str) -> DiskLifecycleEvent {
         },
         Event::CleanupFailed { root } => DiskLifecycleEvent::CleanupCompleted {
             root: parse_root(root, id),
-            outcome: DiskCleanupOutcome::Failed("oracle fixture".to_owned()),
+            outcome: DiskCleanupOutcome::Failed(cleanup_message(root)),
         },
         Event::CleanupDeferred { root } => DiskLifecycleEvent::CleanupCompleted {
             root: parse_root(root, id),
-            outcome: DiskCleanupOutcome::Deferred("oracle fixture".to_owned()),
+            outcome: DiskCleanupOutcome::Deferred(cleanup_message(root)),
         },
         Event::CleanupRetained { root } => DiskLifecycleEvent::CleanupCompleted {
             root: parse_root(root, id),
@@ -390,6 +439,7 @@ fn corpus_source() -> &'static str {
 
 fn is_rust_runtime(case: &CorpusCase) -> bool {
     case.layer == "runtime"
+        && matches!(case.mode.as_str(), "strict" | "internal-fixture")
         && case
             .implementation_targets
             .iter()
@@ -513,7 +563,7 @@ fn typed_root_projection_rejects_unrequested_outcome() {
 }
 
 #[rstest::rstest]
-#[case::deferred(&Event::CleanupDeferred { root: "execution".into() }, DiskCleanupOutcome::Deferred("oracle fixture".into()))]
+#[case::deferred(&Event::CleanupDeferred { root: "execution".into() }, DiskCleanupOutcome::Deferred(cleanup_message("execution")))]
 #[case::retained(&Event::CleanupRetained { root: "execution".into() }, DiskCleanupOutcome::Retained)]
 fn cleanup_event_projection_preserves_non_clean_outcome(
     #[case] event: &Event,
