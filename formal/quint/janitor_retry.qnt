@@ -82,6 +82,14 @@ module JanitorRetry {
     else if (s.unvisited == 0) endRound(false)
     else visit(if (s.visits.length() == 0) Deferred(1) else Deferred(0))
 
+  // One root can finish after one productive slice. The other stays over
+  // the traversal cap, so completing the first root does not start a third round.
+  action filesystemProgressStep =
+    if (s.unvisited == 0) endRound(false)
+    else if (s.visits.length() == 0) visit(Deferred(1))
+    else if (s.visits.length() == 2) visit(Complete)
+    else visit(Deferred(0))
+
   pure def visitsIn(visits: List[Visit], round: int): List[Visit] =
     visits.select(entry => entry.round == round)
 

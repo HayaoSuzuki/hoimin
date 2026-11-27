@@ -197,7 +197,7 @@ each boundary.
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease | Claim combined with coordinator unlock, deletion, and report accounting |
 | Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, and partial deletion with a small tree. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Integration of the Windows pinned handle, pending rounds, and report accounting |
-| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler | Composition of real deletion outcomes, pending progress, and final root disposition |
+| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler and replays a stalled round with real deletion slices | Pending progress through final report publication |
 | Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results and retained details | End-to-end aggregation across selection, claim, and cleanup |
 
 Existing host-specific tests remain part of the implementation evidence. Quint
@@ -282,9 +282,15 @@ The Rust replay invokes `retry_deferred` in
 `reclaim_abandoned_with_clock_and_selection` in `owned.rs`. It supplies slice
 results and a monotonic deadline, then checks the sequence of calls and the
 pending queue at exit. The bounded model represents clock observations and
-cleanup results as inputs. Filesystem locks, deletion, and wall-clock timing
-are exercised by the separate janitor tests. Update the model and regenerate its
-ITF fixtures when the retry or stop policy changes.
+cleanup results as inputs.
+
+`filesystemProgressStep` drives `reclaim_removal` on two directories already
+in the pending queue. Under a two-entry cap, one root first deletes its payload
+and then completes. The other has a deeper payload and stalls in both rounds.
+The replay checks the order, acknowledged removals, and the remaining tree.
+On Windows, the fixture keeps the claimed root and lease handles across rounds.
+Update the model and regenerate its ITF fixtures when the retry or stop
+policy changes.
 
 ```sh
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_retry

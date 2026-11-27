@@ -113,6 +113,7 @@ MODELS = (
             "progressStep",
             "deadlineStep",
             "nextRoundDeadlineStep",
+            "filesystemProgressStep",
         ),
         simulation_only=True,
         simulation_mutant_step="stalledRetryStep",
