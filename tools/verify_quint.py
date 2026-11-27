@@ -110,6 +110,7 @@ MODELS = (
             "partialStep",
             "selectedRootsStep",
             "shellReportStep",
+            "deferredReportStep",
         ),
         simulation_only=True,
         simulation_mutant_step="acknowledgementLostStep",

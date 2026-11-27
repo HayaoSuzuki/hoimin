@@ -124,6 +124,22 @@ module JanitorReclaim {
   action selectedRootsStep = selectedRootsScenario(Absent, NoticeAbsence(1))
   action shellReportStep = selectedRootsScenario(Preserved, Hold(1))
 
+  // Two roots enter the queue. The first finishes on its retry; the second
+  // reaches the traversal cap on both visits and keeps its pending cause.
+  action deferredReportStep =
+    if (summary.inspected == 0) inspect
+    else if (evidence.get(0).examined == 0)
+      record({ root: 0, examined: 3, removed: 1, deleted: false, absent: false })
+    else if (summary.inspected == 1) inspect
+    else if (evidence.get(1).examined == 0)
+      record({ root: 1, examined: 3, removed: 0, deleted: false, absent: false })
+    else if (evidence.get(0).outcome == Pending)
+      record({ root: 0, examined: 5, removed: 4, deleted: true, absent: false })
+    else all {
+      evidence.get(1).examined == 3,
+      record({ root: 1, examined: 6, removed: 0, deleted: false, absent: false }),
+    }
+
   val inspectedSecond = summary.inspected == 2
   val preservedRoot = summary.preserved > 0
   val observedAbsence = summary.absent > 0

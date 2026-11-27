@@ -197,8 +197,8 @@ each boundary.
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, diagnostics, surviving entries, and acknowledged deletions across claim and slice interruptions | Startup selection and reporting across multiple roots |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion | Windows lease reacquisition needs native Rust verification |
 | Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, and partial deletion with a small tree. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Integration of the Windows pinned handle, pending rounds, and report accounting |
-| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler and replays a stalled round with real deletion slices | Pending progress through final report publication |
-| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results, retained details, and the published shell report | Final reporting for deferred slices |
+| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline. `janitor_reclaim.qnt` compares the real janitor's finished report after two deferred roots are retried | Windows pinned-handle verification |
+| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results, deferred cleanup counters, retained details, and the published shell report | A single model connecting the process phases through publication |
 
 Existing host-specific tests remain part of the implementation evidence. Quint
 models use small representative directories and explicit filesystem outcomes
@@ -238,6 +238,12 @@ Cancellation is also replayed immediately before and after the janitor runs.
 The shell returns a preparation stop at either boundary. Comparing the
 directory contents with the initial or terminal model state checks that an
 acknowledged removal survives the stop and that no execution roots are created.
+
+`deferredReportStep` replays the public janitor entry point with a three-entry
+slice limit. The first root removes one payload in its initial slice and
+finishes in the retry. The second is too deep for both slices and remains
+unresolved with `CleanupIncomplete`. The comparison checks traversal and
+removal counters, the final partition, and the surviving payload.
 
 The registry runs these janitor checks with Quint simulation and checks the ITF
 fixtures for freshness. `acknowledgementLostStep` suppresses the effect of an

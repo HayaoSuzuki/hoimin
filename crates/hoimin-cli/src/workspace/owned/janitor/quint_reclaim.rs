@@ -1,7 +1,7 @@
 //! Compare janitor observations from the ledger and real selected directories.
 use super::super::{
-    DELETING_PREFIX, JANITOR_CLEANUP_BUDGET, ManagedRootCoordinator, ManagedRunRoot,
-    create_owned_directory, select_reclaim_candidates,
+    DELETING_PREFIX, JANITOR_CLEANUP_BUDGET, ManagedRootCoordinator, ManagedRunRoot, OwnerKind,
+    STALE_AFTER, TEST_CLEANUP_SLICE_ENTRIES, create_owned_directory, select_reclaim_candidates,
 };
 use super::{DeletionProgress, ReclaimLedger};
 use crate::quint_itf::{number, states};
@@ -115,6 +115,9 @@ const ACKNOWLEDGED: &str = include_str!(
 const SELECTED: &str = include_str!(
     "../../../../../../formal/quint/traces/janitor_reclaim_selectedRootsStep_0.itf.json"
 );
+const DEFERRED: &str = include_str!(
+    "../../../../../../formal/quint/traces/janitor_reclaim_deferredReportStep_0.itf.json"
+);
 
 #[rstest::rstest]
 #[case::trace_0(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_0.itf.json"))]
@@ -125,6 +128,7 @@ const SELECTED: &str = include_str!(
 #[case::partial(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_partialStep_0.itf.json"))]
 #[case::selected(SELECTED)]
 #[case::shell(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_shellReportStep_0.itf.json"))]
+#[case::deferred(DEFERRED)]
 fn quint_history_matches_reclaim_summary(#[case] trace: &str) {
     assert_eq!(replay(trace, false), Ok(()));
 }
@@ -133,6 +137,14 @@ fn quint_history_matches_reclaim_summary(#[case] trace: &str) {
 fn missing_deletion_acknowledgement_changes_observed_summary() {
     let mismatch = replay(ACKNOWLEDGED, true).expect_err("deletion acknowledgement was lost");
     assert!(mismatch.starts_with("step 3"), "{mismatch}");
+}
+
+fn seed_cursor(coordinator: &ManagedRootCoordinator, name: &str) {
+    drop(create_owned_directory(&coordinator.dir, name).unwrap());
+    let (seed, error) =
+        select_reclaim_candidates(coordinator, &mut JanitorScan::default()).unwrap();
+    assert_eq!(seed, [name.to_owned()]);
+    assert!(error.is_none());
 }
 
 #[rstest::rstest]
@@ -146,11 +158,7 @@ fn quint_selected_roots_reach_the_report(#[case] stop_after_first: bool) {
     let [behind_cursor, first, second] = &names;
 
     // Start the live scan after the first matching name.
-    drop(create_owned_directory(&coordinator.dir, behind_cursor).unwrap());
-    let (seed, error) =
-        select_reclaim_candidates(&coordinator, &mut JanitorScan::default()).unwrap();
-    assert_eq!(seed.as_slice(), std::slice::from_ref(behind_cursor));
-    assert!(error.is_none());
+    seed_cursor(&coordinator, behind_cursor);
     drop(create_owned_directory(&coordinator.dir, first).unwrap());
     drop(create_owned_directory(&coordinator.dir, second).unwrap());
 
@@ -199,4 +207,68 @@ fn quint_selected_roots_reach_the_report(#[case] stop_after_first: bool) {
     assert!(coordinator.dir.exists(behind_cursor));
     assert!(!coordinator.dir.exists(first));
     assert_eq!(coordinator.dir.exists(second), stop_after_first);
+}
+
+#[test]
+fn quint_deferred_cleanup_progress_reaches_the_report() {
+    let directory = tempfile::tempdir().unwrap();
+    let coordinator =
+        ManagedRootCoordinator::open(Utf8Path::from_path(directory.path()).unwrap()).unwrap();
+    let behind = format!("{DELETING_PREFIX}{}", uuid::Uuid::from_u128(1));
+    seed_cursor(&coordinator, &behind);
+    let [first, second] =
+        [(); 2].map(|()| ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap());
+    let (small, deep) = if first.path() < second.path() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    small
+        .dir
+        .write("payload", b"admitted for deletion")
+        .unwrap();
+    {
+        let branch = create_owned_directory(&deep.dir, "branch").unwrap();
+        let nested = create_owned_directory(&branch, "nested").unwrap();
+        let leaf = create_owned_directory(&nested, "leaf").unwrap();
+        leaf.write("payload", b"beyond the traversal cap").unwrap();
+    }
+    let small_path = small.path().to_owned();
+    let deep_path = deep.path().to_owned();
+    let deep_deleting = coordinator
+        .path
+        .join(format!("{DELETING_PREFIX}{}", deep.run_id));
+    drop(small);
+    drop(deep);
+    let now = SystemTime::now() + STALE_AFTER;
+    let report = TEST_CLEANUP_SLICE_ENTRIES.with(|cap| {
+        let previous = cap.replace(3);
+        let report = ManagedRunRoot::reclaim_abandoned(&coordinator, now);
+        cap.set(previous);
+        report
+    });
+    let history = states(DEFERRED);
+    let terminal = history.last().unwrap();
+    assert_eq!(terminal["command"]["tag"], "Remove");
+    assert_eq!(
+        actual_counts(&report),
+        expected_counts(&terminal["summary"])
+    );
+    assert_eq!(
+        report
+            .details
+            .iter()
+            .map(|detail| detail.reason)
+            .collect::<Vec<_>>(),
+        [JanitorReason::CleanupIncomplete],
+    );
+    assert!(report.scan.directory_scan_complete);
+    assert_eq!(report.scan.stop_reason, None);
+    assert!(coordinator.dir.exists(behind));
+    assert!(!small_path.exists());
+    assert!(!deep_path.exists());
+    assert_eq!(
+        std::fs::read(deep_deleting.join("branch/nested/leaf/payload")).unwrap(),
+        b"beyond the traversal cap",
+    );
 }
