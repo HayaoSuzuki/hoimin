@@ -2302,3 +2302,37 @@ single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_finish_transaction -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib finish_transaction_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of begin transaction and retry
+
+The begin handler claims the run before opening the write transaction.
+It inserts missing fingerprint metadata and then inserts the run in the
+same transaction. A duplicate run ID rejects registration. A preexisting
+fingerprint entry keeps its schema version, including a legacy version.
+
+Lean proves that rejection preserves the run and its fingerprint entry,
+releases a provisional lock, and retains a lock held before the attempt.
+On success, the caller owns the new run. After a failed commit, the same
+handler can retry using a different budget once the fault clears. After
+success, another begin keeps the original registration and returns a
+duplicate-run error.
+
+The 90 cases vary row presence, existing fingerprint metadata, prior
+ownership, and the point of failure. The Rust replay uses a competing
+SQLite writer, temporary abort triggers on both tables, and a deferred
+foreign-key violation at commit. It checks the error stage, committed
+rows and fingerprint versions, and actual OS locks before and after
+each attempt. Eight sensitivity variants cover failure ordering,
+rollback, legacy metadata preservation, and lock publication.
+
+All 90 cases matched on macOS in default and `contracts` builds.
+The session unit suites passed 163 and 175 tests respectively. The
+session handler target passed 104 tests with one existing ignored
+test, and the workflow suite passed 222. Lean used a 2 GiB limit and
+single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_begin_transaction -- --check corpus/begin-transaction.jsonl)
+(cd formal/HoiminOracle && lake exe generate_begin_transaction -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib begin_transaction_matches_lean_oracle -- --test-threads=1
+```

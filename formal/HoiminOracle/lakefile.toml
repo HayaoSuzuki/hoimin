@@ -339,6 +339,10 @@ name = "generate_finish_transaction"
 root = "FinishTransactionAuditMain"
 
 [[lean_exe]]
+name = "generate_begin_transaction"
+root = "BeginTransactionAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

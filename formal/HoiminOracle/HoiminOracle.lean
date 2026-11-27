@@ -181,6 +181,7 @@ import HoiminOracle.StoredResultModel
 import HoiminOracle.ResumeSelectionModel
 import HoiminOracle.ResumeRecheckModel
 import HoiminOracle.FinishTransactionModel
+import HoiminOracle.BeginTransactionModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

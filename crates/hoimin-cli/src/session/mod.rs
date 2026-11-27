@@ -1,4 +1,6 @@
 #[cfg(test)]
+mod begin_transaction_oracle_tests;
+#[cfg(test)]
 mod finish_transaction_oracle_tests;
 mod ownership;
 #[cfg(test)]

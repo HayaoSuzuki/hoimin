@@ -77,7 +77,7 @@ fn reject_write(handler: &SessionHandler, event: &str, table: &str) {
     )).unwrap();
 }
 
-fn reject_commit(handler: &SessionHandler, event: &str, table: &str) {
+pub(super) fn reject_commit(handler: &SessionHandler, event: &str, table: &str) {
     handler.connection.execute_batch(&format!(
         "CREATE TEMP TABLE fault_parent(id INTEGER PRIMARY KEY);
          CREATE TEMP TABLE deferred_fault(parent INTEGER REFERENCES fault_parent(id) DEFERRABLE INITIALLY DEFERRED);
