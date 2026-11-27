@@ -5017,6 +5017,8 @@ async fn run_loop_context(
                     },
                 )(run_result);
                 context.spool_dir.release_delivery_spool();
+                #[cfg(test)]
+                control.observe_finalization_event("delivery_cleanup_requested_once");
                 delivery_cleanup = CleanupProgress::Attempted;
                 let requested = finalization.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
@@ -5120,6 +5122,8 @@ async fn run_loop_context(
                 let _ = finalization.apply(DiskLifecycleEvent::ReportFailed);
             }
             if delivery_cleanup == CleanupProgress::NotAttempted {
+                #[cfg(test)]
+                control.observe_finalization_event("delivery_cleanup_requested_once");
                 delivery_cleanup = CleanupProgress::Attempted;
                 let requested = finalization.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
@@ -8404,6 +8408,15 @@ mod tests {
                 .contains(&"output_acknowledged"),
             "JSONL delivery"
         );
+        assert_eq!(
+            observed
+                .finalization_events()
+                .iter()
+                .filter(|event| **event == "delivery_cleanup_requested_once")
+                .count(),
+            1,
+            "outer shutdown must request cleanup once after an early I/O failure"
+        );
     }
 
     #[tokio::test]
@@ -8491,62 +8504,184 @@ mod tests {
         );
     }
 
+    #[derive(PartialEq, Eq)]
+    enum FinalRecordProgress {
+        Pending,
+        Started,
+        Flushed,
+    }
+
+    struct FinalRecordWriter {
+        fail_write: bool,
+        fail_flush: bool,
+        record: Vec<u8>,
+        progress: FinalRecordProgress,
+    }
+
+    impl Write for FinalRecordWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            let marker = br#""kind":"run_finished""#;
+            self.record.extend_from_slice(bytes);
+            if self.progress == FinalRecordProgress::Pending
+                && self.record.windows(marker.len()).any(|part| part == marker)
+            {
+                self.progress = FinalRecordProgress::Started;
+            }
+            if self.progress == FinalRecordProgress::Started && self.fail_write {
+                return Err(std::io::Error::other("injected final record write failure"));
+            }
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            // A successful JSONL write flushes the record. The shell flushes again
+            // after the emit attempt. A failed write skips the first flush.
+            let explicit_flush = match self.progress {
+                FinalRecordProgress::Pending => false,
+                FinalRecordProgress::Started => self.fail_write,
+                FinalRecordProgress::Flushed => true,
+            };
+            if explicit_flush && self.fail_flush {
+                return Err(std::io::Error::other(
+                    "injected final delivery flush failure",
+                ));
+            }
+            if self.progress == FinalRecordProgress::Started {
+                self.progress = FinalRecordProgress::Flushed;
+            }
+            self.record.clear();
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum FinalDeliveryError {
+        Capacity,
+        Write,
+        Flush,
+        Cleanup,
+    }
+
+    fn final_delivery_errors(error: &str) -> Vec<FinalDeliveryError> {
+        let markers = [
+            (
+                FinalDeliveryError::Capacity,
+                "injected final capacity query failure",
+            ),
+            (
+                FinalDeliveryError::Write,
+                "injected final record write failure",
+            ),
+            (
+                FinalDeliveryError::Flush,
+                "injected final delivery flush failure",
+            ),
+            (FinalDeliveryError::Cleanup, "workspace.cleanup.failed:"),
+        ];
+        let mut stages = markers
+            .into_iter()
+            .flat_map(|(stage, marker)| {
+                error
+                    .match_indices(marker)
+                    .map(move |(index, _)| (index, stage))
+            })
+            .collect::<Vec<_>>();
+        stages.sort_unstable_by_key(|(index, _)| *index);
+        stages.into_iter().map(|(_, stage)| stage).collect()
+    }
+
     #[tokio::test]
-    async fn output_rejects_ack_on_write_or_delivery_cleanup_failure() {
-        let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project);
-        let control = RunControl::new();
-        let observed = control.clone();
+    async fn final_delivery_acknowledgement_and_errors_match_lean() {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        #[allow(clippy::struct_excessive_bools)] // The four stage outcomes vary independently.
+        struct Case {
+            schema: u8,
+            mode: String,
+            id: String,
+            capacity_ok: bool,
+            write_ok: bool,
+            flush_ok: bool,
+            cleanup_ok: bool,
+            expected_errors: Vec<FinalDeliveryError>,
+            expected_events: Vec<String>,
+        }
 
-        let error = run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
-            .await
-            .expect_err("report write failure must not be acknowledged");
+        let mut ids = BTreeSet::new();
+        for line in include_str!("../../../formal/HoiminOracle/corpus/disk-delivery.jsonl").lines()
+        {
+            let case: Case = serde_json::from_str(line).unwrap();
+            let id = &case.id;
+            assert_eq!(case.schema, 1, "{id}");
+            assert_eq!(case.mode, "internal-fixture", "{id}");
+            assert!(ids.insert(id.clone()));
+            let project = tempfile::tempdir().unwrap();
+            let config = output_failure_test_config(&project);
+            let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+                owned_bytes: 0,
+                available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
+                conservative_entries: false,
+                elapsed: Duration::from_millis(1),
+            }));
+            control.override_end_available(if case.capacity_ok {
+                Ok(BTreeMap::from([(FilesystemKey(7), 500)]))
+            } else {
+                Err("injected final capacity query failure".to_owned())
+            });
+            if !case.cleanup_ok {
+                control.inject_delivery_cleanup_identity_failure();
+            }
+            let observed = control.clone();
+            let writer = FinalRecordWriter {
+                fail_write: !case.write_ok,
+                fail_flush: !case.flush_ok,
+                record: Vec::new(),
+                progress: FinalRecordProgress::Pending,
+            };
 
-        assert!(error.contains("report"), "{error}");
-        assert!(
-            observed
-                .managed_root_paths()
-                .iter()
-                .all(|root| !root.exists()),
-            "report failure stranded a managed root"
-        );
-        assert!(
-            !observed
+            let result = run_loop_with_control(config, writer, Vec::new(), control).await;
+
+            let events = observed
                 .finalization_events()
-                .contains(&"output_acknowledged"),
-            "write failure was acknowledged"
-        );
-
-        let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project);
-        let control = RunControl::new();
-        control.inject_delivery_cleanup_identity_failure();
-        let observed = control.clone();
-
-        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
-            .await
-            .expect_err("delivery cleanup failure must not be acknowledged");
-
-        assert!(
-            error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
-            "{error}"
-        );
-        let roots = observed.managed_root_paths();
-        assert!(!roots[0].exists(), "execution root");
-        assert!(roots[1].exists(), "replacement root");
-        assert!(
-            observed
-                .delivery_cleanup_sentinel()
-                .expect("original delivery sentinel")
-                .exists(),
-            "original delivery sentinel"
-        );
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged"),
-            "cleanup failure was acknowledged"
-        );
+                .into_iter()
+                .filter(|event| {
+                    matches!(
+                        *event,
+                        "run_finished_written"
+                            | "delivery_cleanup_requested_once"
+                            | "delivery_root_absent"
+                            | "output_acknowledged"
+                    )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(events, case.expected_events, "{id}");
+            if case.expected_errors.is_empty() {
+                assert_eq!(result, Ok(0), "{id}");
+            } else {
+                let error = result.expect_err(id);
+                assert_eq!(
+                    final_delivery_errors(&error),
+                    case.expected_errors,
+                    "{id}: {error}"
+                );
+            }
+            let roots = observed.managed_root_paths();
+            assert_eq!(roots.len(), 2, "{id}");
+            assert!(!roots[0].exists(), "{id}: execution root");
+            assert_eq!(
+                roots[1].exists(),
+                !events.contains(&"delivery_root_absent"),
+                "{id}: delivery root"
+            );
+            if !case.cleanup_ok {
+                let original = observed
+                    .delivery_cleanup_sentinel()
+                    .expect("original delivery root");
+                assert!(original.exists(), "{id}: original delivery root");
+            }
+        }
+        assert_eq!(ids.len(), 16);
     }
 
     #[tokio::test(flavor = "current_thread")]

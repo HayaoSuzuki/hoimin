@@ -408,4 +408,22 @@ theorem capacity_change_is_bounded_by_u64_magnitude (start finish : Nat)
       -((2 : Int)^64 - 1) ≤ change ∧ change ≤ (2 : Int)^64 - 1 := by
   refine ⟨(finish : Int) - (start : Int), rfl, ?_, ?_⟩ <;> omega
 
+theorem delivery_errors_preserve_stage_order (evidence : DeliveryEvidence) :
+    (deliveryErrors evidence).Sublist deliveryErrorOrder := by
+  unfold deliveryErrors
+  exact List.filter_sublist
+
+theorem delivery_cleanup_is_requested_once (evidence : DeliveryEvidence) :
+    (deliveryEvents evidence).count DeliveryEvent.cleanupRequested = 1 := by
+  rcases evidence with ⟨capacity, write, flush, cleanup⟩
+  cases capacity <;> cases write <;> cases flush <;> cases cleanup <;> decide
+
+theorem delivery_acknowledgement_requires_all_stages (evidence : DeliveryEvidence) :
+    DeliveryEvent.acknowledged ∈ deliveryEvents evidence ↔
+      evidence.capacity = true ∧ evidence.write = true ∧
+        evidence.flush = true ∧ evidence.cleanup = true := by
+  rcases evidence with ⟨capacity, write, flush, cleanup⟩
+  cases capacity <;> cases write <;> cases flush <;> cases cleanup <;>
+    simp [deliveryEvents, deliveryErrors, deliveryErrorOrder]
+
 end HoiminOracle.DiskGuard

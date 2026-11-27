@@ -383,6 +383,42 @@ private def finalCapacitySensitivity : Bool :=
   capacityChange maxBytes (some 0) != some (Int.ofNat (0 - maxBytes)) &&
     endCapacity (some [(7, 0)]) 8 != some 0
 
+private def deliveryErrorName : DeliveryError → String
+  | .capacity => "capacity"
+  | .write => "write"
+  | .flush => "flush"
+  | .cleanup => "cleanup"
+
+private def deliveryEventName : DeliveryEvent → String
+  | .written => "run_finished_written"
+  | .cleanupRequested => "delivery_cleanup_requested_once"
+  | .rootAbsent => "delivery_root_absent"
+  | .acknowledged => "output_acknowledged"
+
+private def deliveryCase (evidence : DeliveryEvidence) : Lean.Json :=
+  let id := String.intercalate "_" ((deliveryErrors evidence).map deliveryErrorName)
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str (if id.isEmpty then "all_succeeded" else id)),
+    ("capacity_ok", Lean.toJson evidence.capacity), ("write_ok", Lean.toJson evidence.write),
+    ("flush_ok", Lean.toJson evidence.flush), ("cleanup_ok", Lean.toJson evidence.cleanup),
+    ("expected_errors", Lean.toJson ((deliveryErrors evidence).map deliveryErrorName)),
+    ("expected_events", Lean.toJson ((deliveryEvents evidence).map deliveryEventName))]
+
+def renderDeliveryCorpus : String :=
+  let switches := [true, false]
+  let cases := switches.flatMap fun capacity => switches.flatMap fun write =>
+    switches.flatMap fun flush => switches.map fun cleanup =>
+      deliveryCase ⟨capacity, write, flush, cleanup⟩
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+private def deliverySensitivity : Bool :=
+  let allFailed : DeliveryEvidence := ⟨false, false, false, false⟩
+  let flushFailed : DeliveryEvidence := ⟨true, true, false, true⟩
+  deliveryErrors allFailed != (deliveryErrors allFailed).reverse &&
+    !(deliveryEvents flushFailed).contains .acknowledged &&
+    (deliveryEvents allFailed).contains .cleanupRequested
+
 private def familyEvents : List Event := [
   .dispatch, .observe 9 10 11 10, .processDrainSucceeded, .outputDrained,
   .monitorJoined, .requestCleanup executionRoot, .reportSucceeded, .finish]
@@ -465,7 +501,7 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
     IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
   unless sensitivityPasses && reportEvidenceSensitivity && finalizationErrorsSensitivity && meterSensitivity &&
-      statsSensitivity && finalCapacitySensitivity do
+      statsSensitivity && finalCapacitySensitivity && deliverySensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
   return .ok ()
@@ -546,10 +582,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check-statistics", path] => checkCorpus path renderStatisticsCorpus
   | ["--output-final-capacity", path] => writeCorpus path renderFinalCapacityCorpus
   | ["--check-final-capacity", path] => checkCorpus path renderFinalCapacityCorpus
+  | ["--output-delivery", path] => writeCorpus path renderDeliveryCorpus
+  | ["--check-delivery", path] => checkCorpus path renderDeliveryCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-finalization-errors | --check-finalization-errors | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-finalization-errors | --check-finalization-errors | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity | --output-delivery | --check-delivery) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

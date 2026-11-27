@@ -1172,6 +1172,32 @@ cd ../..
 cargo test --locked -p hoimin-cli --lib final_disk_capacity_report_matches_lean
 ```
 
+## Acknowledgement after report delivery
+
+The delivery model starts with the execution root cleaned and all shutdown
+components quiescent. It distinguishes the final capacity query, the write of
+the final record, the explicit flush after that write attempt, and cleanup of
+the delivery root. Lean proves that the terminal errors preserve this order,
+cleanup is requested exactly once even if reporting fails, and acknowledgement
+requires success at all four stages.
+
+Sixteen fixtures exercise all combinations through the Rust shell with a
+controlled capacity query and a writer that injects errors only during the
+final record or its explicit flush. A real same-name directory replacement
+causes delivery cleanup to fail. The test compares the ordered error stages,
+delivery events, and root presence. It also checks that both directory
+identities survive the replacement case. The observer counts requests from
+both the main delivery path and outer shutdown. An early writer failure
+exercises the outer shutdown request directly. Paused operations that outlive
+the shutdown deadline are exercised by the interrupted-delivery tests.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-delivery corpus/disk-delivery.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib final_delivery_acknowledgement_and_errors_match_lean
+```
+
 ## Cleanup outcomes and finish admission
 
 The lifecycle corpus crosses four component-settlement schedules with the four

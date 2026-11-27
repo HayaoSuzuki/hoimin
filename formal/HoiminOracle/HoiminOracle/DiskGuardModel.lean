@@ -260,6 +260,35 @@ def finalCapacities (starts : List (Nat × Nat)) (query : Option (List (Nat × N
     let finish := endCapacity query key
     ⟨key, start, finish, capacityChange start finish⟩
 
+structure DeliveryEvidence where
+  capacity : Bool
+  write : Bool
+  flush : Bool
+  cleanup : Bool
+
+inductive DeliveryError where
+  | capacity | write | flush | cleanup
+  deriving BEq, DecidableEq
+
+inductive DeliveryEvent where
+  | written | cleanupRequested | rootAbsent | acknowledged
+  deriving BEq, DecidableEq
+
+def deliveryErrorOrder : List DeliveryError :=
+  [.capacity, .write, .flush, .cleanup]
+
+def deliveryErrors (evidence : DeliveryEvidence) : List DeliveryError :=
+  deliveryErrorOrder.filter fun stage => !match stage with
+    | .capacity => evidence.capacity
+    | .write => evidence.write
+    | .flush => evidence.flush
+    | .cleanup => evidence.cleanup
+
+def deliveryEvents (evidence : DeliveryEvidence) : List DeliveryEvent :=
+  (if evidence.write then [.written] else []) ++ [.cleanupRequested] ++
+    (if evidence.cleanup then [.rootAbsent] else []) ++
+    if (deliveryErrors evidence).isEmpty then [.acknowledged] else []
+
 def allSafetySucceeded (state : State) : Bool :=
   state.processDrain == .succeeded && state.outputDrain == .succeeded &&
     state.monitorJoin == .succeeded
