@@ -3,7 +3,8 @@
 module JanitorSelection {
   type Phase = Idle | Scanning | Eof | BeforePersist | Published | PersistFailed |
     PersistTorn | PersistSyncFailed |
-    ExpiredScan | ExpiredEof | ExpiredPersist | NamespaceLimited | CoordinatorBusy | SelectionReadFailed
+    ExpiredStartup | ExpiredScan | ExpiredDuringEnumeration | ExpiredEof | ExpiredPersist |
+    NamespaceLimited | CoordinatorBusy | SelectionReadFailed | EnumerationFailed | EnumerationInterrupted
   type Scan = { phase: Phase, listing: Set[int], seen: Set[int], chosen: List[int],
     rawEntries: int, complete: bool, limited: bool, cursorDeferred: bool, scans: int }
   type Cursor = { name: int, generation: int }
@@ -27,8 +28,9 @@ module JanitorSelection {
   }
 
   pure def terminal(phase: Phase): bool =
-    Set(Published, PersistFailed, PersistTorn, PersistSyncFailed, ExpiredScan, ExpiredEof,
-      ExpiredPersist, NamespaceLimited, CoordinatorBusy, SelectionReadFailed)
+    Set(Published, PersistFailed, PersistTorn, PersistSyncFailed, ExpiredStartup, ExpiredScan,
+      ExpiredDuringEnumeration, ExpiredEof, ExpiredPersist, NamespaceLimited, CoordinatorBusy,
+      SelectionReadFailed, EnumerationFailed, EnumerationInterrupted)
       .contains(phase)
 
   action begin(listing: Set[int]): bool = all {
@@ -200,6 +202,20 @@ module JanitorSelection {
       publish({ ...scan, phase: SelectionReadFailed }, saved)
     else advanceScenario
 
+  action startupStopsStep =
+    if (scan.phase == Scanning and scan.scans == 2)
+      publish({ ...scan, phase: ExpiredStartup }, saved)
+    else if (scan.phase == Scanning and scan.scans == 3)
+      publish({ ...scan, phase: ExpiredDuringEnumeration }, saved)
+    else advanceScenario
+
+  action enumerationErrorStep =
+    if (scan.phase == Scanning and scan.scans == 2)
+      publish({ ...scan, phase: EnumerationFailed }, saved)
+    else if (scan.phase == Scanning and scan.scans == 3 and scan.seen == scan.listing)
+      publish({ ...scan, phase: EnumerationInterrupted }, saved)
+    else advanceScenario
+
   val publishedAfterCursor = scan.phase == Published and scan.cursorDeferred
   val wrapped = scan.phase == Published and scan.chosen.length() > 0 and
     scan.chosen.select(name => name <= startCursor.name).length() > 0
@@ -231,7 +247,8 @@ module JanitorSelection {
     scan.rawEntries >= scan.seen.size(),
     (scan.phase == NamespaceLimited) == (scan.rawEntries > namespaceLimit),
     scan.rawEntries <= namespaceLimit + 1,
-    Set(CoordinatorBusy, SelectionReadFailed).contains(scan.phase) implies scan.rawEntries == 0,
+    Set(ExpiredStartup, ExpiredDuringEnumeration, CoordinatorBusy, SelectionReadFailed,
+      EnumerationFailed).contains(scan.phase) implies scan.rawEntries == 0,
     scan.complete == Set(Eof, BeforePersist, Published, PersistFailed, PersistTorn, PersistSyncFailed,
       ExpiredEof, ExpiredPersist).contains(scan.phase),
     scan.complete implies scan.seen == scan.listing,

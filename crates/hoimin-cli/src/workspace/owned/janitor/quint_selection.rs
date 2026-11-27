@@ -1,7 +1,8 @@
 //! Replay candidate scans against real directory entries and coordinator slots.
 use super::super::{
     COORDINATOR_FILE, CoordinatorLockGuard, ManagedRootCoordinator, ManagedRunRoot,
-    decode_coordinator_slot, read_coordinator_state, select_reclaim_candidates,
+    decode_coordinator_slot, owned_directory_entries, read_coordinator_state,
+    select_reclaim_candidates, select_reclaim_candidates_controlled_with_hooks,
     select_reclaim_candidates_locked_until_with_hooks,
 };
 use super::quint_cursor_name as name;
@@ -9,7 +10,7 @@ use super::quint_cursor_recovery::{slot_range, torn_cursor_write};
 use crate::io_faults;
 use crate::quint_itf::{number, set, states};
 use camino::Utf8Path;
-use hoimin_core::{JanitorReason, JanitorScan};
+use hoimin_core::{JanitorReason, JanitorScan, JanitorSummary};
 use serde_json::Value;
 use std::cell::Cell;
 use std::collections::BTreeSet;
@@ -132,6 +133,8 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
 #[case::persist_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_persistDeadlineStep_0.itf.json"))]
 #[case::capacity(include_str!("../../../../../../formal/quint/traces/janitor_selection_capacityStep_0.itf.json"))]
 #[case::unavailable(include_str!("../../../../../../formal/quint/traces/janitor_selection_unavailableStep_0.itf.json"))]
+#[case::startup_stop(include_str!("../../../../../../formal/quint/traces/janitor_selection_startupStopsStep_0.itf.json"))]
+#[case::enumeration_failure(include_str!("../../../../../../formal/quint/traces/janitor_selection_enumerationErrorStep_0.itf.json"))]
 fn quint_history_matches_candidate_selection(#[case] trace: &str) {
     replay_selection(trace);
 }
@@ -152,10 +155,14 @@ fn replay_selection(trace: &str) {
                 | "PersistTorn"
                 | "PersistSyncFailed"
                 | "ExpiredScan"
+                | "ExpiredStartup"
+                | "ExpiredDuringEnumeration"
                 | "ExpiredEof"
                 | "ExpiredPersist"
                 | "CoordinatorBusy"
                 | "SelectionReadFailed"
+                | "EnumerationFailed"
+                | "EnumerationInterrupted"
         ) {
             continue;
         }
@@ -167,7 +174,15 @@ fn replay_selection(trace: &str) {
                 drop(coordinator);
                 coordinator = ManagedRootCoordinator::open(parent).unwrap();
             }
-            "CoordinatorBusy" | "SelectionReadFailed" => check_unavailable(&coordinator, phase),
+            "CoordinatorBusy"
+            | "SelectionReadFailed"
+            | "EnumerationFailed"
+            | "EnumerationInterrupted" => {
+                check_unavailable(&coordinator, phase, scan);
+            }
+            "ExpiredStartup" | "ExpiredDuringEnumeration" => {
+                check_initial_deadline(&coordinator, phase);
+            }
             _ => check_scan(&coordinator, scan),
         }
         assert_cursor(&coordinator, &row["saved"]);
@@ -179,33 +194,101 @@ fn replay_selection(trace: &str) {
     );
 }
 
-fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str) {
+fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str, expected: &Value) {
     let before = coordinator.dir.read(COORDINATOR_FILE).unwrap();
     let busy = phase == "CoordinatorBusy";
     let guard = busy.then(|| CoordinatorLockGuard::acquire(coordinator).unwrap());
-    let fault = (!busy).then(|| io_faults::arm("cursor.read"));
+    let fault = match phase {
+        "CoordinatorBusy" => None,
+        "SelectionReadFailed" => Some(io_faults::arm("cursor.read")),
+        "EnumerationFailed" => Some(io_faults::arm("janitor.selection_entries")),
+        "EnumerationInterrupted" => {
+            let entries = owned_directory_entries(&coordinator.dir).unwrap().count();
+            Some(io_faults::arm_after("janitor.selection_next", entries))
+        }
+        other => panic!("unexpected selection error {other}"),
+    };
     let report = ManagedRunRoot::reclaim_abandoned_controlled(
         coordinator,
         SystemTime::now(),
         tokio::time::Instant::now() + Duration::from_secs(2),
         &|| false,
     );
-    let (reason, details) = if busy {
-        (JanitorReason::CoordinatorBusy, vec![])
-    } else {
-        assert!(fault.unwrap().triggered());
-        (
+    if let Some(fault) = fault {
+        assert!(fault.triggered());
+        assert_scan_stopped(
+            &report,
             JanitorReason::SelectionFailed,
-            vec![JanitorReason::SelectionFailed],
-        )
-    };
+            &[JanitorReason::SelectionFailed],
+            u64::try_from(set(&expected["seen"]).len()).unwrap(),
+        );
+    } else {
+        assert_scan_stopped(&report, JanitorReason::CoordinatorBusy, &[], 0);
+    }
     if let Some(guard) = guard {
         guard.unlock(&coordinator.path).unwrap();
     }
+    assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
+}
+
+fn check_initial_deadline(coordinator: &ManagedRootCoordinator, phase: &str) {
+    let before = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let now = SystemTime::now();
+    if phase == "ExpiredStartup" {
+        let fault = io_faults::arm("cursor.read");
+        let report = ManagedRunRoot::reclaim_abandoned_controlled(
+            coordinator,
+            now,
+            tokio::time::Instant::now(),
+            &|| false,
+        );
+        assert!(!fault.triggered());
+        assert_scan_stopped(&report, JanitorReason::SelectionDeadline, &[], 0);
+    } else {
+        let yielded = Cell::new(0);
+        let report = ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
+            coordinator,
+            now,
+            Instant::now(),
+            &|_| Duration::ZERO,
+            &|scan| {
+                select_reclaim_candidates_controlled_with_hooks(
+                    coordinator,
+                    scan,
+                    &|| {
+                        if yielded.get() == 0 {
+                            Duration::from_secs(1)
+                        } else {
+                            Duration::ZERO
+                        }
+                    },
+                    &|| yielded.set(yielded.get() + 1),
+                )
+            },
+        );
+        assert_eq!(yielded.get(), 1);
+        assert_scan_stopped(
+            &report,
+            JanitorReason::SelectionDeadline,
+            &[JanitorReason::SelectionDeadline],
+            0,
+        );
+    }
+    assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
+}
+
+fn assert_scan_stopped(
+    report: &JanitorSummary,
+    reason: JanitorReason,
+    details: &[JanitorReason],
+    observed: u64,
+) {
     assert_eq!(
         report.scan,
         JanitorScan {
             stop_reason: Some(reason),
+            observed_matching_entries: observed,
+            selection_omitted_observed_entries: observed,
             ..JanitorScan::default()
         },
     );
@@ -219,7 +302,6 @@ fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str) {
             .collect::<Vec<_>>(),
         details,
     );
-    assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
 }
 
 fn check_cursor_failure_handoff(

@@ -7012,22 +7012,25 @@ fn select_reclaim_candidates_locked_until_with_hooks(
     let coordinator_path = coordinator.path.join(COORDINATOR_FILE);
     let (active_slot, state) = read_coordinator_state(&coordinator.file, &coordinator_path)?;
     ensure_selection_deadline(coordinator, scan, deadline, &now)?;
-    let mut entries = owned_directory_entries(&coordinator.dir)
-        .map_err(|error| WorkspaceError::io("enumerate managed roots", &coordinator.path, error))?;
+    let mut entries = owned_io!(
+        "janitor.selection_entries",
+        owned_directory_entries(&coordinator.dir)
+    )
+    .map_err(|error| WorkspaceError::io("enumerate managed roots", &coordinator.path, error))?;
     ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     let mut examined = 0_usize;
     let mut after = BTreeSet::new();
     let mut wrapped = BTreeSet::new();
     loop {
         ensure_selection_deadline(coordinator, scan, deadline, &now)?;
-        let entry = entries.next();
+        let entry = owned_io!("janitor.selection_next", entries.next().transpose());
         ensure_selection_deadline(coordinator, scan, deadline, &now)?;
-        let Some(entry) = entry else {
+        let Some(entry) = entry.map_err(|error| {
+            WorkspaceError::io("enumerate managed roots", &coordinator.path, error)
+        })?
+        else {
             break;
         };
-        let entry = entry.map_err(|error| {
-            WorkspaceError::io("enumerate managed roots", &coordinator.path, error)
-        })?;
         after_entry();
         ensure_selection_deadline(coordinator, scan, deadline, &now)?;
         // The preceding iteration returned if its count exceeded 100,000,

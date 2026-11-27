@@ -190,8 +190,8 @@ each boundary.
 
 | Boundary | Existing model and implementation correspondence | Model work remaining |
 | --- | --- | --- |
-| Startup invocation, shared deadline, and report handoff | Rust shell and controlled-startup fixtures | Stop before selection, after observation, and before reporting |
-| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, and cursor read errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Directory enumeration errors |
+| Startup invocation, shared deadline, and report handoff | `janitor_selection.qnt` covers stop before selection and while enumerating. `janitor_reclaim.qnt` covers stop after one selected root is inspected | Shell invocation and stop before report handoff |
+| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Input listings remain stable within each modelled scan |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers lease absence, type, lock errors, malformed markers, retention, readiness, and heartbeat evidence | Candidate directory open and identity errors, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, diagnostics, surviving entries, and acknowledged deletions across claim and slice interruptions | Startup selection and reporting across multiple roots |
@@ -333,6 +333,11 @@ namespace fixture for both observations.
 Both outcomes leave the cursor and inspected-root count unchanged. The
 startup report distinguishes coordinator contention from a selection failure
 and records a diagnostic for the read error.
+`startupStopsStep` contrasts an expired startup deadline with expiry after
+the directory yields its first entry. Both stop before inspection. Only the
+latter produces a selection diagnostic. `enumerationErrorStep` injects an
+I/O failure at open or when reading the end of the listing. Already observed
+matches remain in the report as omissions. No page or cursor is published.
 
 The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
 in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.

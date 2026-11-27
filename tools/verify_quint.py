@@ -141,6 +141,8 @@ MODELS = (
             "capacityStep",
             "namespaceLimitStep",
             "unavailableStep",
+            "startupStopsStep",
+            "enumerationErrorStep",
         ),
         scenario_steps=24,
         simulation_only=True,
