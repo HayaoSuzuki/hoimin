@@ -166,6 +166,7 @@ import HoiminOracle.WorkspaceCapacityModel
 import HoiminOracle.WorkerGrantPublicationModel
 import HoiminOracle.WorkspaceMutationModel
 import HoiminOracle.WorkspaceMutationWriteModel
+import HoiminOracle.WorkerEnvironmentModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

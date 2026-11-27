@@ -735,6 +735,9 @@ jobs:
             HoiminOracle.WorkspaceMutationWriteModel
             HoiminOracle.WorkspaceMutationWriteCases
             WorkspaceMutationWriteAuditMain
+            HoiminOracle.WorkerEnvironmentModel
+            HoiminOracle.WorkerEnvironmentCases
+            WorkerEnvironmentAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -829,6 +832,7 @@ jobs:
             'generate_worker_grant_publication|corpus/worker-grant-publication.jsonl|sensitivity'
             'generate_workspace_mutation|corpus/workspace-mutation.jsonl|sensitivity'
             'generate_workspace_mutation_write|corpus/workspace-mutation-write.jsonl|sensitivity'
+            'generate_worker_environment|corpus/worker-environment.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

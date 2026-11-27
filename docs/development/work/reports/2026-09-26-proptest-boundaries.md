@@ -1650,3 +1650,46 @@ passed 222. Lean used a 2 GiB limit and single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_workspace_mutation_write -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib mutation_write_limit_matches_lean -- --test-threads=1
 ```
+
+## Lean model of worker command environment
+
+The worker root becomes the command's working directory and the first
+Python search path. Explicit import roots follow in request order, then
+source roots, then inherited `PYTHONPATH` entries. Source and inherited
+paths are resolved against the original project, using canonical filesystem
+paths where possible and lexical normalization otherwise. Paths inside the
+resolved project move under the worker root. External paths keep their
+resolved locations, including directories whose names share a prefix with
+the project name. Duplicate paths keep the first spelling and position.
+
+Lean proves that the emitted paths form a subsequence of the composed
+input order with distinct normalized keys, that the worker root comes
+first, and that external paths preserve their resolved locations. The
+bounded fixtures use an explicit filesystem tree with Unix symbolic links.
+The Windows cases model ASCII case folding and ordered merging of
+case variants of the `PYTHONPATH` variable.
+
+| Premise or observation | Lean | Rust fixture and evidence |
+| --- | --- | --- |
+| Search order and duplicate paths | First occurrence of each platform-normalized key | Call both public environment builders and compare the complete split search path and working directory |
+| Canonicalization and containment | Existing directories, missing paths and symbolic links in a finite tree | Create the same layout in a real temporary directory |
+| Native encoding and variables | Platform join error and retained environment names | Check native split/join results and unchanged values of all other environment entries |
+| Module resolution | First search directory containing the test module | Start Python with the returned environment and check the imported module's file |
+
+The generated corpus contains 146 `strict` cases, including 76 for Unix
+and 70 for Windows. Each platform has four import probes. Six deliberately
+incorrect variants exercise priority, canonicalization, containment,
+deduplication, Windows case handling and native join errors.
+
+All 76 Unix cases matched on macOS in both build configurations. The four
+Python probes loaded the expected files. The workspace handler, import
+root and environment fingerprint suites passed 124 tests, and the
+workflow suite passed 222. The Windows cases were generated and checked
+for freshness. Rust correspondence for those cases requires a Windows
+host. Lean used a 2 GiB limit and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_worker_environment -- --check corpus/worker-environment.jsonl)
+(cd formal/HoiminOracle && lake exe generate_worker_environment -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test lean_worker_environment_oracle -- --test-threads=1
+```
