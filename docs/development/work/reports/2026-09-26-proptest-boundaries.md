@@ -1604,3 +1604,49 @@ Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_workspace_mutation -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::mutation -- --test-threads=2
 ```
+
+## Lean model of interrupted worker mutation writes
+
+The mutation writer truncates the worker file before writing the new
+bytes. A file-size-limit error can therefore leave an empty file or a
+prefix of the mutation. The worker handler keeps the same active worker
+and its original copy charge after an apply error. An unlimited retry
+requires the worker file to match the snapshot. An interrupted append
+can leave that exact snapshot, while a same-length prefix with changed
+bytes fails the hash check. Reset skips a file that already matches in
+both bytes and permissions. If the reset itself hits the file-size limit
+and discard succeeds, the handler releases the old worker and its copy
+charge. A new worker can use the same reservation.
+
+Lean proves the write bound, the exact prefix on a short write, worker
+generation and charge preservation during apply, the byte-equality
+condition for retry, and charge release on a failed restore. The model
+covers the file-size-limit outcome with valid candidates in one worker
+slot. It reuses the raw splice from the mutation application model.
+
+| Premise or observation | Lean | Rust fixture and evidence |
+| --- | --- | --- |
+| Limit during apply or reset | Optional write cap and a bounded byte prefix | Run the real request under `RLIMIT_FSIZE` in an isolated Unix test process and match `EFBIG` diagnostics |
+| Existing or recreated worker | Active generation, saved copy charge and live root | Observe the registry, physical roots and accounting, including before execution and before accepting owned tasks |
+| Retry and restoration | Full byte equality, exact snapshot permissions and fresh worker after discard | Replay the same candidate, reset, or create again through the handler and check the files on disk |
+
+The 144 `internal-fixture` histories cover limits from zero through one
+beyond the greater of the source and mutated file lengths, plus unlimited
+writes, for five mutations and both initial permission states. Six targeted
+histories add capped resets, discard and recreation. The 580 transitions
+are replayed through synchronous and owned task paths. Six deliberately
+incorrect transitions exercise the partial prefix, retry, ownership, and
+reset rules. The same child-process limit helper is used by snapshot and
+worker copy coverage tests.
+
+All 288 replays and 1,160 transitions matched on macOS. The task suite
+passed 27 tests in both configurations, with one ignored child fixture.
+The copy suite passed 97 tests with ten existing ignored tests, the
+workspace handler and recovery suites passed 99, and the workflow suite
+passed 222. Lean used a 2 GiB limit and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_workspace_mutation_write -- --check corpus/workspace-mutation-write.jsonl)
+(cd formal/HoiminOracle && lake exe generate_workspace_mutation_write -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib mutation_write_limit_matches_lean -- --test-threads=1
+```

@@ -11,6 +11,8 @@ mod owned;
 mod reset;
 mod root;
 mod stream;
+#[cfg(all(test, unix))]
+mod test_file_size_limit;
 
 #[cfg(test)]
 use std::cell::Cell;
@@ -1612,6 +1614,8 @@ fn effect_failed(id: EffectId, error: WorkspaceError) -> EffectFailed {
 
 #[cfg(test)]
 mod task_tests {
+    #[cfg(unix)]
+    mod mutation_write_oracle;
     mod worker_recovery_oracle;
 
     use camino::Utf8Path;

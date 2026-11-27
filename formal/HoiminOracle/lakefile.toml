@@ -275,6 +275,10 @@ name = "generate_workspace_mutation"
 root = "WorkspaceMutationAuditMain"
 
 [[lean_exe]]
+name = "generate_workspace_mutation_write"
+root = "WorkspaceMutationWriteAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

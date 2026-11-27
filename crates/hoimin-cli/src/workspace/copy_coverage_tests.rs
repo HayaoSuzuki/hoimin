@@ -1,6 +1,9 @@
 use super::*;
 use hoimin_core::{BudgetLedger, RunBudgets, reserve_workspace_copy};
 
+#[cfg(unix)]
+use crate::workspace::test_file_size_limit::FileSizeLimit;
+
 #[test]
 fn missing_snapshot_manifest_entry_releases_worker_slot_and_keeps_reservation() {
     let source = tempfile::tempdir().unwrap();
@@ -285,53 +288,6 @@ fn temporary_worker_storage_failure_child() {
         })
     ));
     assert_eq!(plan.observed_copy_bytes(), 0);
-}
-
-#[cfg(unix)]
-struct FileSizeLimit {
-    previous: libc::rlimit,
-    previous_handler: libc::sighandler_t,
-}
-
-#[cfg(unix)]
-impl FileSizeLimit {
-    fn start(bytes: libc::rlim_t) -> Self {
-        let mut previous = libc::rlimit {
-            rlim_cur: 0,
-            rlim_max: 0,
-        };
-        // SAFETY: the kernel writes into a live rlimit value in this isolated subprocess.
-        assert_eq!(
-            unsafe { libc::getrlimit(libc::RLIMIT_FSIZE, &raw mut previous) },
-            0
-        );
-        // SAFETY: ignoring SIGXFSZ lets writes report EFBIG; the previous handler is restored.
-        let previous_handler = unsafe { libc::signal(libc::SIGXFSZ, libc::SIG_IGN) };
-        let reduced = libc::rlimit {
-            rlim_cur: bytes,
-            rlim_max: previous.rlim_max,
-        };
-        // SAFETY: change only this fixture subprocess's soft file-size limit.
-        assert_eq!(
-            unsafe { libc::setrlimit(libc::RLIMIT_FSIZE, &raw const reduced) },
-            0
-        );
-        Self {
-            previous,
-            previous_handler,
-        }
-    }
-}
-
-#[cfg(unix)]
-impl Drop for FileSizeLimit {
-    fn drop(&mut self) {
-        // SAFETY: restore the captured process limit and signal handler before reporting results.
-        unsafe {
-            let _ = libc::setrlimit(libc::RLIMIT_FSIZE, &raw const self.previous);
-            libc::signal(libc::SIGXFSZ, self.previous_handler);
-        }
-    }
 }
 
 #[cfg(unix)]
