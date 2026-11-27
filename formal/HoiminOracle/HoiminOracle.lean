@@ -128,6 +128,7 @@ import HoiminOracle.PrivateAnnotationImportModel
 import HoiminOracle.EnvironmentFingerprintModel
 import HoiminOracle.RelativePathModel
 import HoiminOracle.ImportRootModel
+import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel
 
 import HoiminOracle.ResumeDiagnosticModel

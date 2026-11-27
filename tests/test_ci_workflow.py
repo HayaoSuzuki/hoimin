@@ -1623,6 +1623,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "--check-relative-path",
             "corpus/relative-path.jsonl",
         ),
+        (
+            "generate_environment_fingerprint",
+            "--check-target-path",
+            "corpus/target-path.jsonl",
+        ),
         ("generate_changed_context", "--check-config", "corpus/changed-config.jsonl"),
         (
             "generate_changed_context",

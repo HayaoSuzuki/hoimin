@@ -169,6 +169,51 @@ revisions or computes changed lines.
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test cli_config changed_selection_configuration_matches_lean
 ```
 
+## Normalizing target selector paths
+
+An absolute selector must match the project root component by component before
+its remaining path is reduced. A relative selector starts directly at the root.
+The reduction skips empty and dot components, removes one accumulated component
+for each `..`, and rejects a parent step at the root. A selector that names the
+root produces an empty logical path. The source selector interprets that value
+as selecting the whole discovered tree.
+
+| Observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Absolute path origin | Declared root and input components with platform-specific equality | Public `normalize_logical_path` receives the rendered native spellings |
+| Relative normalization | The same component reduction used by the import-root model | Exact result string or `PathOutsideRoot` carrying the original spelling |
+| Target selection | Eligible Python path, empty logical root, or an invalid source | `resolve_explicit` on the normalized fixture's discovery inventory |
+
+Lean proves that stripping a matching root preserves the suffix, that a
+nonmatching component fails the comparison, and that the root itself reduces
+to the empty logical path. Once reduction tries to leave the root, appending
+more components cannot repair the failure. Sensitivity checks detect partial
+component matches, clamping `..` at the root, switching case rules on either
+platform, and rejecting the empty logical result.
+
+The corpus has 240 cases. The common cases include every sequence of up to
+three components drawn from two ordinary spellings, the empty component, `.`,
+and `..`. Each platform has a shorter absolute-path matrix and targeted
+controls for component boundaries and native spellings. The Windows cases
+include drive prefixes, UNC shares, and three representative Unicode case
+pairs. The case model supplies component comparisons for those spellings.
+The assertions concern lexical normalization and resolved targets. Filesystem
+identity and symlink resolution are outside this model.
+
+Rust on macOS matched 135 accepted and 62 rejected cases. The additional 43
+cases apply to Windows. The target and candidate policy suites passed 51 and
+92 tests, the target handler suite passed 70, and the CI workflow suite passed
+222. The longest input was 31 UTF-8 bytes. Guarded Lean checks peaked at
+1,319,360 KiB under a 2 GiB limit and 20-second timeout. Single-job Rust checks
+peaked at 966,528 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_environment_fingerprint -- --check-target-path corpus/target-path.jsonl)
+(cd formal/HoiminOracle && lake exe generate_environment_fingerprint -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test target_policy --test candidate_policy
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test target_handler
+```
+
 ## Line selection coverage
 
 The Lean model treats each selection as an inclusive interval. It proves
