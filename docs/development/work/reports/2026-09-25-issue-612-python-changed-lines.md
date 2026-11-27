@@ -105,3 +105,49 @@ serially with a 20-second timeout and 2 GiB RSS ceiling and peaked at
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_lines_oracle
 ```
+
+## Current worktree collection
+
+The collector for untracked paths and the unborn index first decodes the whole
+NUL-delimited inventory. An empty explicit scope still validates its encoding
+and then skips opening the repository root. A scoped target authorizes a read
+when its path appears in the inventory and it includes at least one positive
+line. A target without explicit lines authorizes the whole file. Each regular,
+nonempty file without NUL bytes contributes its complete physical row range.
+The final target intersection applies explicit line restrictions after collection.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Inventory and scope | Typed path records and optional target slices | Exact bytes and target slices passed to `collect_current_worktree_paths` |
+| Current root and paths | Available or absent root, and path entries for contents, directory or blocked parent | Isolated temporary filesystem and real `PortableFileReader` |
+| Success | Existing changes followed by complete physical spans for collected files | Complete ordered range vectors in the resulting map |
+| Failure | First diagnostic and original changes | Stable operation and path from `TargetError::GitFailed` and the full map |
+
+Lean proves that an empty scope still validates the inventory, a regular
+nonempty file with no NUL contributes its full physical span, and a fatal read
+after any successful prefix returns that failure with the original change map.
+The five sensitivity checks detect skipping validation for empty scope, skipping scope,
+intersecting ranges at read time, including NUL-bearing content, and publishing
+partial results as files are read.
+
+The 134 `internal-fixture` cases include 120 combinations of scope, path lists,
+and file states, plus 14 named cases for validation order, root availability,
+and failure atomicity. Three cases use a regular file in place of a parent
+directory to reproduce a fatal parent-open error on Unix. Their Rust adapter
+runs on Unix. The remaining cases use portable fixtures. Git inventory
+production, platform case aliases, and concurrent source edits fall outside
+this model. The public integration suites exercise real Git inventories and
+their subsequent target intersection.
+
+On macOS, all 125 success cases and nine failure cases matched Rust. The Git
+unit suite passed 114 tests, and the three integration suites passed 57 tests.
+Lean commands ran serially under a 20-second deadline and 2 GiB RSS limit and
+peaked at 1,237,760 KiB. The single-job Rust checks peaked at 2,316,336 KiB under
+a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-worktree corpus/git-worktree.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test changed_excluded_paths --test lean_changed_lines_oracle
+```

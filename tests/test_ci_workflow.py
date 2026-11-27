@@ -1641,6 +1641,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "--check-physical-rows",
             "corpus/git-physical-rows.jsonl",
         ),
+        ("generate_changed_lines", "--check-git-worktree", "corpus/git-worktree.jsonl"),
         (
             "generate_resume_budget",
             "--check-recheck",

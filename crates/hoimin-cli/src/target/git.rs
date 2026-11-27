@@ -13,6 +13,8 @@ mod numstat_oracle_tests;
 mod paths;
 mod runner;
 mod tracked;
+#[cfg(test)]
+mod worktree_oracle_tests;
 
 use crate::process::ProcessCancellation;
 pub(crate) use runner::GitError;
