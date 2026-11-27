@@ -335,3 +335,49 @@ used one build job, took 43 seconds, and peaked at 2,443,744 KiB under a
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
 ```
+
+## Lean model of f-string format removal
+
+The model renders trees of f-string fields and specifications. Each field
+records its expression spelling, optional debug marker and conversion, and
+whether its expression contains a named assignment or `yield`. The model
+computes the source range of each specification and the peak delimiter depth
+of its descendants. The public Rust analyzer receives the rendered program
+with `fstring_format_spec_remove` selected.
+
+A static specification is omitted, including the empty specification on a
+debug field. A dynamic specification is replaced by an empty string selected
+by a constant conditional. The other arm contains the original expressions
+in source order, including descendants of nested specifications. An implicit
+debug conversion becomes explicit `!r` for this rewrite. Lean proves that
+the guarded form retains the original read list and executes none of it when
+selecting the empty arm. It also proves that a disallowed child expression
+blocks removal of its enclosing specification. Individual inner fields are
+still visited. The dynamic rewrite requires room for two added delimiters.
+
+The 145 `strict` fixtures include 112 combinations of quote style, debug
+mode, conversions, and specification shape, 16 depth cases, and 17 focused
+cases. The focused cases include named assignment, yield, triple quoting,
+and lexical references for closures and zero-argument `super()`. Rust
+compares candidate order, byte start, original spelling, and replacement,
+then reparses each mutant. Five sensitivity variants detect removing an
+ordinary empty specification, ignoring a disallowed expression, reversing
+retained reads, forgetting the debug conversion, and exceeding the depth
+budget by one.
+
+On macOS, all 145 cases and their 151 edits matched. The 41 Rust integration
+tests and 222 CI workflow tests passed. A local CPython 3.14 run compiled all
+145 originals and 151 mutants. The execution probes `runtime-siblings`,
+`runtime-debug`, and `runtime-nested` verify that only the removed fields'
+calls disappear and that the rewritten debug field uses `repr`. Compiling
+`compiler-free-variables` and `compiler-class-cell` before and after the edit
+preserved the inner function's `width` and `precision` free variables and
+the method's `__class__` reference, respectively. Lean used a 2 GiB cap and
+20-second timeout per command. The single-job Rust integration run took
+6.5 seconds and peaked at 486,032 KiB under its 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-format-removal corpus/format-removal.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --test reference_mutations
+```

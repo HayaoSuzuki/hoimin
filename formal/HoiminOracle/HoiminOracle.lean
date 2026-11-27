@@ -77,6 +77,7 @@ import HoiminOracle.DelimiterDepthModel
 import HoiminOracle.SourceEscapeModel
 import HoiminOracle.RegexLiteralSpanModel
 import HoiminOracle.FormatSpecModel
+import HoiminOracle.FormatRemovalModel
 import HoiminOracle.CandidateSpanProofs
 import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel

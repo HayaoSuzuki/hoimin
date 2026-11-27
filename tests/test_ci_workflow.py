@@ -1639,6 +1639,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/format-spec.jsonl",
         ),
         (
+            "generate_candidate_span",
+            "--check-format-removal",
+            "corpus/format-removal.jsonl",
+        ),
+        (
             "generate_exception_hierarchy",
             "--check-acquisition",
             "corpus/exception-acquisition.jsonl",
