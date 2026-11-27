@@ -1117,3 +1117,52 @@ Rust peaked at 2,172,832 KiB under a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::store_tests
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of run fingerprint encoding
+
+The schema-13 encoding starts with its version byte and frames thirteen
+tagged fields with unsigned 64-bit little-endian lengths. Lean proves
+that a stream of these frames uniquely identifies the field sequence
+when each payload length fits in the encoded width. It proves that
+permuting sources, targets and operators preserves the encoded bytes,
+that the two command argument kinds have distinct encodings, and that
+jobs, max-mutants and max-output are excluded. The framing proof
+concerns the input bytes passed to BLAKE3.
+
+The 38 cases exercise every field, including sorting and duplicate
+removal, line range multiplicity, ordered roots and glob rules, arbitrary
+Unix bytes and Windows code units, fractional durations, and captured
+environment metadata. The file record fixtures use normalized
+root-relative paths and include a pair whose component order differs
+from raw string order. Each case checks its expected changed fields
+against the reference. Eleven deliberately incorrect encoders cover
+framing, ordering, argument kind, the environment digest and included
+limits.
+
+The Rust test compares the complete preimage byte for byte and checks
+that the public fingerprint equals BLAKE3 of the Lean preimage. An
+internal function gives the test access to the same preimage that
+production hashes.
+
+In a separate macOS probe, the publicly constructible
+`FingerprintInput` received two `FingerprintInputFile` records,
+`p/a.py` and `p/./a.py`, each with the digest `"a".repeat(64)`.
+The two records compared equal. Reversing them in
+`fingerprint_inputs` changed the result of `fingerprint(&input)`
+with every other field held fixed. Sorting and deduplication keep the
+first spelling of equal records, and encoding uses that spelling's
+raw bytes. CLI preparation supplies normalized paths. This observation
+applies to manually supplied records with distinct spellings and equal
+path components.
+
+All 38 preimages matched on macOS, and the 47 existing resume policy
+tests and 222 CI workflow tests passed. Lean peaked at 1,265,408 KiB
+under a 2 GiB cap. The targeted Rust runs used one build job and a
+3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_run_fingerprint -- --check corpus/run-fingerprint.jsonl)
+(cd formal/HoiminOracle && lake exe generate_run_fingerprint -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-core --lib resume::run_fingerprint_oracle_tests
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-core --test resume_policy
+```

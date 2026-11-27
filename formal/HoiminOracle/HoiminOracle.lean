@@ -160,6 +160,7 @@ import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel
 
 import HoiminOracle.ResumeDiagnosticModel
+import HoiminOracle.RunFingerprintModel
 import HoiminOracle.ExceptionHierarchyModel
 import HoiminOracle.ExceptionAcquisitionModel
 import HoiminOracle.ExceptionHierarchyProofs

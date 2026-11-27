@@ -549,6 +549,9 @@ jobs:
             ResumeBudgetAuditMain
             HoiminOracle.ResumeDiagnosticModel
             ResumeDiagnosticAuditMain
+            HoiminOracle.RunFingerprintModel
+            HoiminOracle.RunFingerprintCases
+            RunFingerprintAuditMain
             HoiminOracle.ExceptionHierarchyModel
             HoiminOracle.ExceptionHierarchyProofs
             HoiminOracle.ExceptionAcquisitionModel
@@ -781,6 +784,7 @@ jobs:
             'generate_private_annotation_import|corpus/private-annotation-import.jsonl|sensitivity'
             'generate_environment_fingerprint|corpus/environment-fingerprint.jsonl|sensitivity'
             'generate_resume_diagnostic|corpus/resume-diagnostic.jsonl|sensitivity'
+            'generate_run_fingerprint|corpus/run-fingerprint.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

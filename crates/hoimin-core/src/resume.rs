@@ -79,6 +79,10 @@ impl RunFingerprint {
 
 #[must_use]
 pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
+    RunFingerprint(*blake3::hash(&fingerprint_preimage(input)).as_bytes())
+}
+
+fn fingerprint_preimage(input: &FingerprintInput) -> Vec<u8> {
     let mut encoder = Encoder::new();
     encoder.raw(&[FINGERPRINT_SCHEMA_VERSION]);
     encoder.field(1, &encode_sources(&input.sources));
@@ -127,7 +131,7 @@ pub fn fingerprint(input: &FingerprintInput) -> RunFingerprint {
         }
     }
     encoder.field(13, &environment.bytes);
-    RunFingerprint(*blake3::hash(&encoder.bytes).as_bytes())
+    encoder.bytes
 }
 
 fn encode_patterns(patterns: &[String]) -> Vec<u8> {
@@ -454,3 +458,7 @@ impl Encoder {
         self.bytes.extend_from_slice(value);
     }
 }
+
+#[cfg(test)]
+#[path = "run_fingerprint_oracle_tests.rs"]
+mod run_fingerprint_oracle_tests;
