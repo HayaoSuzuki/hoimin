@@ -1,5 +1,6 @@
 import HoiminOracle.SurvivorReviewCases
 import HoiminOracle.ReviewSourceCases
+import HoiminOracle.ReviewReportAdmissionCases
 
 open HoiminOracle.SurvivorReview
 
@@ -18,10 +19,19 @@ def main (args : List String) : IO UInt32 := do
     if (← IO.FS.readFile path) == HoiminOracle.ReviewSource.corpus then return 0
     IO.eprintln s!"stale review source corpus: {path}"
     return 1
+  | ["--output-review-report-admission", path] =>
+    IO.FS.writeFile path HoiminOracle.ReviewReportAdmission.corpus
+    return 0
+  | ["--check-review-report-admission", path] =>
+    if (← IO.FS.readFile path) = HoiminOracle.ReviewReportAdmission.corpus then return 0
+    IO.eprintln s!"stale review report admission corpus: {path}"
+    return 1
   | ["--sensitivity"] =>
     IO.println s!"identity_and_revision_guards_detected={sensitivityPasses}"
     if !sensitivityPasses then return 2
-    HoiminOracle.ReviewSource.sensitivity
+    let status ← HoiminOracle.ReviewSource.sensitivity
+    if status != 0 then return status
+    HoiminOracle.ReviewReportAdmission.sensitivity
   | _ =>
-    IO.eprintln "usage: generate_survivor_review --output PATH | --check PATH | --output-review-sources PATH | --check-review-sources PATH | --sensitivity"
+    IO.eprintln "usage: generate_survivor_review --output PATH | --check PATH | --output-review-sources PATH | --check-review-sources PATH | --output-review-report-admission PATH | --check-review-report-admission PATH | --sensitivity"
     return 2

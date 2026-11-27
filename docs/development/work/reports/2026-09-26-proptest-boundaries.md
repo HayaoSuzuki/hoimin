@@ -815,3 +815,48 @@ single-job Rust runs stayed under a 3 GiB cap, with a peak of 2,087,744 KiB.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::input review::tests::source review::tests::review_list_reads_and_indexes_each_source_once_per_command plan::review_tests
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of review report admission
+
+Review first reads the bounded artifact and delegates JSONL decoding and
+structural validation to the shared report reader. Once those checks pass,
+it resolves the report project, checks for a passing baseline and a
+complete run, and compares the canonical report project with the plan.
+It then looks up each reported candidate ID in the plan and compares
+descriptors for overlapping IDs. A report may contain extra IDs or leave
+out plan IDs. Accepted reports retain the reported candidate order.
+
+Lean proves that artifact failures and bad summary counts preempt later
+checks, and that project-resolution failure preempts usability and plan
+lookups. For an arbitrary ordered candidate list, the model retains that
+order on a compatible join and stops at precisely the first incompatible
+descriptor. Descriptor tokens represent a difference in original text
+that leaves the stable candidate ID intact.
+
+The 97 internal-fixture cases drive the existing Rust report-admission
+entry point with real files. They cover missing and oversized inputs,
+JSON and typed configuration failures, old schema input, conflicting
+structural and identity errors, a canonical project alias, missing and
+different project roots, baseline and completion combinations, and
+overlaps at different event positions. The adapter checks the diagnostic
+category, the number of plan lookups, accepted candidate order, and the
+reference's run ID, canonical path, and raw-byte fingerprint. The corpus
+uses one plan candidate and two possible report-only candidates. Files
+and project paths remain stable within each call.
+
+Eight broken variants expose reordered summary, identity, project, or
+usability checks, an ID-only comparison, requiring either side's IDs to
+be a subset of the other, scanning past a descriptor conflict, and
+sorting the admitted candidates.
+
+On macOS all 97 cases matched. The targeted Rust runs passed 249 unit
+tests and 43 CLI integration tests, and the CI workflow suite passed 222.
+Lean ran under a 2 GiB cap and a 20-second timeout per command. Rust ran
+with one build job under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-report-admission corpus/review-report-admission.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests artifacts::run_report
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```

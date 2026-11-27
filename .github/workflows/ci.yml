@@ -429,6 +429,8 @@ jobs:
             HoiminOracle.SurvivorReviewCases
             HoiminOracle.ReviewSourceModel
             HoiminOracle.ReviewSourceCases
+            HoiminOracle.ReviewReportAdmissionModel
+            HoiminOracle.ReviewReportAdmissionCases
             SurvivorReviewAuditMain
             HoiminOracle.SamplingModel
             HoiminOracle.BindingFlowModel
@@ -809,6 +811,8 @@ jobs:
             lake exe generate_timeout_limit -- --check-bounded-file-reads corpus/bounded-file-reads.jsonl
           run_guard check-review-sources \
             lake exe generate_survivor_review -- --check-review-sources corpus/review-sources.jsonl
+          run_guard check-review-report-admission \
+            lake exe generate_survivor_review -- --check-review-report-admission corpus/review-report-admission.jsonl
           run_guard check-progress-duplicates \
             lake exe generate_progress_input -- --check-duplicates corpus/progress-duplicates.jsonl
           run_guard check-progress-buffered-comparison \

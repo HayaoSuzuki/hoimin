@@ -1,4 +1,7 @@
 use crate::artifacts::run_report::test_support::{current_report_view, jsonl_bytes, report_view};
+
+#[path = "report_admission_oracle_tests.rs"]
+mod report_admission_oracle_tests;
 use camino::Utf8PathBuf;
 use hoimin_core::{ByteSpan, CandidateDescriptor, CandidateIdentity, stable_mutant_id};
 
