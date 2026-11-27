@@ -548,6 +548,8 @@ jobs:
             HoiminOracle.ChangedConfigCases
             HoiminOracle.SelectorSyntaxModel
             HoiminOracle.SelectorSyntaxCases
+            HoiminOracle.SymbolResolutionModel
+            HoiminOracle.SymbolResolutionCases
             HoiminOracle.LineCoverageModel
             HoiminOracle.LineCoverageCases
             HoiminOracle.GitInventoryModel
@@ -772,6 +774,8 @@ jobs:
             lake exe generate_changed_context -- --check-config corpus/changed-config.jsonl
           run_guard check-selector-syntax \
             lake exe generate_changed_context -- --check-selector-syntax corpus/selector-syntax.jsonl
+          run_guard check-symbol-resolution \
+            lake exe generate_changed_context -- --check-symbol-resolution corpus/symbol-resolution.jsonl
           run_guard check-line-coverage \
             lake exe generate_changed_context -- --check-line-coverage corpus/line-coverage.jsonl
           run_guard check-git-inventory \

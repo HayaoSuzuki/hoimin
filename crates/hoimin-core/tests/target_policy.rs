@@ -13,6 +13,8 @@ use hoimin_core::{MutationOperator, MutationProfile};
 
 #[path = "support/line_coverage_oracle.rs"]
 mod line_coverage_oracle;
+#[path = "support/symbol_resolution_oracle.rs"]
+mod symbol_resolution_oracle;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]

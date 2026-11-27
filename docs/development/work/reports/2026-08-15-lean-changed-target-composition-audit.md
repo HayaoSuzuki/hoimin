@@ -214,6 +214,64 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test target_policy --tes
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test target_handler
 ```
 
+## Resolving symbol modules and definitions
+
+Hoimin resolves a dotted module by joining its name components with slashes
+under each source in the supplied order. Within a source it tries `module.py`
+first and `module/__init__.py` second, using the first eligible Python file.
+The selected file receives the qualified symbol name. Other discovered Python
+files under the sources retain their whole-file selection. Several selectors
+on one file produce a sorted, deduplicated list of qualified names. The output
+orders files lexicographically by their path components.
+
+| Observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Module candidates | Ordered source roots, two probes per source, Python admission flag | `resolve_explicit` consumes a declared discovery inventory |
+| Attached selectors | Ordered name lookup and bindings grouped by resolved path | Exact `TargetSlice` list, including files without attached names |
+| Missing module | First unresolved selector | `SymbolModuleNotFound` with the unresolved module |
+| Missing definition | Definition membership in the selected file | `TargetHandler::resolve` reads Python files and reports the exact diagnostic |
+
+Lean proves that an eligible module file wins over its package in the same
+source, that an eligible package wins over all later sources, that a source
+without an eligible candidate is skipped, and that the first unresolved
+selector fails the resolution. The 172 cases include both orders of two
+source roots and all absent, regular, and Python states for their four
+candidate paths. Ten focused cases cover dotted modules, source boundaries,
+the project-root selector, repeated names, errors, and definition validation.
+
+Three cases also run discovery and definition validation on real Python files.
+The same requested function exists in a package and in a later source. The
+argument order and available files determine which file is read for the
+definition. When the first module file lacks the function, validation reports
+that file even though other candidates define it. Reordering the roots or
+removing that file permits the corresponding later-source or package case to
+succeed. The corpus uses canonical portable path spellings and predeclared
+definition names. The runtime adapter checks those names with Hoimin's Python
+parser.
+
+The seven sensitivity checks detect reversing the roots, preferring packages
+within one source, preferring all module files before any package, accepting
+a regular non-Python record, dropping the leading parts of a dotted module,
+ordering the entire path as a flat string, and accepting a definition from
+another file. The initial Lean model ordered paths as flat strings, so its
+target list placed `second/calc.py` ahead of `second/calc/__init__.py`. The
+model now compares components and retains this matrix case as a witness.
+
+Rust on macOS matched 137 successful target lists and 35 missing-module
+errors. The three real-file cases produced two target lists and one
+missing-definition error, as predicted. The largest fixture has six discovered
+paths. Core target tests passed 52, CLI integration tests passed 82, and CI
+workflow tests passed 222. Guarded Lean checks peaked at 1,272,160 KiB under
+a 2 GiB limit and 20-second timeout. Single-job Rust checks peaked at
+958,384 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-symbol-resolution corpus/symbol-resolution.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test target_policy
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test target_handler --test lean_changed_target_oracle
+```
+
 ## Line selection coverage
 
 The Lean model treats each selection as an inclusive interval. It proves
