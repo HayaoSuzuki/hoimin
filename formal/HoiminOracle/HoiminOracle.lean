@@ -88,6 +88,7 @@ import HoiminOracle.GitNumstatModel
 import HoiminOracle.ChangedLinesModel
 import HoiminOracle.GitPhysicalRowsModel
 import HoiminOracle.GitWorktreeModel
+import HoiminOracle.GitResolutionModel
 import HoiminOracle.ProcessOutputModel
 import HoiminOracle.ProcessOutputProofs
 import HoiminOracle.ProcessOutputCases

@@ -561,6 +561,8 @@ jobs:
             HoiminOracle.GitPhysicalRowsCases
             HoiminOracle.GitWorktreeModel
             HoiminOracle.GitWorktreeCases
+            HoiminOracle.GitResolutionModel
+            HoiminOracle.GitResolutionCases
             ChangedLinesAuditMain
             GlobSelectionAuditMain
             CleanupCapabilityAuditMain
@@ -764,6 +766,8 @@ jobs:
             lake exe generate_changed_lines -- --check-physical-rows corpus/git-physical-rows.jsonl
           run_guard check-git-worktree \
             lake exe generate_changed_lines -- --check-git-worktree corpus/git-worktree.jsonl
+          run_guard check-git-resolution \
+            lake exe generate_changed_lines -- --check-git-resolution corpus/git-resolution.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \

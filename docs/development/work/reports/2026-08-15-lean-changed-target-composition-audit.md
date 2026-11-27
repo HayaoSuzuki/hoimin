@@ -296,6 +296,110 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
 ```
 
+## Git resolution command sequence
+
+Changed-target resolution first checks that Git reports a worktree. An
+explicit base is verified as a commit before any comparison, and the resolved
+object ID is passed to the merge-base diff commands. Without an explicit base,
+a successful `HEAD` probe selects the HEAD comparison. The corpus uses status 1
+for the indexed-file route. A successful resolution ends by reading
+untracked files. Tracked resolution with an explicit scope first requests the
+name-status inventory, then uses it to decide which diff requests to send.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Repository query and comparison basis | Worktree reply, optional revision, HEAD status, and commit ID bytes | Fixture responses returned to the normal subprocess runner |
+| Tracked path selection | Scope and typed inventory, using `GitInventory.plan` | Real scoped planner and patch/numstat decoders |
+| Request sequence | Ordered argv vectors and replies through the first semantic failure | Exact NUL-delimited argv captured by the fixture Git executable |
+| Final result | Physical range map or failure class | Actual result of `resolve_changed_scoped` against temporary source files |
+
+The 36 `internal-fixture` cases use a subprocess-local fixture Git and run on
+Unix. They cover tracked, explicit-base, and indexed routes over four scopes,
+plus revision validation, rename fallback, literal pathspec flags, and failure
+at individual requests. Commit ID validation distinguishes unsuccessful
+commands, malformed UTF-8, and invalid hexadecimal form and accepts 40- and
+64-byte hexadecimal IDs. The model uses observable HEAD probe status. A real
+Git probe returned status 1 for both an unborn HEAD and a dangling commit ID.
+Git supplies the merge-base and rename outcomes for the command dispatcher.
+
+Lean proves that an explicit revision appears directly after the worktree
+check in the planned sequence and that execution stops at the first failure
+for every command list. Five sensitivity checks detect substituting HEAD for
+an explicit base, bypassing the inventory, continuing after an error,
+attempting a patch when HEAD is absent, and omitting untracked discovery.
+
+All 36 cases matched Rust on macOS. The Git unit suite passed 115 tests, and
+the real-Git scope and environment suites passed 48 tests. Lean ran serially
+with a 20-second deadline and 2 GiB RSS ceiling, peaking at 1,326,000 KiB.
+The single-job Rust checks peaked at 2,292,624 KiB under a 3 GiB ceiling.
+
+### Corrupt HEAD counterexample
+
+A separate real-Git probe reproduced a command failure outside the passing
+corpus. The worktree probe returns status 0 with `true` after a loose commit
+object is corrupted. The HEAD probe exits 128 and reports that it cannot
+unpack the object. Hoimin treats the failed probe as an absent HEAD, reads
+the index, and succeeds. The control plan selected only changed line 2.
+With the corrupt object, the same command selected lines 1, 2, and 3.
+
+This is a confirmed changed-selection defect for an explicit Git execution
+failure. The desired result for status 128 is to stop target resolution and
+surface the Git error. Status 1 requires separate treatment because it is
+also the observed status for an unborn repository. The audit records the
+counterexample for a subsequent behavior change.
+
+Reproduce in an isolated temporary repository with a built debug CLI.
+
+```python
+import json
+from pathlib import Path
+import subprocess
+import sys
+from tempfile import TemporaryDirectory
+
+hoimin = Path("target/debug/hoimin").resolve()
+with TemporaryDirectory() as directory:
+    root = Path(directory)
+
+    def git(*args):
+        return subprocess.run(["git", *args], cwd=root, capture_output=True)
+
+    source = root / "app.py"
+    git("init", "-q").check_returncode()
+    source.write_text("a = 1 + 2\nb = 3 + 4\nc = 5 + 6\n")
+    git("add", "app.py").check_returncode()
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+        "-c", "commit.gpgsign=false", "commit", "-qm", "fixture").check_returncode()
+    source.write_text("a = 1 + 2\nb = 3 + 9\nc = 5 + 6\n")
+
+    def plan():
+        result = subprocess.run(
+            [hoimin, "plan", "--root", root, "--source", ".", "--changed",
+             "--operators", "binary_add_sub", "--allow-best-effort-memory",
+             "--", sys.executable, "-c", "pass"],
+            cwd=root, capture_output=True, text=True,
+        )
+        return result.returncode, (
+            [case["line"] for case in json.loads(result.stdout)["candidates"]]
+            if result.returncode == 0 else result.stderr
+        )
+
+    print("control", plan())
+    oid = git("rev-parse", "HEAD").stdout.decode().strip()
+    obj = root / ".git" / "objects" / oid[:2] / oid[2:]
+    obj.unlink()
+    obj.write_bytes(b"not a git object")
+    print("probe", git("rev-parse", "--verify", "--quiet", "HEAD^{commit}").returncode)
+    print("corrupt", plan())
+```
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-resolution corpus/git-resolution.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test changed_git_environment
+```
+
 ## Binary numstat exclusions
 
 A numstat record is binary when both count fields are dashes. A regular binary

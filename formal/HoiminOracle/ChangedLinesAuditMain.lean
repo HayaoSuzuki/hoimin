@@ -1,6 +1,7 @@
 import HoiminOracle.ChangedLinesModel
 import HoiminOracle.GitPhysicalRowsCases
 import HoiminOracle.GitWorktreeCases
+import HoiminOracle.GitResolutionCases
 import Lean.Data.Json
 
 open HoiminOracle.ChangedLines Lean
@@ -50,12 +51,19 @@ def main (args : List String) : IO UInt32 := do
       else IO.eprintln "Git worktree corpus is stale" *> pure 1
   | ["--output-git-worktree", path] =>
       IO.FS.writeFile path HoiminOracle.GitWorktree.corpus *> pure 0
+  | ["--check-git-resolution", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitResolution.corpus then pure 0
+      else IO.eprintln "Git resolution corpus is stale" *> pure 1
+  | ["--output-git-resolution", path] =>
+      IO.FS.writeFile path HoiminOracle.GitResolution.corpus *> pure 0
   | ["--sensitivity"] =>
       for (name, passed) in sensitivity do IO.println s!"{name}={passed}"
       unless sensitivity.all (·.2) do return 1
       let status ← HoiminOracle.GitPhysicalRows.sensitivity
       if status != 0 then return status
-      HoiminOracle.GitWorktree.sensitivity
+      let status ← HoiminOracle.GitWorktree.sensitivity
+      if status != 0 then return status
+      HoiminOracle.GitResolution.sensitivity
   | ["--stats"] =>
       IO.println s!"cases={rows.length}\nseparator_pairs=9\ngit_states=4\nmaximum_source_bytes=37\nsensitivity_families={sensitivity.length}\ntransitions=not-applicable"
       pure 0
@@ -63,4 +71,4 @@ def main (args : List String) : IO UInt32 := do
       HoiminOracle.GitPhysicalRows.stats
       pure 0
   | [] => IO.print corpus *> pure 0
-  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--check-physical-rows PATH|--output-physical-rows PATH|--check-git-worktree PATH|--output-git-worktree PATH|--sensitivity|--stats|--physical-rows-stats]" *> pure 2
+  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--check-physical-rows PATH|--output-physical-rows PATH|--check-git-worktree PATH|--output-git-worktree PATH|--check-git-resolution PATH|--output-git-resolution PATH|--sensitivity|--stats|--physical-rows-stats]" *> pure 2
