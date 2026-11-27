@@ -1080,3 +1080,40 @@ cap. Single-job Rust peaked at 2,133,872 KiB under a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::store_tests
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of review store snapshot validation
+
+After the DB is admitted, the reader rejects an event count above 10,000
+before scanning candidates. In storage order, it validates each candidate
+key and checks that the history exists, that revisions start at one and
+are consecutive, and that every stored draft decodes and passes validation.
+It reconciles the total count against the events visited to catch orphan
+events. Lean proves that selecting a candidate preserves every validation
+failure and, on success, returns its projection of the complete snapshot.
+It also proves the event cap and revision error priorities and the
+consecutive revision property by induction. The model takes candidate
+and revision order and the individual key and draft decoding and validation
+outcomes as inputs.
+
+The matrix combines fifteen row shapes across two candidate slots and
+adds eight cases for orphan events, conflicting failures and the count
+boundary. The 233 DB fixtures exercise four queries each, one full
+snapshot and one lookup for each of two candidate slots and an absent ID.
+The adapter uses a newly created review schema, inserts rows in reverse
+order, and reopens with the real read-only store. Successful results are
+checked against the complete expected keys and tagged revision drafts.
+Every query also checks the DB content digest and directory entry count.
+Nine defective model variants exercise filtering, ordering, the count
+boundary, orphan detection and validation of keys, revisions and drafts.
+
+All 932 reads matched on macOS. The targeted Rust runs passed 45
+unit tests and 44 CLI integration tests. The CI workflow suite passed
+222 tests. Lean peaked at 1,280,160 KiB under a 2 GiB cap. Single-job
+Rust peaked at 2,172,832 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-store-snapshot corpus/review-store-snapshot.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::store_tests
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```

@@ -6,6 +6,7 @@ import HoiminOracle.ReviewListingCases
 import HoiminOracle.ReviewRecordCases
 import HoiminOracle.ReviewStorePublicationCases
 import HoiminOracle.ReviewStoreAdmissionCases
+import HoiminOracle.ReviewStoreSnapshotCases
 
 open HoiminOracle.SurvivorReview
 
@@ -66,6 +67,13 @@ def main (args : List String) : IO UInt32 := do
     if (← IO.FS.readFile path) = HoiminOracle.ReviewStoreAdmission.corpus then return 0
     IO.eprintln s!"stale review store admission corpus: {path}"
     return 1
+  | ["--output-review-store-snapshot", path] =>
+    IO.FS.writeFile path HoiminOracle.ReviewStoreSnapshot.corpus
+    return 0
+  | ["--check-review-store-snapshot", path] =>
+    if (← IO.FS.readFile path) = HoiminOracle.ReviewStoreSnapshot.corpus then return 0
+    IO.eprintln s!"stale review store snapshot corpus: {path}"
+    return 1
   | ["--sensitivity"] =>
     IO.println s!"identity_and_revision_guards_detected={sensitivityPasses}"
     if !sensitivityPasses then return 2
@@ -81,7 +89,9 @@ def main (args : List String) : IO UInt32 := do
     if status != 0 then return status
     let status ← HoiminOracle.ReviewStorePublication.sensitivity
     if status != 0 then return status
-    HoiminOracle.ReviewStoreAdmission.sensitivity
+    let status ← HoiminOracle.ReviewStoreAdmission.sensitivity
+    if status != 0 then return status
+    HoiminOracle.ReviewStoreSnapshot.sensitivity
   | _ =>
-    IO.eprintln "usage: generate_survivor_review --output PATH | --check PATH | --output-review-sources PATH | --check-review-sources PATH | --output-review-report-admission PATH | --check-review-report-admission PATH | --output-review-store-destination PATH | --check-review-store-destination PATH | --output-review-listing PATH | --check-review-listing PATH | --output-review-record PATH | --check-review-record PATH | --output-review-store-publication PATH | --check-review-store-publication PATH | --output-review-store-admission PATH | --check-review-store-admission PATH | --sensitivity"
+    IO.eprintln "usage: generate_survivor_review --output PATH | --check PATH | --output-review-sources PATH | --check-review-sources PATH | --output-review-report-admission PATH | --check-review-report-admission PATH | --output-review-store-destination PATH | --check-review-store-destination PATH | --output-review-listing PATH | --check-review-listing PATH | --output-review-record PATH | --check-review-record PATH | --output-review-store-publication PATH | --check-review-store-publication PATH | --output-review-store-admission PATH | --check-review-store-admission PATH | --output-review-store-snapshot PATH | --check-review-store-snapshot PATH | --sensitivity"
     return 2

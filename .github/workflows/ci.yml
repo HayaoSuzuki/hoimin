@@ -441,6 +441,8 @@ jobs:
             HoiminOracle.ReviewStorePublicationCases
             HoiminOracle.ReviewStoreAdmissionModel
             HoiminOracle.ReviewStoreAdmissionCases
+            HoiminOracle.ReviewStoreSnapshotModel
+            HoiminOracle.ReviewStoreSnapshotCases
             SurvivorReviewAuditMain
             HoiminOracle.SamplingModel
             HoiminOracle.BindingFlowModel
@@ -833,6 +835,8 @@ jobs:
             lake exe generate_survivor_review -- --check-review-store-publication corpus/review-store-publication.jsonl
           run_guard check-review-store-admission \
             lake exe generate_survivor_review -- --check-review-store-admission corpus/review-store-admission.jsonl
+          run_guard check-review-store-snapshot \
+            lake exe generate_survivor_review -- --check-review-store-snapshot corpus/review-store-snapshot.jsonl
           run_guard check-progress-duplicates \
             lake exe generate_progress_input -- --check-duplicates corpus/progress-duplicates.jsonl
           run_guard check-progress-buffered-comparison \

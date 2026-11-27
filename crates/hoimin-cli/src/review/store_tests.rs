@@ -7,6 +7,8 @@ use proptest::prelude::*;
 mod store_admission_oracle_tests;
 #[path = "store_publication_oracle_tests.rs"]
 mod store_publication_oracle_tests;
+#[path = "store_snapshot_oracle_tests.rs"]
+mod store_snapshot_oracle_tests;
 
 type InitializationHook = Box<dyn Fn(&str) -> Result<(), super::ReviewError>>;
 
