@@ -1647,6 +1647,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "--check-git-resolution",
             "corpus/git-resolution.jsonl",
         ),
+        ("generate_changed_lines", "--check-git-capture", "corpus/git-capture.jsonl"),
         (
             "generate_resume_budget",
             "--check-recheck",

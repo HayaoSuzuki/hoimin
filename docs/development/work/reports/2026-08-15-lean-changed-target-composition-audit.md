@@ -296,6 +296,50 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
 ```
 
+## Git pipe capture
+
+Git stdout returns the complete byte stream when it fits the retention limit.
+The first over-limit read returns a typed error. Git stderr keeps the prefix,
+continues reading to EOF, then appends one marker if extra bytes were read.
+A pipe I/O error ends capture even after the stderr retention limit has been
+reached. The capture limit bounds the requested buffer capacity for stdout and
+the buffer capacity excluding the fixed marker for stderr.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Pipe reads | Ordered nonempty byte blocks, injected I/O errors, and implicit EOF | Scripted `AsyncRead` passed to the production `read_pipe` |
+| Retention | Complete bytes before the first error, with stderr retention evaluated at EOF | Exact output bytes or typed `CaptureError` |
+| Drain | Number of scripted events entered, including an error or EOF | Observed entries at the read boundary, independent of further subdivisions |
+| Allocation | Arithmetic bound on the requested growth | Successful `Vec` capacity checked against the configured ceiling |
+
+Lean proves that the stdout and stderr results for complete streams are
+independent of the chunk partition. The stderr length is bounded by the
+limit plus marker, and an injected read failure is observed after any number
+of stderr chunks. For stdout, an I/O error is observed when all preceding bytes
+fit, and crossing the cap stops at that read regardless of the remaining
+events. When bytes fit the retention ceiling, the growth calculation requests
+enough capacity within that ceiling.
+
+The 858 `internal-fixture` cases cover both streams at limits zero through
+four over all schedules of up to three steps from four event classes. Eight
+named cases exercise the buffer boundary and growth, the 64 KiB stderr cap,
+and later I/O errors. Sensitivity checks detect clipping stdout, rejecting an
+exact fit, stopping the stderr drain early, retaining an stderr suffix, and
+omitting the marker. The existing subprocess tests exercise the 64 MiB stdout
+limit, concurrent stderr activity, and cancellation of the owned Git child.
+
+Rust matched 234 successful captures, 237 overflows, and 387 I/O errors on
+macOS. The Git unit suite passed 116 tests and the cancellation suite passed
+four tests. Guarded Lean checks peaked at 1,242,576 KiB under a 2 GiB limit.
+Single-job Rust checks peaked at 2,277,712 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-capture corpus/git-capture.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_cancellation
+```
+
 ## Git resolution command sequence
 
 Changed-target resolution first checks that Git reports a worktree and verifies
