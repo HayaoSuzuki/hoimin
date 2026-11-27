@@ -476,6 +476,46 @@ private def reportAdmissionSensitivity : Bool :=
   !reportMayStart deadline && !reportMayStart extended && reportOwnerHeld detached &&
     !reportOwnerHeld (reportAdmissionStep detached .finish)
 
+private def reportIoResultName : ReportIoResult → String
+  | .succeeded => "succeeded"
+  | .ioFailed => "io_failed"
+  | .panicked => "panicked"
+
+private def reportRecoveryResultName : ReportRecoveryResult → String
+  | .flushed => "flushed"
+  | .ioFailed => "io_failed"
+  | .expired => "expired"
+  | .missingHandler => "missing_handler"
+  | .flushPanicked => "flush_panicked"
+
+private def reportRecoveryCase (emit : ReportIoResult) (flush : Option ReportIoResult) :
+    Lean.Json :=
+  let result := recoverReport emit flush
+  let quiescent := reportRecoveryQuiescent result
+  let flushName := (flush.map reportIoResultName).getD "expired"
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"emit_{reportIoResultName emit}_flush_{flushName}"),
+    ("emit", .str (reportIoResultName emit)),
+    ("flush", (flush.map fun outcome => Lean.Json.str (reportIoResultName outcome)).getD .null),
+    ("expected", Lean.Json.mkObj [
+      ("result", .str (reportRecoveryResultName result)),
+      ("record_written", Lean.toJson (emit == .succeeded)),
+      ("flush_entered", Lean.toJson (recoveryFlushEntered emit flush)),
+      ("quiescent", Lean.toJson quiescent),
+      ("owner_held", Lean.toJson (!quiescent))])]
+
+def renderReportRecoveryCorpus : String :=
+  let outcomes : List ReportIoResult := [.succeeded, .ioFailed, .panicked]
+  let flushes := none :: outcomes.map some
+  let cases := outcomes.flatMap fun emit => flushes.map (reportRecoveryCase emit)
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+private def reportRecoverySensitivity : Bool :=
+  recoverReport .ioFailed (some .succeeded) != .ioFailed &&
+    !reportRecoveryQuiescent (recoverReport .panicked (some .succeeded)) &&
+    !recoveryFlushEntered .succeeded none
+
 private def familyEvents : List Event := [
   .dispatch, .observe 9 10 11 10, .processDrainSucceeded, .outputDrained,
   .monitorJoined, .requestCleanup executionRoot, .reportSucceeded, .finish]
@@ -559,7 +599,7 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
     return .error 2
   unless sensitivityPasses && reportEvidenceSensitivity && finalizationErrorsSensitivity && meterSensitivity &&
       statsSensitivity && finalCapacitySensitivity && deliverySensitivity &&
-      reportAdmissionSensitivity do
+      reportAdmissionSensitivity && reportRecoverySensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
   return .ok ()
@@ -644,10 +684,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check-delivery", path] => checkCorpus path renderDeliveryCorpus
   | ["--output-report-admission", path] => writeCorpus path renderReportAdmissionCorpus
   | ["--check-report-admission", path] => checkCorpus path renderReportAdmissionCorpus
+  | ["--output-report-recovery", path] => writeCorpus path renderReportRecoveryCorpus
+  | ["--check-report-recovery", path] => checkCorpus path renderReportRecoveryCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-finalization-errors | --check-finalization-errors | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity | --output-delivery | --check-delivery | --output-report-admission | --check-report-admission) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-finalization-errors | --check-finalization-errors | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity | --output-delivery | --check-delivery | --output-report-admission | --check-report-admission | --output-report-recovery | --check-report-recovery) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

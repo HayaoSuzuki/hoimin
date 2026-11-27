@@ -325,6 +325,30 @@ def reportAdmissionStep (state : ReportAdmissionState) :
       else state
   | .finish => if state.task = .active then { state with task := .returned } else state
 
+inductive ReportIoResult where
+  | succeeded | ioFailed | panicked
+  deriving BEq, DecidableEq
+
+inductive ReportRecoveryResult where
+  | flushed | ioFailed | expired | missingHandler | flushPanicked
+  deriving BEq, DecidableEq
+
+def recoverReport (emit : ReportIoResult) (flush : Option ReportIoResult) :
+    ReportRecoveryResult :=
+  match emit, flush with
+  | .panicked, _ => .missingHandler
+  | _, none => .expired
+  | _, some .succeeded => .flushed
+  | _, some .ioFailed => .ioFailed
+  | _, some .panicked => .flushPanicked
+
+def recoveryFlushEntered (emit : ReportIoResult) (flush : Option ReportIoResult) : Bool :=
+  emit != .panicked && flush.isSome
+
+def reportRecoveryQuiescent : ReportRecoveryResult → Bool
+  | .missingHandler | .flushPanicked => false
+  | _ => true
+
 def allSafetySucceeded (state : State) : Bool :=
   state.processDrain == .succeeded && state.outputDrain == .succeeded &&
     state.monitorJoin == .succeeded

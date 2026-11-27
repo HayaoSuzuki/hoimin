@@ -471,4 +471,24 @@ theorem detached_report_releases_owner_on_return (state : ReportAdmissionState)
     reportOwnerHeld (reportAdmissionStep state .finish) = false := by
   simp [reportAdmissionStep, reportOwnerHeld, active, detached] <;> decide
 
+theorem recovered_write_error_allows_flush (flush : Option ReportIoResult) :
+    recoverReport .ioFailed flush = recoverReport .succeeded flush := by
+  cases flush with
+  | none => rfl
+  | some outcome => cases outcome <;> rfl
+
+theorem panicked_emit_makes_recovery_unavailable (flush : Option ReportIoResult) :
+    recoverReport .panicked flush = .missingHandler ∧
+      recoveryFlushEntered .panicked flush = false := by
+  exact ⟨rfl, rfl⟩
+
+theorem rejected_recovery_flush_is_quiescent (emit : ReportIoResult)
+    (returned : emit ≠ .panicked) :
+    reportRecoveryQuiescent (recoverReport emit none) = true := by
+  cases emit <;> simp_all [recoverReport, reportRecoveryQuiescent]
+
+theorem panicked_recovery_flush_is_not_quiescent (emit : ReportIoResult) :
+    reportRecoveryQuiescent (recoverReport emit (some .panicked)) = false := by
+  cases emit <;> rfl
+
 end HoiminOracle.DiskGuard

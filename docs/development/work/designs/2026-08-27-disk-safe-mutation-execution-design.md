@@ -1222,6 +1222,30 @@ cd ../..
 cargo test --locked -p hoimin-cli --lib report_admission_and_owner_lifetime_match_lean
 ```
 
+## Flushing after the report waiter is cancelled
+
+The recovery model starts with an active record write whose waiter has been
+cancelled. The driver joins that operation before attempting a separate flush.
+An ordinary write error returns the handler and permits the flush. A panic
+loses the handler, keeps the driver non-quiescent, and prevents the flush.
+An expired flush request returns the unused handler and releases its owner.
+An admitted flush that panics leaves the driver non-quiescent.
+
+The twelve fixtures combine three write outcomes with four flush outcomes.
+The Rust adapter blocks the original writer and the recovery flush with
+separate gates. It observes the original record, whether the flush entered
+the writer, the result of the flush call, driver quiescence, and the live
+owner reference. The recovery call returns a flush result. The original
+emission waiter has already been dropped, and the record is written at most
+once in these fixtures.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-report-recovery corpus/report-recovery.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib flush_after_cancelled_report_wait_matches_lean
+```
+
 ## Cleanup outcomes and finish admission
 
 The lifecycle corpus crosses four component-settlement schedules with the four
