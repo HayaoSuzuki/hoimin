@@ -1561,3 +1561,46 @@ limit and single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_worker_grant_publication -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib worker_grant_publication_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of mutation application in a worker
+
+The worker first checks that the path belongs to the snapshot and opens
+the worker file. It checks the expected length, reads with that length
+as a budget, and compares both the candidate hash and the worker file
+against the snapshot. Candidate validation then checks the original
+bytes, source encoding, location and stable ID before the worker asks
+for write access. A hard link to another file name is rejected before
+permission repair. A failure at the final link check after permission
+repair can leave the file writable with its bytes intact.
+
+Lean proves prefix and suffix preservation for the raw byte splice,
+the descriptor length plus one byte bound on reads, file preservation
+after validation rejection or hard-link rejection, and byte preservation
+at the final link check. The small fixtures model digest equality with
+exact bytes and use Python source encodings fixed by each fixture. The
+I/O fault cases cover allocation and the two link checks before writes.
+
+| Premise or observation | Lean | Rust fixture and evidence |
+| --- | --- | --- |
+| Live file and snapshot | Selected path, missing file, bytes and read-only state | Create a real preflight plan and worker, then seed the target or a hard link to an external fixture |
+| Candidate and encoding | Raw span, original, replacement, location, hash and ID match | Apply the candidate to UTF-8, BOM, ASCII, Latin-1 and invalid UTF-8 fixtures |
+| Read and write preparation | Resize after length capture and faults before or after permission repair | Reuse the existing read observation and I/O fault hooks and compare bytes read, permissions and typed errors |
+| Retry and reset | Retry from the first outcome with transient faults removed | Apply the same candidate again, reset, and check the original and external referent |
+
+The 111 cases use `internal-fixture` correspondence. One read-only
+hard-link case runs on Unix. Each applicable fixture runs two
+applications and a reset. Eight deliberately incorrect variants check
+authority and validation order, encoding, permissions and the finite
+read budget.
+
+All 111 cases matched on macOS. The mutation suite passed 28 tests
+with and without contracts, with one existing ignored test. The
+candidate-span, workspace handler and recovery suites passed 132 tests,
+and the workflow suite passed 222. Lean used a 2 GiB limit and single-job
+Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_workspace_mutation -- --check corpus/workspace-mutation.jsonl)
+(cd formal/HoiminOracle && lake exe generate_workspace_mutation -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::mutation -- --test-threads=2
+```
