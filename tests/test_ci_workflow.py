@@ -163,6 +163,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_resume_recheck": "corpus/resume-recheck.jsonl",
     "generate_finish_transaction": "corpus/finish-transaction.jsonl",
     "generate_begin_transaction": "corpus/begin-transaction.jsonl",
+    "generate_persist_transaction": "corpus/persist-transaction.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

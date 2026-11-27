@@ -4,6 +4,8 @@ mod begin_transaction_oracle_tests;
 mod finish_transaction_oracle_tests;
 mod ownership;
 #[cfg(test)]
+mod persist_transaction_oracle_tests;
+#[cfg(test)]
 mod resume_recheck_oracle_tests;
 mod schema;
 

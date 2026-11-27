@@ -2336,3 +2336,39 @@ single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_begin_transaction -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib begin_transaction_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of result persistence and replacement
+
+The persist handler checks ownership, starts a write transaction, and
+rejects completed runs and already determinate results. To replace an
+inconclusive result, it deletes diagnostics, the result, and the
+candidate in that order before inserting the new candidate, result,
+and diagnostics. A rejected second diagnostic rolls back the earlier
+inserts and restores the saved result.
+
+The Lean model describes the ordered writes and the image visible to
+a second connection before commit. It proves that failure leaves the
+committed image unchanged and that a successfully saved determinate
+result survives an immediate retry.
+
+The 108 cases vary ownership, completion, prior result, and the failure
+point. Rust checks the full candidate, result, diagnostic order, and
+row counts from a separate SQLite connection. Temporary triggers record
+the committed write order and reject individual statements. The replay
+also covers candidate sequence overflow, a second diagnostic addressed
+to another saved mutant, and deferred constraint failure at commit.
+Each case checks that the neighboring result and the OS ownership
+state survive the attempt and retry. Seven sensitivity variants exercise
+guard order, write order, visibility, rollback, and duplicate protection.
+
+All 108 cases matched on macOS in default and `contracts` builds.
+The session unit suites passed 164 and 176 tests respectively. The
+session handler target passed 104 tests with one existing ignored
+test, and the workflow suite passed 222. Lean used a 2 GiB limit and
+single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_persist_transaction -- --check corpus/persist-transaction.jsonl)
+(cd formal/HoiminOracle && lake exe generate_persist_transaction -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib persist_transaction_matches_lean_oracle -- --test-threads=1
+```

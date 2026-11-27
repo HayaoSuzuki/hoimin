@@ -8,7 +8,7 @@ use serde::Deserialize;
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-fn begin_request() -> BeginSession {
+pub(super) fn begin_request() -> BeginSession {
     BeginSession {
         id: EffectId(1),
         run_id: "coverage-run".into(),
@@ -25,7 +25,7 @@ fn load_request() -> LoadSession {
     }
 }
 
-fn persist_request() -> PersistResult {
+pub(super) fn persist_request() -> PersistResult {
     PersistResult {
         id: EffectId(3),
         worker: 0,
@@ -1113,7 +1113,7 @@ struct ProcessResumeCase {
     expected_stored_after_replacement: Option<String>,
 }
 
-fn executed_outcome(
+pub(super) fn executed_outcome(
     termination: ProcessTermination,
     timed_out: bool,
     token: &str,
