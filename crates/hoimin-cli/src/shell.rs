@@ -5308,10 +5308,10 @@ fn track_diagnostic_run_id(diagnostic_run_id: &mut String, state: &RunState) {
     diagnostic_run_id.push_str(state.run_id());
 }
 
-fn record_metrics(
-    collector: &mut Option<MetricsCollector>,
+fn record_metrics<C: crate::metrics::Clock>(
+    collector: &mut Option<MetricsCollector<C>>,
     warnings: &mut Vec<(&'static str, String)>,
-    observation: impl FnOnce(&mut MetricsCollector) -> Result<(), MetricsError>,
+    observation: impl FnOnce(&mut MetricsCollector<C>) -> Result<(), MetricsError>,
 ) {
     if let Some(collector) = collector.as_mut()
         && let Err(error) = observation(collector)
@@ -5396,8 +5396,8 @@ fn accept_process_dispatch<'a>(
     Some(dispatch)
 }
 
-fn observe_accepted_transition(
-    collector: &mut Option<MetricsCollector>,
+fn observe_accepted_transition<C: crate::metrics::Clock>(
+    collector: &mut Option<MetricsCollector<C>>,
     warnings: &mut Vec<(&'static str, String)>,
     previous: RunPhase,
     next: RunPhase,
@@ -13400,5 +13400,8 @@ mod tests {
     include!("shell_disk_stop_tests.rs");
     mod metrics_deadline_oracle {
         include!("shell_metrics_deadline_tests.rs");
+    }
+    mod stage_metrics_oracle {
+        include!("shell_stage_metrics_tests.rs");
     }
 }

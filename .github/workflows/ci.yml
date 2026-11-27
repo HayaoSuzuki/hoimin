@@ -610,6 +610,8 @@ jobs:
             EnvironmentFingerprintAuditMain
             HoiminOracle.WorkerMetricsModel
             HoiminOracle.WorkerMetricsProofs
+            HoiminOracle.StageMetricsModel
+            HoiminOracle.StageMetricsCases
             WorkerMetricsAuditMain
             HoiminOracle
             MultipleHandlerJoinAuditMain
@@ -710,6 +712,8 @@ jobs:
             lake exe generate_session -- --depth 4 --check-persist-deadline corpus/session-persist-deadline.jsonl
           run_guard check-shutdown-metrics \
             lake exe generate_shutdown -- --check-metrics corpus/shutdown-metrics.jsonl
+          run_guard check-stage-metrics \
+            lake exe generate_worker_metrics -- --check-stages corpus/stage-metrics.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \

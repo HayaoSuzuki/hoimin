@@ -1,4 +1,5 @@
 import HoiminOracle.WorkerMetricsProofs
+import HoiminOracle.StageMetricsCases
 import Lean.Data.Json
 
 namespace HoiminOracle.WorkerMetrics
@@ -183,13 +184,20 @@ def execute (args : List String) : IO UInt32 := do
       if (← IO.FS.readFile path) == corpus then return 0
       IO.eprintln s!"stale worker metrics corpus: {path}"
       return 1
-  | ["--sensitivity"] => sensitivity
+  | ["--output-stages", path] => IO.FS.writeFile path StageMetrics.corpus; return 0
+  | ["--check-stages", path] =>
+      if (← IO.FS.readFile path) == StageMetrics.corpus then return 0
+      IO.eprintln s!"stale stage metrics corpus: {path}"
+      return 1
+  | ["--sensitivity"] =>
+      let status ← sensitivity
+      if status == 0 then StageMetrics.sensitivity else return status
   | ["--stats"] =>
       let steps := fixtures.foldl (fun count item => count + item.events.length) 0
       IO.println s!"alphabet={alphabet.length} exhaustive_depth=3 cases={fixtures.length} steps={steps}"
       return 0
   | _ =>
-      IO.eprintln "usage: generate_worker_metrics (--output PATH | --check PATH | --sensitivity | --stats)"
+      IO.eprintln "usage: generate_worker_metrics (--output PATH | --check PATH | --output-stages PATH | --check-stages PATH | --sensitivity | --stats)"
       return 2
 
 end HoiminOracle.WorkerMetrics

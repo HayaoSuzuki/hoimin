@@ -72,3 +72,33 @@ is allowed to exceed the counter's range.
 (cd formal/HoiminOracle && lake exe generate_worker_metrics -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib worker_metrics_accounting_matches_lean
 ```
+
+## CLI stage timing
+
+The stage model takes the previous and resulting phases of an accepted
+transition together with its completion signal. The Lean proofs keep one
+timer across copy and materialization verification, and one across baseline
+execution and restoration. Cleanup completion closes its timer once. After
+a timer is closed, subsequent timer operations preserve its saved duration.
+
+The corpus contains 13 internal fixtures and 62 prefix observations. It
+covers session startup between preflight and copy, the budget check between
+baseline and analysis, early cleanup, submillisecond timing, and warnings
+from inconsistent timer state. The model omits open timers from the
+published stages. Its warning cases check that the first failed operation
+ends the transition's timer updates while preserving earlier successful
+updates. The Rust adapter calls the shell's stage observer and the real
+collector with a controlled clock. It compares the ordered completed stages
+and the accumulated warnings after each prefix.
+
+The sensitivity check detects closing the copy timer at verification entry,
+closing the baseline timer at restoration entry, deferring preflight close
+while the phase stays the same, and closing cleanup twice. The fixtures
+exercise the observer's inputs directly. Machine acceptance of the input
+events and filesystem publication are outside this comparison.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_worker_metrics -- --check-stages corpus/stage-metrics.jsonl)
+(cd formal/HoiminOracle && lake exe generate_worker_metrics -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib stage_metrics_follow_accepted_cli_transitions
+```
