@@ -192,3 +192,55 @@ checks used a 20-second timeout and 2 GiB limit. The single-job Rust run took
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-python --lib
 ```
+
+## Lean model of source escape decoding
+
+The regex and format-string analyzers share a decoder that starts immediately
+past a backslash. The model observes the outcome, the next byte offset, and
+the name passed to a caller-supplied Unicode lookup. It recognizes standard
+escapes, combines CRLF into one continuation, reads at most three octal
+digits, and wraps octal byte values modulo 256. Fixed-width hexadecimal
+spelling requires ASCII digits. Unknown escapes preserve the next character
+and advance by its full UTF-8 width. The caller supplies the name lookup, so
+these cases exercise its invocation and byte limit independently of Unicode
+database contents.
+
+Lean proves that byte-string mode preserves the `u`, `U`, and `N` markers,
+that a CRLF continuation consumes two bytes after the backslash, and that
+byte-mode octal wrapping produces a value below 256. A malformed numeric
+spelling leaves the cursor just after its marker. A complete spelling of an
+unsupported Unicode scalar consumes its digits before rejection. Names of
+128 or more bytes fail before the lookup is called.
+
+The 125 `internal-fixture` cases use the production decoder. They cover
+UTF-8 start offsets, newline forms, ordinary escapes, octal widths and byte
+wrapping, truncated or malformed hexadecimal fields, surrogate and scalar
+bounds, and the closing-brace boundary at 127 and 128 name bytes. Eight
+sensitivity checks detect signed hexadecimal input, consuming a fourth
+octal digit, omitting byte wrapping, splitting CRLF, shifting the name
+bound in either direction, rewinding after an invalid scalar, and counting
+an unrecognized multibyte character as one byte.
+
+Four cases record an internal divergence. The minimal input `\x+A` starts
+with the cursor at byte 1. Lean rejects it with the cursor at byte 2. Rust's
+radix parser accepts the leading `+`, decodes U+000A, and leaves the cursor at
+byte 4. The same distinction occurs in byte literals and with `\u+041` and
+`\U+0000041` in text. The vendored parser requires each digit to be hexadecimal,
+so the test also runs the same spellings through that parser in ordinary,
+byte, and interpolated format literals as applicable. The corpus preserves
+the model result and the observed internal divergence for all four cases.
+
+On macOS, 121 decoder observations matched and the four signed spellings
+reproduced the documented divergence. The vendored parser rejected all seven
+literal wrappers for those spellings. The library suite passed 5,214 tests
+with 5 ignored, and the CI workflow suite passed 222 tests. The longest
+fixture is 133 bytes. The guarded Lean build peaked at 1,265,488 KiB within
+20 seconds and 2 GiB. The first Rust build reached the 3 GiB cap. With
+debug information and incremental compilation disabled, the single-job
+Rust run finished in 77 seconds and peaked at 2,444,320 KiB.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-source-escape corpus/source-escape.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
+```

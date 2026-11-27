@@ -1624,6 +1624,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/delimiter-depth.jsonl",
         ),
         (
+            "generate_candidate_span",
+            "--check-source-escape",
+            "corpus/source-escape.jsonl",
+        ),
+        (
             "generate_exception_hierarchy",
             "--check-acquisition",
             "corpus/exception-acquisition.jsonl",

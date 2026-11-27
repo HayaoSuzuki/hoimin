@@ -550,6 +550,8 @@ jobs:
             HoiminOracle.SourceDeclarationCases
             HoiminOracle.DelimiterDepthModel
             HoiminOracle.DelimiterDepthCases
+            HoiminOracle.SourceEscapeModel
+            HoiminOracle.SourceEscapeCases
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             HoiminOracle.ChangedConfigModel
@@ -781,6 +783,8 @@ jobs:
             lake exe generate_candidate_span -- --check-source-declaration corpus/source-declaration.jsonl
           run_guard check-delimiter-depth \
             lake exe generate_candidate_span -- --check-delimiter-depth corpus/delimiter-depth.jsonl
+          run_guard check-source-escape \
+            lake exe generate_candidate_span -- --check-source-escape corpus/source-escape.jsonl
           run_guard check-exception-acquisition \
             lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl
           run_guard check-import-roots \

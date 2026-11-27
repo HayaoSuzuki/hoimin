@@ -1,6 +1,10 @@
 //! Decode one Python source escape. Each consumer decides how to map the
 //! decoded units and which Unicode character names it trusts.
 
+#[cfg(test)]
+#[path = "source_escapes/oracle_tests.rs"]
+mod oracle_tests;
+
 pub(super) enum Decoded {
     Character(char),
     Preserved(char),
