@@ -2013,3 +2013,44 @@ used a 2 GiB limit and single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_session_uri -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_immutable_uri -- --test-threads=1 --nocapture
 ```
+
+## Lean model of SQLite session header routing
+
+The session header reader consumes at most 20 bytes. It chooses the
+immutable advisory reader when the first 16 bytes match the SQLite
+magic including its terminating NUL, and both format bytes at offsets
+18 and 19 equal 2. Short files and incomplete reads ending in EOF use
+the ordinary reader. Interrupted reads retain the partial header and
+continue. Other I/O errors preserve their original kind and message.
+
+Lean proves the magic and version requirements, the independence
+from the page-size field and trailing bytes, and the interruption,
+EOF, and failure behavior of the reading loop. This model describes
+the routing decision. SQLite evaluates schema and database validity
+after the decision.
+
+The Rust adapter drives the production header helper with controlled
+read events. It compares the route or error and every requested
+buffer length. The regular-file cases also exercise the path-level
+inspection and check the cursor position and unchanged contents.
+The cases cover every truncation boundary through 20 bytes, each
+magic byte, pairs of format values, page sizes, and trailing bytes.
+Scripted cases cover fragmented input, repeated interruptions,
+explicit EOF, and I/O errors before, during, or after the header.
+
+The corpus has 67 regular-file cases and 12 additional read scripts.
+Six broken variants distinguish the magic NUL, both format bytes,
+page-size independence, interrupted reads, EOF, and unrelated I/O
+errors.
+
+All 79 cases matched on macOS in both the default and `contracts`
+configurations. The 89-test schema suite passed in both configurations.
+The session hard-link target passed 31 tests and the workflow suite
+passed 222. Lean ran with a 2 GiB limit, and single-job Rust ran
+with a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_header -- --check corpus/session-header.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_header -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_header_matches_lean_oracle -- --test-threads=1
+```

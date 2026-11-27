@@ -9,6 +9,8 @@ use thiserror::Error;
 #[cfg(test)]
 mod admission_oracle_tests;
 #[cfg(test)]
+mod header_oracle_tests;
+#[cfg(test)]
 mod uri_oracle_tests;
 #[cfg(test)]
 mod wal_retry_oracle_tests;
@@ -114,13 +116,17 @@ fn inspect_database_file(mut file: std::fs::File) -> Result<bool, SchemaError> {
     if crate::file_links::file_link_count(&file)? > 1 {
         return Err(SchemaError::SharedFile);
     }
+    read_wal_header(&mut file).map_err(SchemaError::Inspect)
+}
+
+fn read_wal_header(reader: &mut impl Read) -> std::io::Result<bool> {
     let mut header = [0; 20];
-    match file.read_exact(&mut header) {
+    match reader.read_exact(&mut header) {
         Ok(()) => {
             Ok(header.starts_with(b"SQLite format 3\0") && header[18] == 2 && header[19] == 2)
         }
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(error) => Err(error.into()),
+        Err(error) => Err(error),
     }
 }
 

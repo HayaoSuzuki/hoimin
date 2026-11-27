@@ -311,6 +311,10 @@ name = "generate_session_uri"
 root = "SessionUriAuditMain"
 
 [[lean_exe]]
+name = "generate_session_header"
+root = "SessionHeaderAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 
