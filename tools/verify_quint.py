@@ -82,6 +82,7 @@ MODELS = (
             "emptyPageStep",
             "eofDeadlineStep",
             "persistDeadlineStep",
+            "recoveredCursorStep",
         ),
         scenario_steps=24,
         simulation_only=True,

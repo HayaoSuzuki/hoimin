@@ -115,6 +115,10 @@ module JanitorSelection {
 
   action wrapStep = advanceScenario
 
+  // The second page matches a recovery history that falls back to cursor 1.
+  action recoveredCursorStep =
+    if (scan.phase == Idle) begin(Set(1)) else advanceScenario
+
   action emptyPageStep =
     if (scan.scans == 1 and scan.phase == Published) begin(Set()) else advanceScenario
 

@@ -12,7 +12,7 @@ use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-fn update_listing(
+pub(super) fn update_listing(
     coordinator: &ManagedRootCoordinator,
     previous: &mut BTreeSet<u64>,
     listing: &Value,
@@ -28,7 +28,7 @@ fn update_listing(
     *previous = current;
 }
 
-fn assert_cursor(coordinator: &ManagedRootCoordinator, expected: &Value) {
+pub(super) fn assert_cursor(coordinator: &ManagedRootCoordinator, expected: &Value) {
     let (_, actual) =
         read_coordinator_state(&coordinator.file, &coordinator.path.join(COORDINATOR_FILE))
             .unwrap();
@@ -36,7 +36,7 @@ fn assert_cursor(coordinator: &ManagedRootCoordinator, expected: &Value) {
     assert_eq!(actual.generation, number(&expected["generation"]));
 }
 
-fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value) {
+pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value) {
     let phase = expected["phase"]["tag"].as_str().unwrap();
     let expire_on = match phase {
         "Published" => None,

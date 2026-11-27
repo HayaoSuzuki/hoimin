@@ -304,6 +304,10 @@ uses the preceding slot, and the next save increments that recovered generation.
 `preferOlderStep` selects the older slot after a successful save and violates
 `Safety`.
 
+The Rust replay also joins `recoverStep` to the second page of the selection
+model's `recoveredCursorStep`. The real selector uses the recovered cursor,
+returns the expected page, and writes the expected replacement slot.
+
 `interruptedWriteStep` covers a failure before writing, a partial write with
 an invalid digest, and a complete write whose sync reports an error. The last
 case records bytes visible on the next open under the injected fault. Survival

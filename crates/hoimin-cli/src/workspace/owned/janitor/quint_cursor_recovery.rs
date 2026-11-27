@@ -5,10 +5,12 @@ use super::super::{
     decode_coordinator_slot, persist_coordinator_cursor, read_coordinator_state,
 };
 use super::quint_cursor_name;
+use super::quint_selection::{assert_cursor, check_scan, update_listing};
 use crate::io_faults;
 use crate::quint_itf::{number, states};
 use camino::Utf8Path;
 use serde_json::Value;
+use std::collections::BTreeSet;
 use std::fs;
 use std::io::{self, Seek, SeekFrom, Write};
 use std::ops::Range;
@@ -123,12 +125,30 @@ fn assert_slots_and_reopen(parent: &Utf8Path, path: &Utf8Path, expected: &Value)
     );
 }
 
+fn replay_step(parent: &Utf8Path, path: &Utf8Path, expected: &Value) {
+    let command = &expected["command"];
+    match command["tag"].as_str().unwrap() {
+        "Init" => {}
+        "Save" => save(parent, path, &command["value"]),
+        "Damage" => damage(
+            path,
+            usize::try_from(number(&command["value"]["index"])).unwrap(),
+        ),
+        other => panic!("unknown cursor operation {other}"),
+    }
+    assert_slots_and_reopen(parent, path, expected);
+}
+
+const RECOVERY: &str = include_str!(
+    "../../../../../../formal/quint/traces/janitor_cursor_recovery_recoverStep_0.itf.json"
+);
+
 #[rstest::rstest]
 #[case::trace_0(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_0.itf.json"))]
 #[case::trace_1(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_1.itf.json"))]
 #[case::trace_2(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_2.itf.json"))]
 #[case::trace_3(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_3.itf.json"))]
-#[case::recover(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_recoverStep_0.itf.json"))]
+#[case::recover(RECOVERY)]
 #[case::interrupted_write(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_interruptedWriteStep_0.itf.json"))]
 fn quint_history_matches_coordinator_cursor_recovery(#[case] trace: &str) {
     let directory = tempfile::tempdir().unwrap();
@@ -140,17 +160,45 @@ fn quint_history_matches_coordinator_cursor_recovery(#[case] trace: &str) {
     let rows = states(trace);
     assert!(rows.len() > 1);
     for row in rows {
-        let expected = &row["s"];
-        let command = &expected["command"];
-        match command["tag"].as_str().unwrap() {
-            "Init" => {}
-            "Save" => save(parent, &path, &command["value"]),
-            "Damage" => damage(
-                &path,
-                usize::try_from(number(&command["value"]["index"])).unwrap(),
-            ),
-            other => panic!("unknown cursor operation {other}"),
-        }
-        assert_slots_and_reopen(parent, &path, expected);
+        replay_step(parent, &path, &row["s"]);
     }
+}
+
+#[test]
+fn recovered_cursor_drives_the_next_candidate_scan() {
+    let directory = tempfile::tempdir().unwrap();
+    let parent = Utf8Path::from_path(directory.path()).unwrap();
+    let path = ManagedRootCoordinator::open(parent)
+        .unwrap()
+        .path
+        .join(COORDINATOR_FILE);
+    let recovery = states(RECOVERY);
+    let damaged = recovery
+        .iter()
+        .position(|row| {
+            let command = &row["s"]["command"];
+            command["tag"] == "Damage" && command["value"]["wasCurrent"] == true
+        })
+        .unwrap();
+    for row in &recovery[..=damaged] {
+        replay_step(parent, &path, &row["s"]);
+    }
+
+    let selection = states(include_str!(
+        "../../../../../../formal/quint/traces/janitor_selection_recoveredCursorStep_0.itf.json"
+    ));
+    let page = selection
+        .iter()
+        .find(|row| {
+            let scan = &row["scan"];
+            scan["phase"]["tag"] == "Published" && number(&scan["scans"]) == 2
+        })
+        .unwrap();
+    let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+    update_listing(&coordinator, &mut BTreeSet::new(), &page["scan"]["listing"]);
+    assert_cursor(&coordinator, &page["startCursor"]);
+    check_scan(&coordinator, &page["scan"]);
+    assert_cursor(&coordinator, &page["saved"]);
+    drop(coordinator);
+    assert_slots_and_reopen(parent, &path, &recovery[damaged + 1]["s"]);
 }
