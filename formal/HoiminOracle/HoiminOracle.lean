@@ -112,6 +112,7 @@ import HoiminOracle.PagingModel
 import HoiminOracle.PreparedAnnotationImportModel
 import HoiminOracle.PrivateAnnotationImportModel
 import HoiminOracle.EnvironmentFingerprintModel
+import HoiminOracle.ImportRootModel
 
 import HoiminOracle.ResumeDiagnosticModel
 import HoiminOracle.ExceptionHierarchyModel
