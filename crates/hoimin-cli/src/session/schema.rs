@@ -8,6 +8,8 @@ use thiserror::Error;
 
 #[cfg(test)]
 mod admission_oracle_tests;
+#[cfg(test)]
+mod wal_retry_oracle_tests;
 
 pub(crate) const SCHEMA_VERSION: i64 = 5;
 
@@ -321,18 +323,31 @@ fn initialize(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
 }
 
 fn enable_wal(connection: &Connection, timeout: Duration) -> Result<(), SchemaError> {
+    enable_wal_until(
+        Instant::now() + timeout,
+        || connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)),
+        Instant::now,
+        thread::sleep,
+    )
+}
+
+fn enable_wal_until(
+    deadline: Instant,
+    mut request_mode: impl FnMut() -> rusqlite::Result<String>,
+    mut now: impl FnMut() -> Instant,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(), SchemaError> {
     const RETRY_BACKOFF: Duration = Duration::from_millis(5);
 
-    let deadline = Instant::now() + timeout;
     loop {
-        match connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)) {
+        match request_mode() {
             Ok(mode) if mode.eq_ignore_ascii_case("wal") || mode.eq_ignore_ascii_case("memory") => {
                 return Ok(());
             }
             Ok(mode) => return Err(SchemaError::JournalMode(mode)),
-            Err(error) if is_lock_contention(&error) && Instant::now() < deadline => {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                thread::sleep(RETRY_BACKOFF.min(remaining));
+            Err(error) if is_lock_contention(&error) && now() < deadline => {
+                let remaining = deadline.saturating_duration_since(now());
+                sleep(RETRY_BACKOFF.min(remaining));
             }
             Err(error) => return Err(error.into()),
         }

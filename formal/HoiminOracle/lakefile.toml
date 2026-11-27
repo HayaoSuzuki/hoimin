@@ -303,6 +303,10 @@ name = "generate_session_wal_admission"
 root = "SessionWalAdmissionAuditMain"
 
 [[lean_exe]]
+name = "generate_session_wal_retry"
+root = "SessionWalRetryAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

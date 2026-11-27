@@ -1928,3 +1928,48 @@ used a 3 GiB limit.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_wal_admission_matches_lean_oracle -- --test-threads=1
 HOIMIN_SESSION_WAL_ORACLE_CASE=upgrade-committed-version-in-wal CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_wal_admission_matches_lean_oracle -- --nocapture
 ```
+
+## Lean model of WAL enablement retries
+
+The first SQLite request runs even with a zero retry timeout. A reply
+of `wal` or `memory` succeeds with ASCII case-insensitive matching.
+Other journal modes are returned in the refusal. A busy or locked
+SQLite error can lead to another request only if the first clock
+sample following the error is strictly before the deadline. Other
+errors terminate immediately.
+
+Lean proves the eligibility condition and the two bounds on each
+requested sleep: five milliseconds and the time remaining at the
+second clock sample. If the second sample has crossed the deadline,
+the requested sleep is zero. Once a retry is eligible, the opener
+runs the next request after the sleep. That request can start at or
+after the deadline. Successful mode replies still succeed then, and
+an expired contention error is returned with its original extended
+code. The deadline belongs to the retry loop. SQLite's busy timeout
+and blocking duration apply independently inside each request.
+
+The 85 `internal-fixture` cases exercise at most four requests per
+trace. They compare exact query start times, sleep durations, and the
+final mode or error. Fake time drives the production loop while
+rusqlite's own error representation supplies primary and extended
+result codes. The production entry point uses a monotonic clock, the
+real SQLite query and thread sleep. A separate fixture starts with a
+real exclusive SQLite transaction, commits the peer during the
+first retry wait, and checks the committed data and WAL mode after
+the retry. The existing real-database test covers expiration while
+the peer keeps its transaction.
+
+All 85 cases matched on macOS in both the default and `contracts`
+configurations. The 87-test schema suite passed in each configuration.
+The session handler and hard-link targets passed 133 tests with one
+existing ignored test, and the workflow suite passed 222. Six
+sensitivity checks distinguish deadline equality, sleep clamping,
+clock resampling, permanent faults, extended contention errors, and
+memory mode. Lean ran under a 2 GiB limit and single-job Rust under
+a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_wal_retry -- --check corpus/session-wal-retry.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_wal_retry -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session::schema:: -- --test-threads=1
+```
