@@ -6,17 +6,18 @@ theorem closed_decision_table_is_safe : allSafe = true := by native_decide
 
 theorem mutant_close_timeout_is_nonfatal_error (termination : Termination) :
     decideOutcome .mutant (.known termination) .closeTimedOut =
-      { fatal := false, status := some .error, termination := some termination,
+      { status := some .error, termination := some termination,
         outputIncomplete := true, diagnostic := true, continueRun := true } := by
   rfl
 
-theorem baseline_close_timeout_remains_fatal (termination : Termination) :
-    (decideOutcome .baseline (.known termination) .closeTimedOut).fatal = true := by
-  rfl
+theorem non_mutant_close_timeout_returns_output_failure (execution : ExecutionKind)
+    (termination : Termination) (notMutant : execution ≠ .mutant) :
+    (decideOutcome execution (.known termination) .closeTimedOut).failure = some .output := by
+  cases execution <;> first | contradiction | rfl
 
-theorem process_failure_remains_fatal (execution : ExecutionKind)
+theorem process_failure_remains_primary (execution : ExecutionKind)
     (output : OutputOutcome) :
-    (decideOutcome execution .failed output).fatal = true := by
+    (decideOutcome execution .failed output).failure = some .process := by
   cases execution <;> cases output <;> rfl
 
 theorem sensitivity_detects_broken_families : sensitivityPasses = true := by native_decide

@@ -23,6 +23,7 @@ private def caseJson (item : OracleCase) : Lean.Json :=
     ("process", .str (processName item.process)),
     ("output", .str (outputName item.output)),
     ("expected_fatal", Lean.toJson item.expected.fatal),
+    ("expected_failure_source", optionJson (item.expected.failure.map failureSourceName)),
     ("expected_status", optionJson (item.expected.status.map statusName)),
     ("expected_termination", optionJson (item.expected.termination.map terminationName)),
     ("expected_output_incomplete", Lean.toJson item.expected.outputIncomplete),
@@ -58,7 +59,7 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
   unless sensitivityPasses && drainErrorSensitivity do
     IO.eprintln "process output audit missed a broken family"
     return .error 2
-  unless cases.length == 42 && cases.all caseSafe do
+  unless cases.length == 63 && cases.all caseSafe do
     IO.eprintln "process output cases violate the closed contract"
     return .error 2
   unless drainAssignments.length == 27 do
@@ -94,7 +95,7 @@ private def printSensitivity : IO UInt32 := do
 
 private def printCases : IO UInt32 := do
   for item in cases do IO.println s!"{item.id}={caseSafe item}"
-  return if cases.length == 42 && cases.all caseSafe then 0 else 2
+  return if cases.length == 63 && cases.all caseSafe then 0 else 2
 
 def main (args : List String) : IO UInt32 := do
   let args := match args with | "--" :: rest => rest | _ => args

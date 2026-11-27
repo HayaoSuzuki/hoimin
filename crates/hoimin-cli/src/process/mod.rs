@@ -1765,6 +1765,7 @@ mod tests {
         process: String,
         output: String,
         expected_fatal: bool,
+        expected_failure_source: Option<String>,
         expected_status: Option<String>,
         expected_termination: Option<String>,
         expected_output_incomplete: bool,
@@ -1805,14 +1806,14 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str::<ProcessOutputCase>(line).unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(cases.len(), 42);
+        assert_eq!(cases.len(), 63);
         assert_eq!(
             cases
                 .iter()
                 .map(|case| case.id.as_str())
                 .collect::<BTreeSet<_>>()
                 .len(),
-            42
+            63
         );
         cases
     }
@@ -1833,29 +1834,24 @@ mod tests {
         }
     }
 
+    fn process_output_fixture_failure(source: &str, output: &str) -> EffectFailed {
+        let (code, message) = match (source, output) {
+            ("process", _) => ("process.wait.failed", "fixture process failure"),
+            ("output", "close_timed_out") => {
+                (PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, "fixture output timeout")
+            }
+            ("output", "failed") => ("process.stdout.read", "fixture output failure"),
+            _ => panic!("unknown fixture failure {source} for output {output}"),
+        };
+        EffectFailed::other(EffectId(7), code, message)
+    }
+
     fn combine_process_output_case(
         case: &ProcessOutputCase,
     ) -> Result<(ProcessTermination, OutputSpoolRef, ProcessOutputState), EffectFailed> {
-        let process_failure = EffectFailed::other(
-            EffectId(7),
-            "process.wait.failed",
-            "fixture process failure",
-        );
-        let output_failure = match case.output.as_str() {
-            "close_timed_out" => EffectFailed::other(
-                EffectId(7),
-                "process.output.close.timeout",
-                "fixture output timeout",
-            ),
-            "failed" => {
-                EffectFailed::other(EffectId(7), "process.stdout.read", "fixture output failure")
-            }
-            "complete" => EffectFailed::other(EffectId(7), "unreachable.complete", "unreachable"),
-            other => panic!("unknown output {other}"),
-        };
         let process = match case.input_termination.as_deref() {
             Some(termination) => Ok(named_termination(termination)),
-            None => Err(process_failure.clone()),
+            None => Err(process_output_fixture_failure("process", &case.output)),
         };
         let collected = OutputSpoolRef {
             token: "collected".to_owned(),
@@ -1865,7 +1861,7 @@ mod tests {
         let fallback = output_ref();
         let output = match case.output.as_str() {
             "complete" => Ok(collected),
-            _ => Err(output_failure),
+            _ => Err(process_output_fixture_failure("output", &case.output)),
         };
         let context = execution_context(&case.execution);
         combine_process_and_output(process, output, &context, fallback)
@@ -1875,15 +1871,21 @@ mod tests {
     fn process_output_combiner_matches_every_lean_decision_row() {
         let cases = process_output_cases();
         for case in &cases {
-            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.schema, 2, "{}", case.id);
             assert_eq!(case.mode, "strict", "{}", case.id);
             assert_eq!(case.expected_continue, !case.expected_fatal, "{}", case.id);
             assert_eq!(case.process == "failed", case.input_termination.is_none());
+            assert_eq!(case.expected_fatal, case.expected_failure_source.is_some());
         }
         for case in cases.iter().filter(|case| case.expected_fatal) {
             let actual = combine_process_output_case(case);
-
-            assert!(actual.is_err(), "{}", case.id);
+            let source = case.expected_failure_source.as_deref().unwrap();
+            assert_eq!(
+                actual,
+                Err(process_output_fixture_failure(source, &case.output)),
+                "{}",
+                case.id
+            );
         }
         for case in cases.iter().filter(|case| !case.expected_fatal) {
             let (termination, output, output_state) = combine_process_output_case(case).unwrap();

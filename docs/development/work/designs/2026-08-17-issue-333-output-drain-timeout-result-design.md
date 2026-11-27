@@ -154,3 +154,8 @@ timeout, and definite failure for each of stdout, stderr, and the collector.
 The Rust selector checks the error class and source for all rows. A separate
 Rust test with a paused clock exercises the wait path with a pending stdout
 task and a failed stderr task, then checks that the mutant result is fatal.
+
+The decision table now covers all 63 combinations of baseline, mutant, and
+probe execution with the process and output outcomes. The Lean theorem gives
+the process failure precedence for every execution kind. In fatal cases the
+Rust adapter compares the full error selected by the handler.

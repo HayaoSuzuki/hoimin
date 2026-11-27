@@ -3,7 +3,7 @@ import HoiminOracle.ProcessOutputProofs
 namespace HoiminOracle.ProcessOutput
 
 structure OracleCase where
-  schema : Nat := 1
+  schema : Nat := 2
   id : String
   mode : String := "strict"
   execution : ExecutionKind
@@ -15,6 +15,11 @@ structure OracleCase where
 def executionName : ExecutionKind → String
   | .baseline => "baseline"
   | .mutant => "mutant"
+  | .probe => "probe"
+
+def failureSourceName : FailureSource → String
+  | .process => "process"
+  | .output => "output"
 
 def terminationName : Termination → String
   | .exitSuccess => "exit_success"
@@ -53,7 +58,7 @@ def cases : List OracleCase := assignments.map fun entry =>
     expected := decideOutcome execution process output }
 
 def caseSafe (item : OracleCase) : Bool :=
-  item.schema == 1 && item.mode == "strict" &&
+  item.schema == 2 && item.mode == "strict" &&
     item.expected == decideOutcome item.execution item.process item.output &&
     safeDecision item.execution item.process item.output
 
