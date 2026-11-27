@@ -75,6 +75,7 @@ import HoiminOracle.SourceCoordinatesModel
 import HoiminOracle.SourceDeclarationModel
 import HoiminOracle.DelimiterDepthModel
 import HoiminOracle.SourceEscapeModel
+import HoiminOracle.RegexLiteralSpanModel
 import HoiminOracle.CandidateSpanProofs
 import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel

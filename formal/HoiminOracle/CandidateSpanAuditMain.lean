@@ -3,6 +3,7 @@ import HoiminOracle.SourceCoordinatesCases
 import HoiminOracle.SourceDeclarationCases
 import HoiminOracle.DelimiterDepthCases
 import HoiminOracle.SourceEscapeCases
+import HoiminOracle.RegexLiteralSpanCases
 import Lean.Data.Json
 
 open HoiminOracle.CandidateSpan
@@ -123,6 +124,11 @@ def main (args : List String) : IO UInt32 := do
       else IO.eprintln "source escape corpus is stale" *> pure 1
   | ["--output-source-escape", path] =>
       IO.FS.writeFile path HoiminOracle.SourceEscape.corpus *> pure 0
+  | ["--check-regex-literal-span", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.RegexLiteralSpan.corpus then pure 0
+      else IO.eprintln "regex literal span corpus is stale" *> pure 1
+  | ["--output-regex-literal-span", path] =>
+      IO.FS.writeFile path HoiminOracle.RegexLiteralSpan.corpus *> pure 0
   | ["--cases"] => printCases
   | ["--sensitivity"] =>
       let status ← printSensitivity
@@ -133,14 +139,16 @@ def main (args : List String) : IO UInt32 := do
       if status != 0 then return status
       let status ← HoiminOracle.DelimiterDepth.sensitivity
       if status != 0 then return status
-      HoiminOracle.SourceEscape.sensitivity
+      let status ← HoiminOracle.SourceEscape.sensitivity
+      if status != 0 then return status
+      HoiminOracle.RegexLiteralSpan.sensitivity
   | ["--stats"] =>
       IO.println s!"fixed_cases={cases.length}"
       IO.println "sensitivity_families=12"
       IO.println "strict_cases=3"
       return 0
   | _ =>
-      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --output-source-coordinates PATH | --check-source-coordinates PATH | --output-source-declaration PATH | --check-source-declaration PATH | --output-delimiter-depth PATH | --check-delimiter-depth PATH | --output-source-escape PATH | --check-source-escape PATH | --cases | --sensitivity | --stats"
+      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --output-source-coordinates PATH | --check-source-coordinates PATH | --output-source-declaration PATH | --check-source-declaration PATH | --output-delimiter-depth PATH | --check-delimiter-depth PATH | --output-source-escape PATH | --check-source-escape PATH | --output-regex-literal-span PATH | --check-regex-literal-span PATH | --cases | --sensitivity | --stats"
       return 2
 
 end HoiminOracle.CandidateSpan.Executable

@@ -6,6 +6,10 @@ use ruff_python_ast::Expr;
 use ruff_text_size::{Ranged, TextRange, TextSize};
 use std::ops::Range;
 
+#[cfg(test)]
+#[path = "literal/oracle_tests.rs"]
+mod oracle_tests;
+
 #[derive(Clone, Copy)]
 struct Unit {
     start: usize,

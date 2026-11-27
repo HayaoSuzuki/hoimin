@@ -244,3 +244,49 @@ Rust run finished in 77 seconds and peaked at 2,444,320 KiB.
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
 ```
+
+## Lean model of regex literal spans and edits
+
+The model assembles Python literal tokens from source fragments. Each fragment
+emits one decoded character or consumes bytes without emitting a character.
+The source spelling determines its UTF-8 width, so a character from a Unicode
+escape covers the whole escape and a physical CRLF can cover two bytes.
+Line continuations advance the source coordinate without creating a decoded
+unit. Adjacent tokens add quote and separator bytes between their units.
+
+Lean proves that placement preserves decoded character order, that one
+decoded character projects to its complete spelling,
+that an insertion at the last decoded boundary uses the final token's body
+end, and that surrounding a span preserves its selected characters. The model
+also specifies the result of replacing a decoded span by concatenating the
+unmodified prefix, the replacement, and the unmodified suffix.
+
+The 12 `internal-fixture` inputs cover bytes, raw and ordinary strings,
+multibyte text, named and numeric escapes, mixed quoting, physical newlines,
+line continuations, adjacent literals, and empty trailing tokens. For each
+input the Rust adapter uses the production parser and literal mapper to check
+every ordered in-bounds range, including empty spans, and two nonempty
+out-of-bounds ranges. For 16 selected edits it applies the returned byte edit
+and reparses the file expression and the materialized reference separately.
+It checks the decoded values and counts retained comment and continuation
+spellings in the edited expression. The cases exercise both sides of token
+boundaries, including deletion next to a matching quote and surrounding a
+span that begins partway through a raw backslash run. The fixtures choose the
+literal edits directly, independent of regex grammar and operator selection.
+
+Six sensitivity checks detect using decoded offsets as source offsets,
+anchoring an empty span on the preceding unit, stopping at the start of the
+last selected unit, clipping a range to its first unit, consuming the
+exclusive endpoint, and dropping the selected text during a surround edit.
+
+On macOS, all 261 byte ranges and all 16 edits matched. The library suite
+passed 5,215 tests with 5 ignored, and the CI workflow suite passed 222
+tests. Lean used a 20-second timeout and a 2 GiB cap per command. The Rust
+run used one build job, took 39 seconds, and peaked at 2,513,584 KiB under a
+3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-regex-literal-span corpus/regex-literal-span.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
+```

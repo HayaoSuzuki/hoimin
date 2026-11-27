@@ -1629,6 +1629,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/source-escape.jsonl",
         ),
         (
+            "generate_candidate_span",
+            "--check-regex-literal-span",
+            "corpus/regex-literal-span.jsonl",
+        ),
+        (
             "generate_exception_hierarchy",
             "--check-acquisition",
             "corpus/exception-acquisition.jsonl",
