@@ -1634,6 +1634,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/regex-literal-span.jsonl",
         ),
         (
+            "generate_candidate_span",
+            "--check-format-spec",
+            "corpus/format-spec.jsonl",
+        ),
+        (
             "generate_exception_hierarchy",
             "--check-acquisition",
             "corpus/exception-acquisition.jsonl",

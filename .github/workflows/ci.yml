@@ -554,6 +554,8 @@ jobs:
             HoiminOracle.SourceEscapeCases
             HoiminOracle.RegexLiteralSpanModel
             HoiminOracle.RegexLiteralSpanCases
+            HoiminOracle.FormatSpecModel
+            HoiminOracle.FormatSpecCases
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             HoiminOracle.ChangedConfigModel
@@ -789,6 +791,8 @@ jobs:
             lake exe generate_candidate_span -- --check-source-escape corpus/source-escape.jsonl
           run_guard check-regex-literal-span \
             lake exe generate_candidate_span -- --check-regex-literal-span corpus/regex-literal-span.jsonl
+          run_guard check-format-spec \
+            lake exe generate_candidate_span -- --check-format-spec corpus/format-spec.jsonl
           run_guard check-exception-acquisition \
             lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl
           run_guard check-import-roots \
