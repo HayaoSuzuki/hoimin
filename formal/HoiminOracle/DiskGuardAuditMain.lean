@@ -419,6 +419,63 @@ private def deliverySensitivity : Bool :=
     !(deliveryEvents flushFailed).contains .acknowledged &&
     (deliveryEvents allFailed).contains .cleanupRequested
 
+private def admissionEventJson : ReportAdmissionEvent → Lean.Json
+  | .restrict atDeadline =>
+      Lean.Json.mkObj [("kind", .str "restrict"), ("deadline", Lean.toJson atDeadline)]
+  | .advance duration =>
+      Lean.Json.mkObj [("kind", .str "advance"), ("duration", Lean.toJson duration)]
+  | .abandon => Lean.Json.mkObj [("kind", .str "abandon")]
+  | .start => Lean.Json.mkObj [("kind", .str "start")]
+  | .finish => Lean.Json.mkObj [("kind", .str "finish")]
+
+private def admissionObservation (state : ReportAdmissionState) : Lean.Json :=
+  let task := match state.task with
+    | .queued => "queued"
+    | .active => "active"
+    | .refused => "refused"
+    | .returned => "returned"
+  Lean.Json.mkObj [
+    ("may_start", Lean.toJson (reportMayStart state)), ("task", .str task),
+    ("owner_held", Lean.toJson (reportOwnerHeld state))]
+
+private def admissionTrace : ReportAdmissionState → List ReportAdmissionEvent → List Lean.Json
+  | _, [] => []
+  | state, event :: rest =>
+      let next := reportAdmissionStep state event
+      admissionObservation next :: admissionTrace next rest
+
+private def admissionCase (name : String) (events : List ReportAdmissionEvent)
+    (gateFlush : Bool) : Lean.Json :=
+  let operation := if gateFlush then "flush" else "write"
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"{name}_{operation}"), ("gate_flush", Lean.toJson gateFlush),
+    ("events", .arr (events.toArray.map admissionEventJson)),
+    ("expected", .arr (admissionTrace {} events).toArray)]
+
+def renderReportAdmissionCorpus : String :=
+  let traces : List (String × List ReportAdmissionEvent) := [
+    ("no_limit", [.start, .finish, .abandon]),
+    ("before_limit", [.restrict 3, .advance 2, .start, .finish, .abandon]),
+    ("at_limit", [.restrict 2, .advance 2, .start, .abandon]),
+    ("past_limit", [.restrict 2, .advance 3, .start, .abandon]),
+    ("cannot_extend", [.restrict 2, .advance 2, .restrict 20, .start, .abandon]),
+    ("tighten", [.restrict 20, .advance 2, .restrict 2, .start, .abandon]),
+    ("drop_while_queued", [.abandon, .start]),
+    ("drop_while_active_after_limit", [.restrict 2, .start, .advance 2, .abandon, .finish]),
+    ("tighten_while_active", [.restrict 20, .start, .advance 2, .restrict 2, .finish, .abandon])]
+  let cases := traces.flatMap fun (name, events) =>
+    [admissionCase name events false, admissionCase name events true]
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+private def reportAdmissionSensitivity : Bool :=
+  let deadline : ReportAdmissionState := { now := 2, deadline := some 2 }
+  let extended := reportAdmissionStep deadline (.restrict 20)
+  let active := reportAdmissionStep {} .start
+  let detached := reportAdmissionStep active .abandon
+  !reportMayStart deadline && !reportMayStart extended && reportOwnerHeld detached &&
+    !reportOwnerHeld (reportAdmissionStep detached .finish)
+
 private def familyEvents : List Event := [
   .dispatch, .observe 9 10 11 10, .processDrainSucceeded, .outputDrained,
   .monitorJoined, .requestCleanup executionRoot, .reportSucceeded, .finish]
@@ -501,7 +558,8 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
     IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
   unless sensitivityPasses && reportEvidenceSensitivity && finalizationErrorsSensitivity && meterSensitivity &&
-      statsSensitivity && finalCapacitySensitivity && deliverySensitivity do
+      statsSensitivity && finalCapacitySensitivity && deliverySensitivity &&
+      reportAdmissionSensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
   return .ok ()
@@ -584,10 +642,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check-final-capacity", path] => checkCorpus path renderFinalCapacityCorpus
   | ["--output-delivery", path] => writeCorpus path renderDeliveryCorpus
   | ["--check-delivery", path] => checkCorpus path renderDeliveryCorpus
+  | ["--output-report-admission", path] => writeCorpus path renderReportAdmissionCorpus
+  | ["--check-report-admission", path] => checkCorpus path renderReportAdmissionCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-finalization-errors | --check-finalization-errors | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity | --output-delivery | --check-delivery) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-finalization-errors | --check-finalization-errors | --output-meter | --check-meter | --output-statistics | --check-statistics | --output-final-capacity | --check-final-capacity | --output-delivery | --check-delivery | --output-report-admission | --check-report-admission) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

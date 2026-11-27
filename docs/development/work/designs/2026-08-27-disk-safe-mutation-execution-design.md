@@ -1198,6 +1198,30 @@ cd ../..
 cargo test --locked -p hoimin-cli --lib final_delivery_acknowledgement_and_errors_match_lean
 ```
 
+## Report admission and ownership at the shutdown deadline
+
+At the model's admission event, a queued operation is allowed to start when
+its driver is live and the current time precedes the earliest reported
+deadline. Lean proves that a restriction cannot reopen a closed gate and that
+a queued task is refused after the driver drops. The task retains its owner
+while it is queued or active. An active task releases its last reference on
+return if the driver already dropped.
+
+Nine timelines are replayed with a writer blocked either in the record write
+or in its per-record flush. A single blocking thread makes the queue
+deterministic. The test uses a paused Tokio clock and compares the gate,
+task state, and live owner reference after every event. It also checks the
+returned effect ID and the bytes accepted by the writer. The cases schedule
+deadline changes and driver drops before or after the worker checks admission.
+The interrupted-delivery shell tests cover the actual workspace path.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-report-admission corpus/report-admission.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib report_admission_and_owner_lifetime_match_lean
+```
+
 ## Cleanup outcomes and finish admission
 
 The lifecycle corpus crosses four component-settlement schedules with the four

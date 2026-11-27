@@ -426,4 +426,49 @@ theorem delivery_acknowledgement_requires_all_stages (evidence : DeliveryEvidenc
   cases capacity <;> cases write <;> cases flush <;> cases cleanup <;>
     simp [deliveryEvents, deliveryErrors, deliveryErrorOrder]
 
+theorem report_deadline_cannot_be_extended (state : ReportAdmissionState)
+    (prior newDeadline : Nat) (limited : state.deadline = some prior) :
+    (reportAdmissionStep state (.restrict newDeadline)).deadline =
+      some (min newDeadline prior) := by
+  simp [reportAdmissionStep, limited]
+
+theorem report_cannot_start_at_deadline (state : ReportAdmissionState)
+    (closed : state.deadline = some state.now) :
+    reportMayStart state = false := by
+  simp [reportMayStart, closed, Nat.lt_irrefl]
+
+theorem restricting_report_deadline_does_not_reopen_gate (state : ReportAdmissionState)
+    (deadline : Nat) (closed : reportMayStart state = false) :
+    reportMayStart (reportAdmissionStep state (.restrict deadline)) = false := by
+  cases driver : state.driverAlive with
+  | false => simp [reportMayStart, reportAdmissionStep, driver]
+  | true =>
+      cases prior : state.deadline with
+      | none => simp [reportMayStart, driver, prior] at closed
+      | some limit =>
+          have elapsed : limit ≤ state.now := by
+            simpa [reportMayStart, driver, prior, Nat.not_lt] using closed
+          have tightened := Nat.le_trans (Nat.min_le_right deadline limit) elapsed
+          simp [reportMayStart, reportAdmissionStep, driver, prior, Nat.not_lt, tightened]
+
+theorem abandoned_queued_report_is_refused (state : ReportAdmissionState)
+    (queued : state.task = .queued) :
+    (reportAdmissionStep (reportAdmissionStep state .abandon) .start).task = .refused := by
+  simp [reportAdmissionStep, reportMayStart, queued]
+
+theorem queued_report_keeps_owner_after_abandonment (state : ReportAdmissionState)
+    (queued : state.task = .queued) :
+    reportOwnerHeld (reportAdmissionStep state .abandon) = true := by
+  simp [reportAdmissionStep, reportOwnerHeld, queued] <;> decide
+
+theorem active_report_keeps_owner_after_abandonment (state : ReportAdmissionState)
+    (active : state.task = .active) :
+    reportOwnerHeld (reportAdmissionStep state .abandon) = true := by
+  simp [reportAdmissionStep, reportOwnerHeld, active] <;> decide
+
+theorem detached_report_releases_owner_on_return (state : ReportAdmissionState)
+    (active : state.task = .active) (detached : state.driverAlive = false) :
+    reportOwnerHeld (reportAdmissionStep state .finish) = false := by
+  simp [reportAdmissionStep, reportOwnerHeld, active, detached] <;> decide
+
 end HoiminOracle.DiskGuard

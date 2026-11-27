@@ -350,79 +350,167 @@ mod tests {
         assert!(!delivery.is_quiescent());
     }
 
-    #[test]
-    fn abandoned_report_does_not_begin_a_queued_write() {
-        assert_queued_write_is_rejected(abandon_queued_report);
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum ReportTask {
+        Queued,
+        Active,
+        Refused,
+        Returned,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    enum AdmissionEvent {
+        Restrict { deadline: u64 },
+        Advance { duration: u64 },
+        Abandon,
+        Start,
+        Finish,
+    }
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct AdmissionObservation {
+        may_start: bool,
+        task: ReportTask,
+        owner_held: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct AdmissionCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        gate_flush: bool,
+        events: Vec<AdmissionEvent>,
+        expected: Vec<AdmissionObservation>,
     }
 
     #[test]
-    fn expired_report_does_not_begin_a_queued_write_while_driver_is_alive() {
-        assert_queued_write_is_rejected(expire_queued_report);
-    }
-
-    type QueuedReport = ReportDelivery;
-
-    fn abandon_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
-        drop(delivery);
-        Vec::new()
-    }
-
-    fn expire_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
-        delivery
-            .admission()
-            .restrict_to(tokio::time::Instant::now());
-        vec![delivery]
-    }
-
-    fn assert_queued_write_is_rejected(dispose: fn(QueuedReport) -> Vec<QueuedReport>) {
+    fn report_admission_and_owner_lifetime_match_lean() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
+            .start_paused(true)
             .max_blocking_threads(1)
             .build()
             .unwrap();
-        runtime.block_on(async {
-            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-            let (release_tx, release_rx) = mpsc::channel();
-            let blocker = tokio::task::spawn_blocking(move || {
-                started_tx.send(()).unwrap();
-                release_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-            });
-            started_rx.await.unwrap();
-            let bytes = Arc::new(Mutex::new(Vec::new()));
-            let handler = ReportHandler::new(
-                GatedWriter {
-                    entered: None,
-                    release: mpsc::channel().1,
-                    bytes: Arc::clone(&bytes),
-                    gate_flush: false,
-                },
-                io::sink(),
-            );
-            let mut delivery = ReportDelivery::new(handler, Arc::new(()));
-            let mut write = Box::pin(delivery.handle(event(1)));
-            tokio::select! {
-                biased;
-                result = &mut write => panic!("queued write completed: {result:?}"),
-                () = tokio::task::yield_now() => {}
-            }
-            drop(write);
-            let driver = &mut delivery;
-            let OwnedDeliveryState::Running(queued) =
-                std::mem::replace(&mut driver.state, OwnedDeliveryState::Unavailable)
-            else {
-                unreachable!("queued report retains its running task");
-            };
-            let retained = dispose(delivery);
-            release_tx.send(()).unwrap();
-            blocker.await.unwrap();
-            let (_, result) = queued.await.unwrap();
-            assert!(
-                result.is_err(),
-                "an abandoned report acknowledged late output"
-            );
-            assert!(bytes.lock().unwrap().is_empty());
-            drop(retained);
+        let mut ids = std::collections::BTreeSet::new();
+        for line in
+            include_str!("../../../../formal/HoiminOracle/corpus/report-admission.jsonl").lines()
+        {
+            let case: AdmissionCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            runtime.block_on(replay_report_admission(case));
+        }
+        assert_eq!(ids.len(), 18);
+    }
+
+    async fn replay_report_admission(case: AdmissionCase) {
+        const OUTPUT_ID: u64 = 7;
+        let start = tokio::time::Instant::now();
+        let (pool_entered, pool_ready) = tokio::sync::oneshot::channel();
+        let (pool_release, hold_pool) = mpsc::channel();
+        let pool_blocker = tokio::task::spawn_blocking(move || {
+            pool_entered.send(()).unwrap();
+            hold_pool.recv_timeout(Duration::from_secs(3)).unwrap();
         });
+        pool_ready.await.unwrap();
+
+        let (writer_entered, mut writer_ready) = tokio::sync::oneshot::channel();
+        let (writer_release, hold_writer) = mpsc::channel();
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let handler = ReportHandler::new(
+            GatedWriter {
+                entered: Some(writer_entered),
+                release: hold_writer,
+                bytes: Arc::clone(&bytes),
+                gate_flush: case.gate_flush,
+            },
+            io::sink(),
+        );
+        let owner = Arc::new(());
+        let lease = Arc::downgrade(&owner);
+        let mut delivery = ReportDelivery::new(handler, owner);
+        let admission = delivery.admission();
+        let mut write = Box::pin(delivery.handle(event(OUTPUT_ID)));
+        tokio::select! {
+            biased;
+            result = &mut write => panic!("{}: queued operation completed: {result:?}", case.id),
+            () = tokio::task::yield_now() => {}
+        }
+        drop(write);
+        // Keep the real blocking task observable after dropping its driver.
+        let OwnedDeliveryState::Running(worker) =
+            std::mem::replace(&mut delivery.state, OwnedDeliveryState::Unavailable)
+        else {
+            panic!("{}: expected a queued report task", case.id);
+        };
+
+        let mut status = ReportTask::Queued;
+        let mut worker = Some(worker);
+        let mut driver = Some(delivery);
+        assert_eq!(case.events.len(), case.expected.len(), "{}", case.id);
+        for (index, (event, expected)) in case.events.into_iter().zip(case.expected).enumerate() {
+            match event {
+                AdmissionEvent::Restrict { deadline } => {
+                    admission.restrict_to(start + Duration::from_secs(deadline));
+                }
+                AdmissionEvent::Advance { duration } => {
+                    tokio::time::advance(Duration::from_secs(duration)).await;
+                }
+                AdmissionEvent::Abandon => drop(driver.take()),
+                AdmissionEvent::Start => {
+                    pool_release.send(()).unwrap();
+                    let task = worker.as_mut().unwrap();
+                    status = tokio::select! {
+                        result = task => {
+                            let (_, result) = result.unwrap();
+                            let error = result.expect_err("disallowed queued operation");
+                            assert_eq!(error.id, EffectId(OUTPUT_ID));
+                            let EffectFailure::ReportState { message } = error.failure else {
+                                panic!("{}: wrong admission error: {error:?}", case.id);
+                            };
+                            assert!(message.contains("abandoned or its deadline expired"), "{message}");
+                            worker = None;
+                            ReportTask::Refused
+                        }
+                        ready = &mut writer_ready => {
+                            ready.unwrap();
+                            ReportTask::Active
+                        }
+                    };
+                }
+                AdmissionEvent::Finish => {
+                    writer_release.send(()).unwrap();
+                    let (_, result) = worker.take().unwrap().await.unwrap();
+                    assert_eq!(result.unwrap().unwrap().id, EffectId(OUTPUT_ID));
+                    status = ReportTask::Returned;
+                }
+            }
+            assert_eq!(
+                AdmissionObservation {
+                    may_start: admission.permits_start(),
+                    task: status,
+                    owner_held: lease.upgrade().is_some(),
+                },
+                expected,
+                "{} step {index}",
+                case.id
+            );
+        }
+        assert!(worker.is_none(), "{}", case.id);
+        pool_blocker.await.unwrap();
+        let bytes = bytes.lock().unwrap();
+        if status == ReportTask::Returned {
+            let record: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(record["sequence"], OUTPUT_ID, "{}", case.id);
+        } else {
+            assert!(bytes.is_empty(), "{}", case.id);
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]

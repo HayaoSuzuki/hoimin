@@ -1610,6 +1610,7 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         "--check-statistics": "corpus/disk-statistics.jsonl",
         "--check-final-capacity": "corpus/disk-final-capacity.jsonl",
         "--check-delivery": "corpus/disk-delivery.jsonl",
+        "--check-report-admission": "corpus/report-admission.jsonl",
     }
     expected_remaining.extend(
         ["lake", "exe", "generate_disk_guard", "--", flag, corpus]

@@ -289,6 +289,42 @@ def deliveryEvents (evidence : DeliveryEvidence) : List DeliveryEvent :=
     (if evidence.cleanup then [.rootAbsent] else []) ++
     if (deliveryErrors evidence).isEmpty then [.acknowledged] else []
 
+inductive ReportTask where
+  | queued | active | refused | returned
+  deriving BEq, DecidableEq
+
+structure ReportAdmissionState where
+  now : Nat := 0
+  deadline : Option Nat := none
+  driverAlive : Bool := true
+  task : ReportTask := .queued
+  deriving DecidableEq
+
+inductive ReportAdmissionEvent where
+  | restrict (deadline : Nat)
+  | advance (duration : Nat)
+  | abandon
+  | start
+  | finish
+
+def reportMayStart (state : ReportAdmissionState) : Bool :=
+  state.driverAlive && (state.deadline.map (fun deadline => decide (state.now < deadline))).getD true
+
+def reportOwnerHeld (state : ReportAdmissionState) : Bool :=
+  state.driverAlive || state.task == .queued || state.task == .active
+
+def reportAdmissionStep (state : ReportAdmissionState) :
+    ReportAdmissionEvent → ReportAdmissionState
+  | .restrict deadline =>
+      { state with deadline := some ((state.deadline.map (min deadline)).getD deadline) }
+  | .advance duration => { state with now := state.now + duration }
+  | .abandon => { state with driverAlive := false }
+  | .start =>
+      if state.task = .queued then
+        { state with task := if reportMayStart state then .active else .refused }
+      else state
+  | .finish => if state.task = .active then { state with task := .returned } else state
+
 def allSafetySucceeded (state : State) : Bool :=
   state.processDrain == .succeeded && state.outputDrain == .succeeded &&
     state.monitorJoin == .succeeded
