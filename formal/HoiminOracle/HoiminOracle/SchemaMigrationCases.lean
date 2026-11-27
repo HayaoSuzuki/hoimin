@@ -130,9 +130,22 @@ def schemaSeparatorSensitivity : Bool :=
   normalizeSchemaSql sqliteSchemaSpace canonical != normalizeSchemaSql sqliteSchemaSpace changed &&
     normalizeSchemaSql broadSpace canonical == normalizeSchemaSql broadSpace changed
 
+def snapshotInputs : List (Version × Int × Catalog) :=
+  [Version.fresh, .v1, .v2, .v3, .v4, .current, .future].flatMap fun version =>
+    [0, 12345].flatMap fun identity =>
+      [Catalog.empty, .canonical, .foreign].map fun catalog => (version, identity, catalog)
+
+def snapshotIdentitySensitivity : Bool :=
+  admitSnapshot .fresh 12345 .empty == .invalidIdentity &&
+    admitSnapshot .fresh 12345 .empty != admitSnapshot .fresh 0 .empty &&
+    admitSnapshot .current 0 .foreign == .invalidIdentity &&
+    admitSnapshot .current 0 .foreign != admitSnapshot .current 0 .canonical &&
+    admitSnapshot .future 12345 .foreign == .unsupportedVersion &&
+    admitSnapshot .future 12345 .foreign != .invalidIdentity
+
 def sensitivityPasses : Bool :=
   atomicitySensitivity && staleReadSensitivity && unsupportedPrecedenceSensitivity &&
-    schemaSeparatorSensitivity
+    schemaSeparatorSensitivity && snapshotIdentitySensitivity
 
 structure OracleCase where
   schema : Nat

@@ -50,6 +50,18 @@ fn validator_rejects_scenario() {
 }
 
 #[test]
+fn validator_requires_snapshot_input_for_admission_cases() {
+    let mut case = case_for("admission_snapshot");
+    case.snapshot = None;
+
+    assert!(
+        validate_case(&case)
+            .unwrap_err()
+            .contains("mismatched snapshot input")
+    );
+}
+
+#[test]
 fn validator_requires_writer_versions_for_internal_fixtures() {
     let mut case = case_for("stale_reread");
     case.expected_writer_versions = None;

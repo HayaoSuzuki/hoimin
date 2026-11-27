@@ -2,6 +2,23 @@ import HoiminOracle.SchemaMigrationModel
 
 namespace HoiminOracle.SchemaMigration
 
+theorem admitSnapshot_initializes_iff (version : Version) (applicationId : Int) (catalog : Catalog) :
+    admitSnapshot version applicationId catalog = .initialize ↔
+      version = .fresh ∧ applicationId = 0 ∧ catalog = .empty := by
+  cases version <;> cases catalog <;> by_cases zero : applicationId = 0 <;>
+    simp [admitSnapshot, zero]
+
+theorem admitSnapshot_reopens_iff (version : Version) (applicationId : Int) (catalog : Catalog) :
+    admitSnapshot version applicationId catalog = .reopen ↔
+      version = .current ∧ applicationId = 0 ∧ catalog = .canonical := by
+  cases version <;> cases catalog <;> by_cases zero : applicationId = 0 <;>
+    simp [admitSnapshot, zero]
+
+theorem admitSnapshot_unsupported_precedes_identity (version : Version) (applicationId : Int)
+    (catalog : Catalog) (notFresh : version ≠ .fresh) (notCurrent : version ≠ .current) :
+    admitSnapshot version applicationId catalog = .unsupportedVersion := by
+  cases version <;> simp_all [admitSnapshot]
+
 set_option maxHeartbeats 100000 in
 theorem initial_invariant (version : Version) (legacyRow : Bool) :
     Invariant (initial version legacyRow) := by

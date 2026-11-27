@@ -63,8 +63,36 @@ private def caseJson (item : OracleCase) : Lean.Json :=
     fields ++ [("expected_writer_versions", stringsJson (writerVersions item))]
     else fields)
 
+private def snapshotJson (version : Version) (applicationId : Int) (catalog : Catalog) : Lean.Json :=
+  let admission := admitSnapshot version applicationId catalog
+  let versionLabel := versionName version
+  let catalogLabel := match catalog with
+    | .empty => "empty"
+    | .canonical => "canonical"
+    | .foreign => "foreign"
+  let result := match admission with
+    | .initialize | .reopen => "ok"
+    | .invalidIdentity => "invalid_identity"
+    | .unsupportedVersion => "unsupported_version"
+  let storedVersion := if admission == .initialize then .current else version
+  let events := if admission == .initialize then
+    ["observe:left", "begin:left", "initialize:left", "commit:left"] else ["observe:left"]
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)),
+    ("id", .str s!"snapshot-{versionLabel}-{applicationId}-{catalogLabel}"),
+    ("mode", .str "strict"), ("scenario", .str "admission_snapshot"),
+    ("initial_version", .str versionLabel), ("expected_version", .str (versionName storedVersion)),
+    ("initial_legacy_row", Lean.toJson (catalog != .empty)),
+    ("expected_legacy_row", Lean.toJson (catalog != .empty)),
+    ("trace", stringsJson events), ("expected_open_results", stringsJson [result, "not_run"]),
+    ("snapshot", Lean.Json.mkObj [("application_id", Lean.toJson applicationId),
+      ("catalog", .str catalogLabel)])
+  ]
+
 def renderCorpus : String :=
-  String.join (cases.map fun item => (caseJson item).compress ++ "\n")
+  let snapshots := snapshotInputs.map fun (version, identity, catalog) =>
+    snapshotJson version identity catalog
+  String.join ((cases.map caseJson ++ snapshots).map fun item => item.compress ++ "\n")
 
 private def ensureAudit : IO (Except UInt32 Unit) := do
   unless sensitivityPasses do
@@ -106,6 +134,7 @@ private def printStats : IO UInt32 := do
   IO.println s!"states={auditedStates.length}"
   IO.println s!"state_ceiling={stateCeiling}"
   IO.println s!"cases={cases.length}"
+  IO.println s!"snapshot_cases={snapshotInputs.length}"
   return if finiteAuditPasses && fixedCasesPass then 0 else 2
 
 private def printSensitivity : IO UInt32 := do
@@ -113,6 +142,7 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"stale_reread_detected={staleReadSensitivity}"
   IO.println s!"unsupported_precedence_detected={unsupportedPrecedenceSensitivity}"
   IO.println s!"schema_separator_detected={schemaSeparatorSensitivity}"
+  IO.println s!"snapshot_identity_detected={snapshotIdentitySensitivity}"
   return if sensitivityPasses then 0 else 2
 
 private def printCases : IO UInt32 := do

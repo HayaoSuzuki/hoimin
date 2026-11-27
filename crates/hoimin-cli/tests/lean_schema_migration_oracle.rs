@@ -1,5 +1,6 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+use std::ffi::OsString;
 use std::path::Path;
 use std::sync::{Arc, Barrier, mpsc};
 use std::thread;
@@ -12,6 +13,8 @@ use serde::Deserialize;
 const CORPUS: &str =
     include_str!("../../../formal/HoiminOracle/corpus/schema-migration-concurrency.jsonl");
 const CURRENT_VERSION: i64 = 5;
+const FOREIGN_MARKER_SQL: &str = "CREATE TABLE unsupported_schema_marker(value TEXT NOT NULL);
+    INSERT INTO unsupported_schema_marker(value) VALUES ('preserve me');";
 // Version labels refer to the current-only initialization contract.
 
 #[derive(Debug, Deserialize)]
@@ -28,6 +31,22 @@ struct OracleCase {
     expected_legacy_row: bool,
     expected_open_results: Vec<String>,
     expected_writer_versions: Option<Vec<String>>,
+    snapshot: Option<SnapshotInput>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SnapshotInput {
+    application_id: i64,
+    catalog: Catalog,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+enum Catalog {
+    Empty,
+    Canonical,
+    Foreign,
 }
 
 fn parse_corpus(input: &str) -> Result<Vec<OracleCase>, String> {
@@ -73,6 +92,9 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
             "{} has unexpected writer version evidence",
             item.id
         ));
+    }
+    if item.snapshot.is_some() != (item.scenario == "admission_snapshot") {
+        return Err(format!("{} has mismatched snapshot input", item.id));
     }
     let correspondence_is_exact = match item.scenario.as_str() {
         "concurrent_fresh" => {
@@ -122,6 +144,20 @@ fn validate_case(item: &OracleCase) -> Result<(), String> {
                 && item.expected_legacy_row
                 && results_are(item, "unsupported_version", "not_run")
         }
+        "admission_snapshot" => {
+            item.mode == "strict"
+                && expected_version_number(&item.initial_version).is_ok()
+                && expected_version_number(&item.expected_version).is_ok()
+                && matches!(
+                    item.expected_open_results[0].as_str(),
+                    "ok" | "unsupported_version" | "invalid_identity"
+                )
+                && item.expected_open_results[1] == "not_run"
+                && item
+                    .snapshot
+                    .as_ref()
+                    .is_some_and(|input| matches!(input.application_id, 0 | 12345))
+        }
         _ => false,
     };
     if !correspondence_is_exact {
@@ -147,8 +183,11 @@ fn known_event(value: &str) -> bool {
 #[test]
 fn lean_schema_migration_corpus_is_valid() {
     let cases = parse_corpus(CORPUS).expect("Lean schema migration corpus must be valid");
-    assert_eq!(cases.len(), 9);
-    assert_eq!(cases.iter().filter(|item| item.mode == "strict").count(), 6);
+    assert_eq!(cases.len(), 51);
+    assert_eq!(
+        cases.iter().filter(|item| item.mode == "strict").count(),
+        48
+    );
     assert_eq!(
         cases
             .iter()
@@ -156,6 +195,19 @@ fn lean_schema_migration_corpus_is_valid() {
             .count(),
         2
     );
+    let snapshots: BTreeSet<_> = cases
+        .iter()
+        .filter_map(|item| {
+            item.snapshot.as_ref().map(|input| {
+                (
+                    item.initial_version.as_str(),
+                    input.application_id,
+                    input.catalog,
+                )
+            })
+        })
+        .collect();
+    assert_eq!(snapshots.len(), 7 * 2 * 3);
 }
 
 #[test]
@@ -249,14 +301,17 @@ fn run_strict_case_from(
     let path = directory.path().join("session.sqlite3");
     prepare_fixture(item, &path)?;
 
-    let expected_unsupported = if item.scenario == "unsupported" {
+    let expected_unsupported = if item.expected_open_results[0] == "unsupported_version" {
         Some(expected_version_number(&item.initial_version)?)
     } else {
         None
     };
+    let files_before = (item.snapshot.is_some() && item.expected_open_results[0] != "ok")
+        .then(|| fixture_files(directory.path()))
+        .transpose()?;
     let actual_results = match item.scenario.as_str() {
         "concurrent_fresh" => open_concurrently(&path)?,
-        "unsupported" => vec![
+        "unsupported" | "admission_snapshot" => vec![
             classify_open(SessionHandler::open(&path), expected_unsupported),
             "not_run".to_owned(),
         ],
@@ -266,6 +321,14 @@ fn run_strict_case_from(
         return Err(format!(
             "{} open results mismatch: actual={actual_results:?} expected={:?}",
             item.id, item.expected_open_results
+        ));
+    }
+    if let Some(before) = files_before
+        && fixture_files(directory.path())? != before
+    {
+        return Err(format!(
+            "{} rejection changed database or companion files",
+            item.id
         ));
     }
 
@@ -288,6 +351,34 @@ fn run_strict_case_from(
 }
 
 fn prepare_fixture(item: &OracleCase, path: &Path) -> Result<(), String> {
+    if let Some(input) = &item.snapshot {
+        if matches!(input.catalog, Catalog::Canonical) {
+            std::fs::write(
+                path,
+                include_bytes!("golden/sessions/schema-v5-required-budget.sqlite3"),
+            )
+            .map_err(|error| error.to_string())?;
+        }
+        let connection = Connection::open(path).map_err(|error| error.to_string())?;
+        let sql = match input.catalog {
+            Catalog::Empty => "VACUUM;",
+            Catalog::Canonical => "",
+            Catalog::Foreign => FOREIGN_MARKER_SQL,
+        };
+        connection
+            .execute_batch(sql)
+            .map_err(|error| error.to_string())?;
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                expected_version_number(&item.initial_version)?,
+            )
+            .map_err(|error| error.to_string())?;
+        return connection
+            .pragma_update(None, "application_id", input.application_id)
+            .map_err(|error| error.to_string());
+    }
     match item.scenario.as_str() {
         "concurrent_fresh" => Ok(()),
         "rollback" => {
@@ -311,15 +402,25 @@ fn prepare_fixture(item: &OracleCase, path: &Path) -> Result<(), String> {
             let connection = Connection::open(path).map_err(|error| error.to_string())?;
             connection
                 .execute_batch(&format!(
-                    "CREATE TABLE unsupported_schema_marker(value TEXT NOT NULL);
-                     INSERT INTO unsupported_schema_marker(value) VALUES ('preserve me');
-                     PRAGMA user_version={};",
+                    "{FOREIGN_MARKER_SQL} PRAGMA user_version={};",
                     expected_version_number(&item.initial_version)?
                 ))
                 .map_err(|error| error.to_string())
         }
         scenario => Err(format!("cannot prepare schema fixture scenario {scenario}")),
     }
+}
+
+fn fixture_files(directory: &Path) -> Result<BTreeMap<OsString, Vec<u8>>, String> {
+    let files = || {
+        std::fs::read_dir(directory)?
+            .map(|entry| {
+                let entry = entry?;
+                Ok((entry.file_name(), std::fs::read(entry.path())?))
+            })
+            .collect::<std::io::Result<_>>()
+    };
+    files().map_err(|error| error.to_string())
 }
 
 fn open_concurrently(path: &Path) -> Result<Vec<String>, String> {
@@ -379,6 +480,7 @@ fn classify_open(
         {
             "unsupported_version".to_owned()
         }
+        Err(SessionError::Schema(SchemaError::InvalidIdentity)) => "invalid_identity".to_owned(),
         Err(SessionError::Schema(SchemaError::Database(_))) => "database_error".to_owned(),
         Err(error) => format!("unexpected_error:{error}"),
     }
@@ -409,6 +511,20 @@ fn observe_marker(item: &OracleCase, connection: &Connection) -> Result<bool, St
 
         "rollback" => "SELECT count(*) FROM diagnostics WHERE id=7 AND message='preserve me'",
         "unsupported" => "SELECT count(*) FROM unsupported_schema_marker WHERE value='preserve me'",
+        "admission_snapshot" => match item
+            .snapshot
+            .as_ref()
+            .expect("validated snapshot case")
+            .catalog
+        {
+            Catalog::Empty => {
+                "SELECT count(*) FROM sqlite_schema WHERE name = 'unsupported_schema_marker'"
+            }
+            Catalog::Canonical => "SELECT count(*) FROM diagnostics",
+            Catalog::Foreign => {
+                "SELECT count(*) FROM unsupported_schema_marker WHERE value='preserve me'"
+            }
+        },
         scenario => return Err(format!("cannot observe marker for {scenario}")),
     };
     connection
