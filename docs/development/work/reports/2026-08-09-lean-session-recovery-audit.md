@@ -211,3 +211,25 @@ cargo test -p hoimin-cli --test session_handler \
 cargo test -p hoimin-cli --test session_handler \
   failed_inconclusive_replacement_restores_the_previous_result -- --exact --nocapture
 ```
+
+## Follow-up on the candidate recheck
+
+The Lean theorem establishes that rechecking a completed candidate selects no
+run, keeps the owner set intact, and clears the pending load. Three generated
+`internal-fixture` cases exercise the boundary where the loader has read the
+candidate and is about to acquire ownership. The first handler keeps ownership,
+finishes the run as incomplete, or finishes it as complete.
+
+The Rust replay uses two real SQLite connections and a one-shot callback at
+that boundary to order the operations. It compares the load result, the run's
+durable flags, and the state of its ownership lock. A third handler probes the
+lock so the completed-candidate case detects a leaked provisional lock. The
+test controls the interleaving within one process.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-load-recheck corpus/session-load-recheck.jsonl
+lake exe generate_session -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --lib resume_candidate_interleaving_matches_lean
+```

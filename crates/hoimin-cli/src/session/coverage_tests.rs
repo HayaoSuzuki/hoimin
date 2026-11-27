@@ -190,6 +190,113 @@ fn ignored_resume_update_reports_candidate_changed() {
     );
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoadRecheckCase {
+    schema: u64,
+    mode: String,
+    finish_before_acquire: Option<bool>,
+    expected_status: String,
+    expected_loader_owns: bool,
+    expected_lock_held: bool,
+    expected_run_finished: Option<bool>,
+    expected_run_complete: Option<bool>,
+}
+
+#[test]
+fn resume_candidate_interleaving_matches_lean() {
+    let cases: Vec<LoadRecheckCase> =
+        include_str!("../../../../formal/HoiminOracle/corpus/session-load-recheck.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+    let candidates: std::collections::BTreeSet<_> = cases
+        .iter()
+        .map(|case| case.finish_before_acquire)
+        .collect();
+    assert_eq!(candidates, [None, Some(false), Some(true)].into());
+    assert_eq!(cases.len(), candidates.len());
+    for case in &cases {
+        assert_eq!(case.schema, 1);
+        assert_eq!(case.mode, "internal-fixture");
+        check_resume_interleaving(case);
+    }
+}
+
+fn check_resume_interleaving(case: &LoadRecheckCase) {
+    let (directory, mut owner) = fixture();
+    let begin = begin_request();
+    let run_id = begin.run_id.clone();
+    owner.begin(begin).unwrap();
+    let path = directory.path().join("session.sqlite3");
+    let mut loader = SessionHandler::open(&path).unwrap();
+    let mut owner = Some(owner);
+    let finish = case
+        .finish_before_acquire
+        .map(|complete| (owner.take().unwrap(), complete));
+    let selected_run = run_id.clone();
+    loader.resume_after_candidate = Some(Box::new(move |candidate| {
+        assert_eq!(candidate, selected_run);
+        if let Some((mut owner, complete)) = finish {
+            owner
+                .finish(FinishSession {
+                    id: EffectId(5),
+                    run_id: selected_run,
+                    complete,
+                })
+                .unwrap();
+        }
+    }));
+
+    let actual = loader.load(&load_request());
+    assert!(loader.resume_after_candidate.is_none(), "{case:?}");
+    let status = match &actual {
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Resumed(resume),
+            ..
+        }) => {
+            assert_eq!(resume.run_id, run_id, "{case:?}");
+            "resumed"
+        }
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::CandidateChanged),
+            ..
+        }) => "candidate_changed",
+        Ok(unexpected) => panic!("unexpected load outcome {unexpected:?}: {case:?}"),
+        Err(error) => error.failure.code(),
+    };
+    assert_eq!(status, case.expected_status, "{case:?}");
+    assert_eq!(
+        loader.ownerships.contains_key(&run_id),
+        case.expected_loader_owns,
+        "{case:?}"
+    );
+
+    let observer = SessionHandler::open(path).unwrap();
+    let probe = observer.acquire_ownership(EffectId(6), &run_id, "inspect lock after load");
+    if case.expected_lock_held {
+        assert_eq!(
+            probe.err().unwrap().failure.code(),
+            "session.resume.active",
+            "{case:?}"
+        );
+    } else {
+        drop(probe.unwrap());
+    }
+    drop(owner);
+    let row: Option<(bool, bool)> = observer
+        .connection
+        .query_row(
+            "SELECT finished, complete FROM runs WHERE run_id=?1",
+            [&run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(row.map(|row| row.0), case.expected_run_finished, "{case:?}");
+    assert_eq!(row.map(|row| row.1), case.expected_run_complete, "{case:?}");
+}
+
 #[rstest::rstest]
 #[case(|_: &mut SessionHandler| {}, "INSERT", "candidates", "insert candidate", 0)]
 #[case(|_: &mut SessionHandler| {}, "INSERT", "results", "insert result", 0)]

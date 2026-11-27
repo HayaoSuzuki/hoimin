@@ -307,4 +307,32 @@ def oracleCaseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
 def renderCorpus : String :=
   String.join (cases.map fun item => (oracleCaseJson item).compress ++ "\n")
 
+private def loadRecheckCase (finishBeforeAcquire : Option Bool) : Lean.Json :=
+  let afterRead := run State.initial [
+    .open .h0, .open .h1, .begin .h0 .r0 .f0, .loadReadCandidate .h1 .f0 ]
+  let beforeAcquire := match finishBeforeAcquire with
+    | none => afterRead
+    | some complete => (step afterRead (.finish .h0 .r0 complete)).state
+  let acquired := step beforeAcquire (.loadAcquire .h1)
+  let (event, outcome) := if acquired.rejection.isSome then (.loadAcquire .h1, acquired)
+    else (.loadRecheck .h1, step acquired.state (.loadRecheck .h1))
+  let status := match outcome.rejection, outcome.selectedRun with
+    | some error, _ => rejectionCode event error
+    | none, some _ => "resumed"
+    | none, none => "candidate_changed"
+  let row := findRun outcome.state .r0
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)),
+    ("mode", .str "internal-fixture"),
+    ("finish_before_acquire", optionalJson Lean.toJson finishBeforeAcquire),
+    ("expected_status", .str status),
+    ("expected_loader_owns", Lean.toJson (owns outcome.state .r0 .h1)),
+    ("expected_lock_held", Lean.toJson (ownerCount outcome.state .r0 != 0)),
+    ("expected_run_finished", optionalJson Lean.toJson (row.map RunRow.finished)),
+    ("expected_run_complete", optionalJson Lean.toJson (row.map RunRow.complete)) ]
+
+def renderLoadRecheckCorpus : String :=
+  String.join ([none, some false, some true].map fun action =>
+    (loadRecheckCase action).compress ++ "\n")
+
 end HoiminOracle.SessionAudit

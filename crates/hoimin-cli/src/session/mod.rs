@@ -115,12 +115,17 @@ impl SessionArtifacts {
     }
 }
 
+#[cfg(test)]
+type ResumeCandidateHook = Box<dyn FnOnce(&str) + Send>;
+
 pub struct SessionHandler {
     connection: Connection,
     lock_directory: PathBuf,
     ownerships: HashMap<String, ownership::RunOwnership>,
     #[cfg(test)]
     persist_after_reads: Option<Arc<Barrier>>,
+    #[cfg(test)]
+    resume_after_candidate: Option<ResumeCandidateHook>,
 }
 
 fn validate_resume_budget(
@@ -168,6 +173,8 @@ impl SessionHandler {
             ownerships: HashMap::new(),
             #[cfg(test)]
             persist_after_reads: None,
+            #[cfg(test)]
+            resume_after_candidate: None,
         })
     }
 
@@ -236,6 +243,10 @@ impl SessionHandler {
             failure: corrupt("NULL run ID"),
         })?;
         let stored_limit = validate_resume_budget(id, stored_limit, request.max_mutants)?;
+        #[cfg(test)]
+        if let Some(after_candidate) = self.resume_after_candidate.take() {
+            after_candidate(&run_id);
+        }
         let ownership = if self.ownerships.contains_key(&run_id) {
             None
         } else {

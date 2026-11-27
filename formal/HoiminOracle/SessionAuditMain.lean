@@ -164,22 +164,22 @@ private def ensureAudit (depth : Nat) : IO (Except UInt32 Unit) := do
     return .error 2
   return .ok ()
 
-private def writeCorpus (path : System.FilePath) (depth : Nat) : IO UInt32 := do
+private def writeCorpus (path : System.FilePath) (depth : Nat) (content : String) : IO UInt32 := do
   match ← ensureAudit depth with
   | .error code => return code
   | .ok () =>
       if let some parent := path.parent then
         IO.FS.createDirAll parent
-      IO.FS.writeFile path renderCorpus
+      IO.FS.writeFile path content
       return 0
 
-private def checkCorpus (path : System.FilePath) (depth : Nat) : IO UInt32 := do
+private def checkCorpus (path : System.FilePath) (depth : Nat) (content : String) : IO UInt32 := do
   match ← ensureAudit depth with
   | .error code => return code
   | .ok () =>
       try
         let actual ← IO.FS.readFile path
-        if actual == renderCorpus then
+        if actual == content then
           return 0
         IO.eprintln s!"stale Lean session oracle corpus: {path}"
         return 1
@@ -219,12 +219,14 @@ def main (args : List String) : IO UInt32 := do
             return 2
     | _ => pure (auditDepth, args)
   match args with
-  | ["--output", path] => writeCorpus path depth
-  | ["--check", path] => checkCorpus path depth
+  | ["--output", path] => writeCorpus path depth renderCorpus
+  | ["--check", path] => checkCorpus path depth renderCorpus
+  | ["--output-load-recheck", path] => writeCorpus path depth renderLoadRecheckCorpus
+  | ["--check-load-recheck", path] => checkCorpus path depth renderLoadRecheckCorpus
   | ["--stats"] => printStats depth
   | ["--sensitivity"] => printSensitivity
   | _ =>
-      IO.eprintln "usage: generate_session [--depth 1..8] (--output PATH | --check PATH | --stats | --sensitivity)"
+      IO.eprintln "usage: generate_session [--depth 1..8] ((--output | --check | --output-load-recheck | --check-load-recheck) PATH | --stats | --sensitivity)"
       return 2
 
 end HoiminOracle.SessionAudit.Executable

@@ -50,6 +50,15 @@ theorem rollback_replacement_preserves_durable (state : State) (handler : Handle
   · split <;> simp [reject, accept, durable]
   · simp [reject]
 
+theorem completed_candidate_is_never_selected (state : State) (handler : Handler)
+    (fingerprint : Fingerprint) (row : RunRow)
+    (locked : state.pending = some (.loadLocked handler fingerprint row.run))
+    (present : findRun state row.run = some row) (complete : row.complete = true) :
+    let outcome := step state (.loadRecheck handler)
+    outcome.selectedRun = none ∧ outcome.state.owners = state.owners ∧
+      outcome.state.pending = none := by
+  simp [step, recheckLoad, locked, present, resumeEligible, complete, accept]
+
 theorem successful_replacement_is_exact
     (state : State) (handler : Handler) (old replacement : ResultRow)
     (present : findResult state old.run old.mutant = some old)

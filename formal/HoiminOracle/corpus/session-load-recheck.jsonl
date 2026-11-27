@@ -1,0 +1,3 @@
+{"expected_loader_owns":false,"expected_lock_held":true,"expected_run_complete":false,"expected_run_finished":false,"expected_status":"session.resume.active","finish_before_acquire":null,"mode":"internal-fixture","schema":1}
+{"expected_loader_owns":true,"expected_lock_held":true,"expected_run_complete":false,"expected_run_finished":true,"expected_status":"resumed","finish_before_acquire":false,"mode":"internal-fixture","schema":1}
+{"expected_loader_owns":false,"expected_lock_held":false,"expected_run_complete":true,"expected_run_finished":true,"expected_status":"candidate_changed","finish_before_acquire":true,"mode":"internal-fixture","schema":1}

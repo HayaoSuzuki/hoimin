@@ -1579,6 +1579,19 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         ["lake", "exe", "generate_process_output", "--", flag, corpus]
         for flag, corpus in process_companions.items()
     )
+    load_recheck_corpus = "corpus/session-load-recheck.jsonl"
+    expected_remaining.append(
+        [
+            "lake",
+            "exe",
+            "generate_session",
+            "--",
+            "--depth",
+            "4",
+            "--check-load-recheck",
+            load_recheck_corpus,
+        ]
+    )
     corpus_paths = {
         path.relative_to(LEAN_ORACLE).as_posix()
         for path in (LEAN_ORACLE / "corpus").glob("*.jsonl")
@@ -1615,7 +1628,9 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
     assert executable_names == list(LEAN_CORPUS_BY_EXECUTABLE)
     assert guarded_commands[module_count:] == expected_remaining
     assert (
-        set(LEAN_CORPUS_BY_EXECUTABLE.values()) | set(process_companions.values())
+        set(LEAN_CORPUS_BY_EXECUTABLE.values())
+        | set(process_companions.values())
+        | {load_recheck_corpus}
         == corpus_paths
     )
 
