@@ -1,4 +1,7 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#[path = "session_handler/stored_result_oracle.rs"]
+mod stored_result_oracle;
+
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};

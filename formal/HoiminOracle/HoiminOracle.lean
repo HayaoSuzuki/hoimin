@@ -177,6 +177,7 @@ import HoiminOracle.SessionUriModel
 import HoiminOracle.SessionHeaderModel
 import HoiminOracle.SessionCatalogModel
 import HoiminOracle.SessionConfigurationModel
+import HoiminOracle.StoredResultModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

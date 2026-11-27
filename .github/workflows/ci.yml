@@ -768,6 +768,9 @@ jobs:
             HoiminOracle.SessionConfigurationModel
             HoiminOracle.SessionConfigurationCases
             SessionConfigurationAuditMain
+            HoiminOracle.StoredResultModel
+            HoiminOracle.StoredResultCases
+            StoredResultAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -873,6 +876,7 @@ jobs:
             'generate_session_header|corpus/session-header.jsonl|sensitivity'
             'generate_session_catalog|corpus/session-catalog.jsonl|sensitivity'
             'generate_session_configuration|corpus/session-configuration.jsonl|sensitivity'
+            'generate_stored_result|corpus/stored-result.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

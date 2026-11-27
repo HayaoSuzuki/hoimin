@@ -323,6 +323,10 @@ name = "generate_session_configuration"
 root = "SessionConfigurationAuditMain"
 
 [[lean_exe]]
+name = "generate_stored_result"
+root = "StoredResultAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

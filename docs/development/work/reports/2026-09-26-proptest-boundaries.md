@@ -2142,3 +2142,46 @@ existing ignored test, and the workflow suite passed 222. Lean used a
 (cd formal/HoiminOracle && lake exe generate_session_configuration -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_configuration_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of stored result decoding and replacement
+
+Session lookup checks ownership and the run state before reading a
+stored result. The candidate and result rows must be both absent or
+both present. With a present pair, the outcome JSON determines the
+status. A failure to read the SQL value has its own diagnostic.
+Lookup exposes a result for each valid status. Only killed and
+survived outcomes are eligible for reuse, and only inconclusive
+stored outcomes can be replaced. An output close timeout takes
+precedence over the process termination when deriving status.
+
+Lean proves the ownership gates, precedence of a missing candidate
+over invalid outcome text, the close-timeout rule, and refusal to
+replace a conclusive result. The matrix also exercises an owned run
+whose database row has disappeared. Lookup reports the missing run.
+An otherwise admissible write fails its deferred foreign key check
+at commit and retains the prior rows.
+
+The 79 cases exercise the production lookup, resume policy, and
+persist calls on SQLite files. Each fixture begins with the
+production schema and persisted rows, then sets the target row state
+through a separate SQLite connection. The adapter checks stored
+status, reuse, error code or corruption reason, unchanged target
+rows on rejection, and the replacement candidate and diagnostic on
+success. Rows sharing only the run ID or only the mutant ID serve
+as controls. Payload cases cover execution termination variants,
+output close timeout, reused and unstarted outcomes, malformed
+JSON, and elapsed duration boundaries. Six sensitivity checks
+exercise ownership, completion, row pairing, close timeout, reuse,
+and replacement.
+
+All 79 cases matched on macOS in default and `contracts` builds.
+The session handler suite passed 103 tests in each build with one
+existing ignored test. The existing Lean session target passed 59
+tests and the workflow suite passed 222. Lean used a 2 GiB limit and
+single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_stored_result -- --check corpus/stored-result.jsonl)
+(cd formal/HoiminOracle && lake exe generate_stored_result -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test session_handler stored_result_matches_lean_oracle -- --test-threads=1
+```
