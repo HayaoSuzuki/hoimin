@@ -509,11 +509,14 @@ async fn selected_and_unrelated_rename_directions_preserve_hunk_ranges(
 #[tokio::test]
 async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection() {
     let repo = Repository::new().await;
+    repo.git(&["config", "core.quotePath", "true"]).await;
+    let unicode_path = "unicode-雪.py";
     let names = [
         ":(exclude)*.py",
         "--option.py",
         "brackets[1].py",
         "spaces and\tquoted\".py",
+        unicode_path,
     ];
     for name in names.iter().chain(["ordinary.py"].iter()) {
         repo.write(name, "x = 1\n");
@@ -522,6 +525,14 @@ async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection
     for name in names.iter().chain(["ordinary.py"].iter()) {
         repo.write(name, "x = 9\n");
     }
+    let patch = repo
+        .git(&["diff", "--no-ext-diff", "--no-color", "--unified=0", "HEAD"])
+        .await;
+    assert!(
+        patch
+            .split(|byte| *byte == b'\n')
+            .any(|line| line == br#"+++ "b/unicode-\351\233\252.py""#)
+    );
     let mut selection = repo.selection();
     selection.sources.clear();
     selection.files = names.iter().map(|name| (*name).into()).collect();
@@ -543,6 +554,7 @@ async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection
     // the other valid selected paths; do not broaden the portable-path contract.
     assert_eq!(actual.len(), names.len() - 1);
     assert!(actual.iter().all(|target| target.path != names[0]));
+    assert!(actual.iter().any(|target| target.path == unicode_path));
 }
 
 #[tokio::test]

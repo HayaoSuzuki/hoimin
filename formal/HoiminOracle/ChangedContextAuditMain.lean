@@ -4,6 +4,7 @@ import HoiminOracle.SelectorSyntaxCases
 import HoiminOracle.LineCoverageCases
 import HoiminOracle.GitInventoryCases
 import HoiminOracle.GitPatchCases
+import HoiminOracle.GitQuoteCases
 import HoiminOracle.GitNumstatCases
 
 open HoiminOracle.ChangedContext
@@ -39,6 +40,11 @@ def main (args : List String) : IO UInt32 := do
       else IO.eprintln "Git patch corpus is stale" *> pure 1
   | ["--output-git-patch", path] =>
       IO.FS.writeFile path HoiminOracle.GitPatch.corpus *> pure 0
+  | ["--check-git-quote", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitQuote.corpus then pure 0
+      else IO.eprintln "Git quote corpus is stale" *> pure 1
+  | ["--output-git-quote", path] =>
+      IO.FS.writeFile path HoiminOracle.GitQuote.corpus *> pure 0
   | ["--check-git-numstat", path] =>
       if (← IO.FS.readFile path) = HoiminOracle.GitNumstat.corpus then pure 0
       else IO.eprintln "Git numstat corpus is stale" *> pure 1
@@ -57,9 +63,11 @@ def main (args : List String) : IO UInt32 := do
       if status != 0 then return status
       let status ← HoiminOracle.GitPatch.sensitivity
       if status != 0 then return status
+      let status ← HoiminOracle.GitQuote.sensitivity
+      if status != 0 then return status
       HoiminOracle.GitNumstat.sensitivity
   | ["--stats"] =>
       IO.println s!"cases={fixtures.length * contexts.length}\nmaximum_file_lines=8\nmaximum_hunks=2\nsensitivity_families={sensitivity.length}"
       pure 0
   | [] => IO.print corpus *> pure 0
-  | _ => IO.eprintln "usage: generate_changed_context [--check PATH|--output PATH|--check-config PATH|--output-config PATH|--check-selector-syntax PATH|--output-selector-syntax PATH|--check-line-coverage PATH|--output-line-coverage PATH|--check-git-inventory PATH|--output-git-inventory PATH|--check-git-patch PATH|--output-git-patch PATH|--check-git-numstat PATH|--output-git-numstat PATH|--sensitivity|--stats]" *> pure 2
+  | _ => IO.eprintln "usage: generate_changed_context [--check PATH|--output PATH|--check-config PATH|--output-config PATH|--check-selector-syntax PATH|--output-selector-syntax PATH|--check-line-coverage PATH|--output-line-coverage PATH|--check-git-inventory PATH|--output-git-inventory PATH|--check-git-patch PATH|--output-git-patch PATH|--check-git-quote PATH|--output-git-quote PATH|--check-git-numstat PATH|--output-git-numstat PATH|--sensitivity|--stats]" *> pure 2

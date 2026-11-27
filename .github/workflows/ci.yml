@@ -554,6 +554,8 @@ jobs:
             HoiminOracle.GitInventoryCases
             HoiminOracle.GitPatchModel
             HoiminOracle.GitPatchCases
+            HoiminOracle.GitQuoteModel
+            HoiminOracle.GitQuoteCases
             HoiminOracle.GitNumstatModel
             HoiminOracle.GitNumstatCases
             ChangedContextAuditMain
@@ -766,6 +768,8 @@ jobs:
             lake exe generate_changed_context -- --check-git-inventory corpus/git-inventory.jsonl
           run_guard check-git-patch \
             lake exe generate_changed_context -- --check-git-patch corpus/git-patch.jsonl
+          run_guard check-git-quote \
+            lake exe generate_changed_context -- --check-git-quote corpus/git-quote.jsonl
           run_guard check-git-numstat \
             lake exe generate_changed_context -- --check-git-numstat corpus/git-numstat.jsonl
           run_guard check-git-physical-rows \

@@ -84,6 +84,7 @@ import HoiminOracle.SelectorSyntaxModel
 import HoiminOracle.LineCoverageModel
 import HoiminOracle.GitInventoryModel
 import HoiminOracle.GitPatchModel
+import HoiminOracle.GitQuoteModel
 import HoiminOracle.GitNumstatModel
 import HoiminOracle.ChangedLinesModel
 import HoiminOracle.GitPhysicalRowsModel

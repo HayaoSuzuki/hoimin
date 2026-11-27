@@ -12,6 +12,8 @@ mod lines;
 #[cfg(test)]
 mod numstat_oracle_tests;
 mod paths;
+#[cfg(test)]
+mod quote_oracle_tests;
 #[cfg(all(test, unix))]
 mod resolution_oracle_tests;
 mod runner;

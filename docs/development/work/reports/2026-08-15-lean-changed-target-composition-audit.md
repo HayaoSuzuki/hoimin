@@ -296,6 +296,47 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
 ```
 
+## Quoted Git patch paths
+
+Each named escape supplies one byte. Three octal digits supply one byte when
+their value is at most 255. The decoder validates the assembled bytes as
+UTF-8. Missing quotes are reported before escape decoding, and a malformed
+escape is reported before UTF-8 validation.
+
+Lean generates the input spelling and expected observation from typed text,
+named escapes, and octal values. It proves that the generated octal digits
+reconstruct the original value, that a successful octal conversion preserves
+that value exactly, and that a malformed chunk's error survives any successful
+prefix. The model also proves that a missing closing quote takes precedence
+over errors in the body.
+
+The 547 cases include all 512 three-digit octal values, all nine named escapes,
+and 26 cases for mixed chunks, malformed framing, UTF-8 boundaries, and competing
+errors. The Rust adapter calls `decode_git_quoted` and compares either the exact
+decoded text or the exact diagnostic. Five sensitivity checks detect retaining
+named escape letters, wrapping octal overflow, validating UTF-8 byte by byte,
+decoding before checking framing, and accepting a missing closing quote.
+
+The scoped integration test checks that Git emits the filename `unicode-雪.py`
+with octal escapes and that Rust returns that filename in changed targets. The
+Lean cases concern the quoted-path decoder. Patch section selection and path
+scope are covered by the patch transport audit above. The model uses Lean's
+UTF-8 validator and compares selected malformed byte sequences against Rust's
+validator.
+
+Rust matched all 145 decoded strings and 402 errors. On macOS, 121 Git unit
+tests, 37 integration tests, and 222 CI workflow tests passed. The longest
+quoted input was 21 bytes. Guarded Lean checks peaked at 1,309,136 KiB under a
+2 GiB limit and a 20-second timeout. Single-job Rust checks peaked at
+2,266,368 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-git-quote corpus/git-quote.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
+```
+
 ## Git pipe capture
 
 Git stdout returns the complete byte stream when it fits the retention limit.
