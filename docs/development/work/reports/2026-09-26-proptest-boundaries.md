@@ -1693,3 +1693,46 @@ host. Lean used a 2 GiB limit and single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_worker_environment -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test lean_worker_environment_oracle -- --test-threads=1
 ```
+
+## Lean model of workspace copy selection
+
+The ordinary walk honors the source's ignore rules. The explicit include
+walk can restore ignored files and empty directories. Both walks apply
+the built-in names, literal exclusions and explicit glob exclusions. A
+literal file exclusion prunes the exact file or link. A literal tree
+exclusion prunes a directory and its descendants and preserves a regular
+file with the same name. A chosen file brings its parent directories
+into the manifest. A symlink contributes a skip diagnostic.
+
+Lean proves the exclusion precedence, the file and tree distinction, the
+presence of selected file ancestors, and that each output file comes
+from a selected regular source file. The bounded pattern grammar covers
+rooted paths, rooted descendants, basename suffixes and the broad
+include. The cases also check typed rejection of malformed patterns and
+literal paths. The model uses platform case rules for explicit globs,
+literal exclusions and built-in names.
+
+| Premise or observation | Lean | Rust fixture and evidence |
+| --- | --- | --- |
+| Selection and exclusions | Files, directories, link diagnostics and logical byte totals | Build a real preflight manifest from the same files, `.gitignore` and options |
+| Copy membership and inventory | Requested intersection and unique byte total | Check all paths and a subset through the internal membership API and confirm zero content reads |
+| Worker materialization | Exactly the manifest's files and directories | Materialize one worker under a two-worker grant, enumerate its tree and check content and accounting |
+
+The 237 `internal-fixture` cases include 121 for Unix and 116 for
+Windows. The five Unix link cases include file, directory and dangling
+links, as well as links restored through explicit inclusion. Seven
+deliberately incorrect rules check ignore restoration, hard and glob
+exclusions, literal kinds and Windows case handling.
+
+All 121 Unix cases matched on macOS in both build configurations. The
+manifest suite passed 14 tests in each configuration. Workspace, empty
+directory and fingerprint input suites passed 132 tests, and the
+workflow suite passed 222. The Windows corpus passed generation and
+freshness checks. Implementation correspondence requires a Windows
+host. Lean used a 2 GiB limit and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_workspace_selection -- --check corpus/workspace-selection.jsonl)
+(cd formal/HoiminOracle && lake exe generate_workspace_selection -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace_selection_matches_lean_oracle -- --test-threads=1
+```

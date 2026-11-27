@@ -484,6 +484,9 @@ pub fn relative_utf8(root: &Utf8Path, path: &Path) -> Result<Utf8PathBuf, Worksp
 }
 
 #[cfg(test)]
+mod selection_oracle_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use proptest::prelude::*;

@@ -148,6 +148,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_workspace_mutation": "corpus/workspace-mutation.jsonl",
     "generate_workspace_mutation_write": "corpus/workspace-mutation-write.jsonl",
     "generate_worker_environment": "corpus/worker-environment.jsonl",
+    "generate_workspace_selection": "corpus/workspace-selection.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

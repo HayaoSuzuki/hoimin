@@ -283,6 +283,10 @@ name = "generate_worker_environment"
 root = "WorkerEnvironmentAuditMain"
 
 [[lean_exe]]
+name = "generate_workspace_selection"
+root = "WorkspaceSelectionAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 
