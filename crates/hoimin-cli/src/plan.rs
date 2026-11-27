@@ -28,6 +28,9 @@ mod ranking;
 #[cfg(test)]
 mod ranking_tests;
 #[cfg(test)]
+#[path = "plan/records_oracle_tests.rs"]
+mod records_oracle_tests;
+#[cfg(test)]
 mod review_tests;
 mod sampling;
 mod schema;

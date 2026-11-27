@@ -235,6 +235,10 @@ name = "generate_run_fingerprint"
 root = "RunFingerprintAuditMain"
 
 [[lean_exe]]
+name = "generate_plan_records"
+root = "PlanRecordsAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

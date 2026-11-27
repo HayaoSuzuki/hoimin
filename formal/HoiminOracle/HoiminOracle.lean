@@ -155,6 +155,7 @@ import HoiminOracle.PreparedAnnotationImportModel
 import HoiminOracle.PrivateAnnotationImportModel
 import HoiminOracle.EnvironmentFingerprintModel
 import HoiminOracle.RelativePathModel
+import HoiminOracle.PlanRecordsModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

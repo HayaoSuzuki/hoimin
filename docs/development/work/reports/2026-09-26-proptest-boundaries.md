@@ -1166,3 +1166,49 @@ under a 2 GiB cap. The targeted Rust runs used one build job and a
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-core --lib resume::run_fingerprint_oracle_tests
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-core --test resume_policy
 ```
+
+## Lean model of saved plan record comparison
+
+Plan verification first validates the saved source and fingerprint input
+records. It checks each record's portable path, lowercase 64-digit digest
+and path uniqueness. Source inventory validation precedes fingerprint
+input validation, and record validation precedes workspace comparison.
+The comparison uses path and digest, reports added, removed and modified
+files, and gives source changes priority. Paths in diagnostics use
+component order.
+
+Lean proves that an empty change list is equivalent to agreement on the
+digest or absence of every path. It also proves validation priority,
+duplicate rejection with a valid path and digest, and that displayed and
+omitted counts sum to the complete change count. The display is bounded
+at ten paths. The current inventory is assumed to come from the
+workspace resolver with unique, normalized paths.
+
+The 201 cases include an exhaustive comparison of two path slots with
+absence and two digests per slot, invalid records, mixed changes at the
+display boundary, and escaped stale paths. Nine cases use a saved plan
+and a real temporary workspace through `prepare_verify`. The adapter
+creates the original plan with the regular planner, substitutes actual
+workspace digests for the two fixture digests, and checks full diagnostic
+text and preservation of the saved plan. The other cases exercise
+`validate_header` and `ensure_exact_records` directly. Nine deliberately
+incorrect variants check sensitivity to changes in validation, comparison
+order, path sort and truncation.
+
+A saved fingerprint input named `one\ntwo.txt` with a malformed digest
+produced a multiline manifest diagnostic. The path is interpolated
+directly in that diagnostic. The stale-record diagnostic for an
+otherwise valid saved path escapes the newline and stays on one line.
+
+All 201 cases matched on macOS. The plan unit and integration suites
+passed 527 and 292 tests respectively, with four existing ignored
+tests. The CI workflow suite passed 222 tests. Lean ran under a 2 GiB
+cap with a 20-second timeout per command. Single-job Rust peaked at
+2,254,384 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_plan_records -- --check corpus/plan-records.jsonl)
+(cd formal/HoiminOracle && lake exe generate_plan_records -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 plan::
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan -- --test-threads=2
+```
