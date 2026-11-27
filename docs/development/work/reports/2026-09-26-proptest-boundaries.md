@@ -1212,3 +1212,44 @@ cap with a 20-second timeout per command. Single-job Rust peaked at
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 plan::
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan -- --test-threads=2
 ```
+
+## Lean model of saved plan candidate verification
+
+The verification stage visits distinct requested IDs in ascending ID
+order. It requires a saved descriptor and a selected file, builds a
+source validation context once per requested file, and reports descriptor
+or ID failures in request-ID order even when file results are cached.
+Rediscovery preserves the target slice order and keeps the slices for the
+requested files. It then checks that each requested ID has a rediscovered
+descriptor equal to the saved one. The successful result retains the
+requested IDs in discovery order. The model takes digest and descriptor
+validation outcomes and per-slice discovery results as inputs.
+
+Lean proves that a stored-descriptor failure prevents confirmation, that
+the projection of target slices preserves order, and that a successful
+confirmation is exactly the discovery projection and has the same
+membership as the requested IDs. The fixtures use nonempty requests.
+
+The 55 cases include valid and corrupt stored descriptors, missing and
+unselected files, conflicting failures, symbol-only differences, and
+differing ID and discovery orders. The adapter uses actual Python files
+and obtains stable IDs from the production planner. The three selected
+IDs alternate between two files. Fifty cases exercise the production
+verification stage and compare the number of file validation contexts.
+Five serialize a plan and call the public verification preview. The
+cases distinguish the accepted candidates and the full rejection
+diagnostic. Eight deliberately incorrect models vary failure priority,
+cache reuse, rediscovery checks, or output projection.
+
+On macOS, all 55 cases matched. The Rust plan suites passed 528 unit
+tests and 292 integration tests, with four existing ignored tests.
+The workflow suite passed 222 tests. The Lean commands ran under a
+2 GiB cap with a 20-second timeout per command. Single-job Rust peaked
+at 2,059,120 KiB under its 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_plan_verify -- --check corpus/plan-verify.jsonl)
+(cd formal/HoiminOracle && lake exe generate_plan_verify -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 plan::
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan -- --test-threads=2
+```

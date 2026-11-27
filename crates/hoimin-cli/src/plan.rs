@@ -42,6 +42,9 @@ mod selection_tests;
 mod source;
 #[cfg(test)]
 mod validation_tests;
+#[cfg(test)]
+#[path = "plan/verify_oracle_tests.rs"]
+mod verify_oracle_tests;
 
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};

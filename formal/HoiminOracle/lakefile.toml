@@ -239,6 +239,10 @@ name = "generate_plan_records"
 root = "PlanRecordsAuditMain"
 
 [[lean_exe]]
+name = "generate_plan_verify"
+root = "PlanVerifyAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 
