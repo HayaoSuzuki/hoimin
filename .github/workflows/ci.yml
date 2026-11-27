@@ -554,6 +554,8 @@ jobs:
             HoiminOracle.ImportRootModel
             HoiminOracle.DiscoveryScopeModel
             HoiminOracle.DiscoveryScopeCases
+            HoiminOracle.BoundedFileDiscoveryModel
+            HoiminOracle.BoundedFileDiscoveryCases
             HoiminOracle.LineCoverageModel
             HoiminOracle.LineCoverageCases
             HoiminOracle.GitInventoryModel
@@ -781,6 +783,8 @@ jobs:
             lake exe generate_changed_context -- --check-symbol-resolution corpus/symbol-resolution.jsonl
           run_guard check-discovery-scope \
             lake exe generate_changed_context -- --check-discovery-scope corpus/discovery-scope.jsonl
+          run_guard check-bounded-file-discovery \
+            lake exe generate_changed_context -- --check-bounded-file-discovery corpus/bounded-file-discovery.jsonl
           run_guard check-line-coverage \
             lake exe generate_changed_context -- --check-line-coverage corpus/line-coverage.jsonl
           run_guard check-git-inventory \

@@ -13,6 +13,8 @@ use ignore::{DirEntry, Walk, WalkBuilder};
 use crate::{copy_policy::default_excluded, portable_path};
 
 #[cfg(test)]
+mod bounded_oracle_tests;
+#[cfg(test)]
 mod scope_oracle_tests;
 
 #[derive(Debug)]

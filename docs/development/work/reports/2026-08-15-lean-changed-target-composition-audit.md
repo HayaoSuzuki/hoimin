@@ -266,6 +266,57 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::fs
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test target_handler --test lean_glob_selection_oracle
 ```
 
+## Bounded Python file discovery
+
+Exception hierarchy preparation collects distinct Python file paths under a
+single limit across the normal walk and the include restoration walk. The
+limit permits the last available slot. A path already collected can recur
+when capacity is full. A file first yielded by restoration uses the same
+budget as a file first yielded by the normal walk. The collector checks
+cancellation once per yielded entry before handling a walk error or testing
+the entry's type. Directories and non-Python files use no file slot.
+
+| Observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Budget across passes | A single accumulated path list threaded through both entry streams | Real normal and include walks use the same collection |
+| Cancellation | One-based callback ordinal with sticky termination | Closure counts actual cancellation polls and returns true at the selected ordinal |
+| Path admission | Eligible Python, other entry, unsupported native spelling, or walk failure | Temporary files, directory tree, ignore controls, and absent root |
+| Final result | Sorted unique paths or the first failure, with poll count | The actual `discover_python_bounded` result and observed callback count |
+
+Lean proves that every successful scan returns unique paths within the limit,
+that revisiting a path preserves the set even at capacity, and that a
+cancellation at the next poll precedes every possible entry result. A failed
+state stays terminal. Rust exposes one `AnalysisLimit` diagnostic for both
+cancellation and capacity exhaustion, so the test compares that public error
+and the observed poll count.
+
+The 240 cases combine ten stream shapes, limits zero through three, and six
+cancellation schedules from no cancellation through cancellation at poll
+five. The longest stream has four entries. The two-file fixture has two
+distinct Python files, so its observation is independent of directory
+enumeration order. Real ignore and include rules deliver the restored-file
+cases. The Unix-only cases use a literal backslash in a Python or non-Python
+filename. The model starts at the entries yielded by the walker and abstracts
+the contents of traversal diagnostics. The five sensitivity checks detect
+charging duplicates, renewing capacity at restoration, skipping polls on
+other entries, reporting an entry error before cancellation, and validating a
+non-Python filename.
+
+All 240 cases matched on macOS. The collector returned 89 successful path
+lists, 115 `AnalysisLimit` errors, 20 walk errors, and 16 unsupported-path
+errors. Rust passed 28 discovery unit tests with three existing benchmarks
+ignored, and 87 analyzer and fingerprint integration tests. The CI workflow
+suite passed 222. Guarded Lean checks peaked at 1,341,200 KiB under a 2 GiB
+limit and 20-second timeout. Single-job Rust checks peaked at 1,738,240 KiB
+under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-bounded-file-discovery corpus/bounded-file-discovery.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::fs
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test fingerprint_inputs --test analyzer_handler
+```
+
 ## Resolving symbol modules and definitions
 
 Hoimin resolves a dotted module by joining its name components with slashes
