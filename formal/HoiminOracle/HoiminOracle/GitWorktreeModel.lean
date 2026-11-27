@@ -22,6 +22,7 @@ inductive FileEntry
   | file (bytes : List UInt8)
   | directory
   | blockedParent
+  | symlink (target : String)
 
 abbrev Files := List (String × FileEntry)
 
@@ -53,12 +54,15 @@ def selectPaths (scope : Scope) (inventory : List InventoryEntry) : Except Diagn
   | none => admitted
   | some targets => (targets.filter fun target => admitted.contains target.path && hasPositiveLine target).map (·.path)
 
-def contribution (files : Files) (path : String) : Except Diagnostic (Option Span) :=
+def currentText (files : Files) (path : String) : Except Diagnostic (Option (List UInt8)) :=
   match files.find? (·.1 == path) with
   | some (_, .file bytes) =>
-    .ok (if bytes.isEmpty || bytes.contains 0 then none else some ⟨1, physicalCount bytes⟩)
+    .ok (if bytes.isEmpty || bytes.contains 0 then none else some bytes)
   | some (_, .blockedParent) => .error (.readParent path)
-  | some (_, .directory) | none => .ok none
+  | some (_, .directory) | some (_, .symlink _) | none => .ok none
+
+def contribution (files : Files) (path : String) : Except Diagnostic (Option Span) :=
+  (currentText files path).map (·.map fun bytes => ⟨1, physicalCount bytes⟩)
 
 def collect (files : Files) (paths : List String) : Except Diagnostic Changes := do
   let observations ← paths.mapM fun path => (contribution files path).map (·.map (path, ·))
@@ -108,6 +112,6 @@ theorem regular_file_contributes_whole_range (files : Files) (path : String) (by
     (existsFile : files.find? (·.1 == path) = some (path, .file bytes))
     (nonempty : bytes ≠ []) (noNul : 0 ∉ bytes) :
     contribution files path = .ok (some ⟨1, physicalCount bytes⟩) := by
-  simp [contribution, existsFile, nonempty, noNul]
+  simp [contribution, currentText, existsFile, nonempty, noNul, Except.map]
 
 end HoiminOracle.GitWorktree

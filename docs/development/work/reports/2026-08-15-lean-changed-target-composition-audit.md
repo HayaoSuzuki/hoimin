@@ -248,6 +248,54 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git::tracked
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope
 ```
 
+## Tracked ranges against current source
+
+For tracked paths, the resolver filters the normalized Git ranges by path
+before opening the worktree. It returns an empty map when no paths remain.
+For each selected path, it reads current bytes through the retained root.
+Missing files, directories, symlinks, empty files, and files with a NUL byte
+contribute no ranges. For other files, it converts Git LF rows to Python
+physical rows before applying any line selector. A read failure or a range
+outside the current bytes aborts the conversion. The resolver reports the
+first failure in path order and returns no partial map.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Tracked paths and ranges | Unique portable path keys with normalized Git spans | `GitChangedRanges::from_patch`, with no additional binary exclusions |
+| Path selection | Optional list of resolved targets, including explicit line selectors | `GitChangedRanges::into_physical` receives actual `TargetSlice` inputs |
+| Current source | Absent root or per-path entry with bytes or a file kind | Temporary worktree read through `PortableFileReader` |
+| Projection | Existing Git-to-Python physical row model | Exact output map or typed error from `into_physical` |
+
+Lean proves that scope filtering preserves input membership, an empty scope
+succeeds without a root, skipped files bypass row conversion, and a late
+failure returns an error even after a successful prefix. The 144 matrix cases
+combine six scopes, eight source states, and three normalized range patterns
+over two paths. Ten additional cases cover missing roots, line selection,
+late failures, competing diagnostics, and live and dangling symlinks. Four
+cases use Unix-specific filesystem behavior. The six sensitivity checks cover
+ignoring scope, opening the root prematurely, keeping Git line numbers,
+accepting NUL bytes, returning partial results after stale ranges, and reporting
+errors in unsorted input order.
+
+The model uses static source observations and portable ASCII path spelling.
+The fixture for a stale range supplies shortened current bytes directly. The
+worktree read and the range conversion run through production code. Concurrent
+changes during a read and platform-specific case equivalence are outside
+these cases.
+
+Rust matched all 126 successful maps and 28 errors on macOS. The Git unit
+suite passed 122 tests, the two changed-target integration suites passed 37,
+and the CI workflow suite passed 222. The longest source fixture was 12 bytes.
+Guarded Lean checks peaked at 1,264,048 KiB under a 2 GiB limit and a 20-second
+timeout. Single-job Rust checks peaked at 2,342,512 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-tracked-rows corpus/git-tracked-rows.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
+```
+
 ## Git patch section transport
 
 Each `diff --git` marker begins a separate file section. The first old header

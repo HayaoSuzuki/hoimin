@@ -563,6 +563,8 @@ jobs:
             HoiminOracle.GitPhysicalRowsCases
             HoiminOracle.GitWorktreeModel
             HoiminOracle.GitWorktreeCases
+            HoiminOracle.GitTrackedRowsModel
+            HoiminOracle.GitTrackedRowsCases
             HoiminOracle.GitResolutionModel
             HoiminOracle.GitResolutionCases
             HoiminOracle.GitCaptureModel
@@ -776,6 +778,8 @@ jobs:
             lake exe generate_changed_lines -- --check-physical-rows corpus/git-physical-rows.jsonl
           run_guard check-git-worktree \
             lake exe generate_changed_lines -- --check-git-worktree corpus/git-worktree.jsonl
+          run_guard check-git-tracked-rows \
+            lake exe generate_changed_lines -- --check-git-tracked-rows corpus/git-tracked-rows.jsonl
           run_guard check-git-resolution \
             lake exe generate_changed_lines -- --check-git-resolution corpus/git-resolution.jsonl
           run_guard check-git-capture \

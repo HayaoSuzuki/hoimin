@@ -69,7 +69,7 @@ private def wire : InventoryEntry → List UInt8
   | .invalidUtf8 => [255,46,112,121,0]
   | .padding => [0]
 
-private def spanJson (span : Span) : Lean.Json := Lean.Json.mkObj [
+def spanJson (span : Span) : Lean.Json := Lean.Json.mkObj [
   ("start", Lean.toJson span.start), ("end", Lean.toJson span.finish)]
 
 private def changesJson (changes : Changes) : Lean.Json :=
@@ -77,17 +77,18 @@ private def changesJson (changes : Changes) : Lean.Json :=
     (path, .arr ((changes.filterMap fun (name, span) =>
       if name == path then some (spanJson span) else none).toArray)))
 
-private def targetJson (target : Target) : Lean.Json := Lean.Json.mkObj [
+def targetJson (target : Target) : Lean.Json := Lean.Json.mkObj [
   ("path", .str target.path), ("lines", .arr (target.lines.toArray.map spanJson)), ("symbols", .arr #[])]
 
-private def fileJson (entry : String × FileEntry) : Lean.Json :=
+def fileJson (entry : String × FileEntry) : Lean.Json :=
   let contents := match entry.2 with
     | .file bytes => [("kind", .str "file"), ("bytes", Lean.toJson (bytes.map UInt8.toNat))]
     | .directory => [("kind", .str "directory")]
     | .blockedParent => [("kind", .str "blocked_parent")]
+    | .symlink target => [("kind", .str "symlink"), ("target", .str target)]
   Lean.Json.mkObj (("path", .str entry.1) :: contents)
 
-private def diagnosticJson : Diagnostic → Lean.Json
+def diagnosticJson : Diagnostic → Lean.Json
   | .invalidUtf8 => Lean.Json.mkObj [("kind", .str "invalid_utf8")]
   | .rootUnavailable => Lean.Json.mkObj [("kind", .str "root_unavailable")]
   | .literalBackslash path => Lean.Json.mkObj [("kind", .str "literal_backslash"), ("path", .str path)]

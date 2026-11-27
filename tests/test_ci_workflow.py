@@ -1645,6 +1645,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         ("generate_changed_lines", "--check-git-worktree", "corpus/git-worktree.jsonl"),
         (
             "generate_changed_lines",
+            "--check-git-tracked-rows",
+            "corpus/git-tracked-rows.jsonl",
+        ),
+        (
+            "generate_changed_lines",
             "--check-git-resolution",
             "corpus/git-resolution.jsonl",
         ),
