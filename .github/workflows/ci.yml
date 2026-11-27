@@ -726,6 +726,9 @@ jobs:
             HoiminOracle.WorkspaceCapacityModel
             HoiminOracle.WorkspaceCapacityCases
             WorkspaceCapacityAuditMain
+            HoiminOracle.WorkerGrantPublicationModel
+            HoiminOracle.WorkerGrantPublicationCases
+            WorkerGrantPublicationAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -817,6 +820,7 @@ jobs:
             'generate_workspace_restore|corpus/workspace-restore.jsonl|sensitivity'
             'generate_worker_recovery|corpus/worker-recovery.jsonl|sensitivity'
             'generate_workspace_capacity|corpus/workspace-capacity.jsonl|sensitivity'
+            'generate_worker_grant_publication|corpus/worker-grant-publication.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

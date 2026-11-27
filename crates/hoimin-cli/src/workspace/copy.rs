@@ -996,6 +996,8 @@ mod capacity_oracle_tests;
 #[cfg(test)]
 mod finite_read_tests;
 #[cfg(test)]
+mod grant_publication_oracle_tests;
+#[cfg(test)]
 mod grant_tests;
 
 #[cfg(test)]

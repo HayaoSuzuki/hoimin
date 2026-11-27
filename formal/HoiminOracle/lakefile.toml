@@ -267,6 +267,10 @@ name = "generate_workspace_capacity"
 root = "WorkspaceCapacityAuditMain"
 
 [[lean_exe]]
+name = "generate_worker_grant_publication"
+root = "WorkerGrantPublicationAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

@@ -1515,3 +1515,49 @@ suite passed 222. Lean used a 2 GiB limit and single-job Rust used 3 GiB.
 (cd formal/HoiminOracle && lake exe generate_workspace_capacity -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::copy -- --test-threads=2
 ```
+
+## Lean model of worker reservation publication
+
+The first valid create request binds the plan to one reservation and
+publishes the copy allowance while the plan mutex is held. A concurrent
+request can proceed only after publication. After release of the lock,
+the second request may use a different slot on the same reservation.
+Invalid preflight IDs, worker indexes and allowances take precedence
+over reservation mismatch and slot duplication. A failed copy rolls
+back its own slot and charge. Explicit cleanup releases a ready worker's
+slot when its workspace is dropped. Dropping a managed workspace with
+its root still present retains the slot and charge until run cleanup.
+
+Lean proves that any finite history preserves the absence of visible
+workers before publication, and that charged bytes never exceed the
+published allowance under that invariant. It also proves that a bound
+reservation stays bound, either copy failure preserves the sibling slot,
+and retaining a managed worker preserves its charge. The model observes
+two slots and one contender during the first binding. Its stable copy
+checkpoints cover a held lock, a copy paused after charging, and a
+completed copy or cleanup.
+
+| Premise or observation | Lean | Rust fixture and evidence |
+| --- | --- | --- |
+| Contender during publication | One waiting request while the binding is held | Start a second thread, observe `try_lock` report contention, and execute `WorkspacePlan::create_worker` |
+| Reservation, slot and allowance | Published reservation, registered slots, charged and granted bytes | Read the real plan state and allowance at the synchronized checkpoints |
+| Failure, retry and cleanup | Copy outcome, live roots and bytes on disk | Pause at the real write or permission boundary, inject I/O failure, inspect managed roots, and run explicit cleanup |
+
+The 80 `internal-fixture` histories contain 724 transitions and run up
+to 11 operations. They cover empty copies, a partial 64 KiB copy with a
+ready sibling, a dropped managed worker, conflicts before and after all
+workers are gone, and both worker orders. Seven deliberately incorrect
+transitions have witnesses. The two threads use channel handshakes for
+the checkpoints, with timeouts for missing responses.
+
+All 80 histories matched on macOS. The copy suite passed 97 tests in the
+default build and 98 with contracts enabled, with ten existing ignored
+tests in each configuration. The workspace handler and recovery suites
+passed 99 tests, and the workflow suite passed 222. Lean used a 2 GiB
+limit and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_worker_grant_publication -- --check corpus/worker-grant-publication.jsonl)
+(cd formal/HoiminOracle && lake exe generate_worker_grant_publication -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib worker_grant_publication_matches_lean_oracle -- --test-threads=1
+```

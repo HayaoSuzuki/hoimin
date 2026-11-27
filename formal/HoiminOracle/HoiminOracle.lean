@@ -163,6 +163,7 @@ import HoiminOracle.WorkspaceIntegrityModel
 import HoiminOracle.WorkspaceRestoreModel
 import HoiminOracle.WorkerRecoveryModel
 import HoiminOracle.WorkspaceCapacityModel
+import HoiminOracle.WorkerGrantPublicationModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel
