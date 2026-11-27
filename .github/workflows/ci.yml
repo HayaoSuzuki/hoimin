@@ -714,6 +714,8 @@ jobs:
             lake exe generate_shutdown -- --check-metrics corpus/shutdown-metrics.jsonl
           run_guard check-stage-metrics \
             lake exe generate_worker_metrics -- --check-stages corpus/stage-metrics.jsonl
+          run_guard check-stage-metrics-cli \
+            lake exe generate_worker_metrics -- --check-stages-cli corpus/stage-metrics-cli.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \

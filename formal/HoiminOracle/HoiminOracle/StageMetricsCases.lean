@@ -112,6 +112,110 @@ private def fixtureJson (item : Fixture) : Lean.Json := Lean.Json.mkObj [
 def corpus : String :=
   String.join (fixtures.map fun item => (fixtureJson item).compress ++ "\n")
 
+private inductive PublicWork
+  | killedMutants | limitedMutants | noCandidates | failedBaseline
+  deriving DecidableEq, BEq
+
+private inductive SessionPass
+  | ephemeral | fresh | resume
+  deriving DecidableEq, BEq
+
+private structure PublicFixture where
+  id : String
+  work : PublicWork
+  passes : List SessionPass := [.ephemeral]
+
+private def publicFixtures : List PublicFixture := [
+  { id := "killed-mutants", work := .killedMutants },
+  { id := "no-candidates", work := .noCandidates },
+  { id := "baseline-failed", work := .failedBaseline },
+  { id := "completed-session-starts-fresh", work := .killedMutants, passes := [.fresh, .resume] },
+  { id := "limited-session-reuses-executed-mutants",
+    work := .limitedMutants, passes := [.fresh, .resume] }
+]
+
+private def publicWorkName : PublicWork → String
+  | .killedMutants => "killed_mutants"
+  | .limitedMutants => "limited_mutants"
+  | .noCandidates => "no_candidates"
+  | .failedBaseline => "failed_baseline"
+
+private def passName : SessionPass → String
+  | .ephemeral => "ephemeral"
+  | .fresh => "fresh"
+  | .resume => "resume"
+
+private def publicTransitions (work : PublicWork) : List Transition :=
+  let setup := [atMs 1 .preflight .preflight .targetsResolved,
+    atMs 2 .preflight .preflight .preflightCompleted, atMs 3 .preflight .copy,
+    atMs 4 .copy .materializationVerification, atMs 5 .materializationVerification .baseline]
+  let afterBaseline := [atMs 7 .baseline .baselineRestoration,
+    atMs 8 .baselineRestoration .analyze]
+  let run := match work with
+    | .failedBaseline => [atMs 7 .baseline .finalize]
+    | .noCandidates => afterBaseline ++ [atMs 9 .analyze .finalize]
+    | .killedMutants | .limitedMutants =>
+        afterBaseline ++ [atMs 9 .analyze .mutants, atMs 10 .mutants .finalize]
+  setup ++ run ++ [atMs 11 .finalize .cleaning, atMs 12 .cleaning .finalize .cleanupFinished,
+    atMs 13 .finalize .finished]
+
+private def discovered : PublicWork → Nat
+  | .killedMutants => 2
+  | .limitedMutants => 3
+  | _ => 0
+
+private def eligibleToReuse (work : PublicWork) (session : SessionPass) : Bool :=
+  session == .resume && work == .limitedMutants
+
+private def scheduled (work : PublicWork) : Nat := min (discovered work) 2
+
+private def executed (work : PublicWork) (session : SessionPass) : Nat :=
+  if eligibleToReuse work session then 0 else scheduled work
+
+private def exitCode : PublicWork → Nat
+  | .failedBaseline => 3
+  | .limitedMutants => 4
+  | _ => 0
+
+private def resumeJson (work : PublicWork) (session : SessionPass) : Lean.Json :=
+  if eligibleToReuse work session then Lean.Json.mkObj [("status", .str "resumed")]
+  else if session == .resume then Lean.Json.mkObj [
+    ("status", .str "fresh"), ("reason", .str "matching_run_complete")]
+  else .null
+
+private def publicStages (work : PublicWork) : List Stage :=
+  let item : Fixture := { id := "", transitions := publicTransitions work }
+  match (trace operations item).getLast? with
+  | some observation => observation.stages.map Prod.fst
+  | none => []
+
+private def publicFixtureJson (item : PublicFixture) : Lean.Json := Lean.Json.mkObj [
+  ("schema", Lean.toJson (1 : Nat)), ("mode", .str "strict"), ("id", .str item.id),
+  ("work", .str (publicWorkName item.work)),
+  ("passes", .arr (item.passes.toArray.map fun session => Lean.Json.mkObj [
+    ("session", .str (passName session)),
+    ("expected", Lean.Json.mkObj [
+      ("exit_code", Lean.toJson (exitCode item.work)),
+      ("complete", Lean.toJson (exitCode item.work == 0)),
+      ("stages", .arr ((publicStages item.work).toArray.map fun stage => .str (stageName stage))),
+      ("discovered", Lean.toJson (discovered item.work)),
+      ("executed", Lean.toJson (executed item.work session)),
+      ("reported_mutants", Lean.toJson (discovered item.work)),
+      ("reused_mutants", Lean.toJson (if eligibleToReuse item.work session then scheduled item.work else 0)),
+      ("not_run_mutants", Lean.toJson (discovered item.work - scheduled item.work)),
+      ("resume", resumeJson item.work session)])]))]
+
+def publicCorpus : String :=
+  String.join (publicFixtures.map fun item => (publicFixtureJson item).compress ++ "\n")
+
+-- A resumed run visits the mutant stage to read stored outcomes even when all
+-- process executions can be skipped.
+example : (publicStages .limitedMutants).contains .mutants = true ∧
+    executed .limitedMutants .resume = 0 := by decide
+
+example : (publicStages .failedBaseline).contains .analysis = false ∧
+    (publicStages .noCandidates).contains .mutants = false := by decide
+
 private def closeDuringVerification (transition : Transition) : List Operation :=
   if transition.previous == .copy && transition.next == .materializationVerification then
     [.finish .copy]

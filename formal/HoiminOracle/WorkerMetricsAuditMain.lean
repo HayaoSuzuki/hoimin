@@ -189,6 +189,11 @@ def execute (args : List String) : IO UInt32 := do
       if (← IO.FS.readFile path) == StageMetrics.corpus then return 0
       IO.eprintln s!"stale stage metrics corpus: {path}"
       return 1
+  | ["--output-stages-cli", path] => IO.FS.writeFile path StageMetrics.publicCorpus; return 0
+  | ["--check-stages-cli", path] =>
+      if (← IO.FS.readFile path) == StageMetrics.publicCorpus then return 0
+      IO.eprintln s!"stale public stage metrics corpus: {path}"
+      return 1
   | ["--sensitivity"] =>
       let status ← sensitivity
       if status == 0 then StageMetrics.sensitivity else return status
@@ -197,7 +202,7 @@ def execute (args : List String) : IO UInt32 := do
       IO.println s!"alphabet={alphabet.length} exhaustive_depth=3 cases={fixtures.length} steps={steps}"
       return 0
   | _ =>
-      IO.eprintln "usage: generate_worker_metrics (--output PATH | --check PATH | --output-stages PATH | --check-stages PATH | --sensitivity | --stats)"
+      IO.eprintln "usage: generate_worker_metrics (--output PATH | --check PATH | --output-stages PATH | --check-stages PATH | --output-stages-cli PATH | --check-stages-cli PATH | --sensitivity | --stats)"
       return 2
 
 end HoiminOracle.WorkerMetrics

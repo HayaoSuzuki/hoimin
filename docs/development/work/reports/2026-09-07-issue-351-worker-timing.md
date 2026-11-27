@@ -102,3 +102,28 @@ events and filesystem publication are outside this comparison.
 (cd formal/HoiminOracle && lake exe generate_worker_metrics -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib stage_metrics_follow_accepted_cli_transitions
 ```
+
+### Public CLI correspondence
+
+Five fixtures run seven CLI invocations with real Python processes,
+workspaces, and metrics files. The Lean corpus projects the names of completed
+stages from the same timer model. It also predicts the exit code, report
+completion status, counts, and session resume decision. The cases cover
+normal execution, an empty candidate set, baseline failure, and resume
+requests against a complete and an incomplete SQLite session.
+
+The two-mutant budget leaves a three-candidate run incomplete. On resume,
+the run publishes the mutants stage, reuses both stored outcomes, reports
+the third candidate as not run, and retains the session run ID with zero
+executions. A resume request against the completed two-candidate session
+starts a fresh run and executes both mutants again. The no-candidate run
+publishes analysis, while a failed baseline ends before analysis. The
+adapter reads the sidecar after CLI return, validates its invariants and run
+ID, and compares its stage names in output order. Actual wall-clock durations
+are checked by the sidecar validator. The controlled-clock fixtures above
+provide the exact duration comparison.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_worker_metrics -- --check-stages-cli corpus/stage-metrics-cli.jsonl)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test run_e2e stage_metrics_public_cli_matches_lean
+```

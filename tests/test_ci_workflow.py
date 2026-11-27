@@ -1594,6 +1594,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         ("generate_shutdown", "--check-metrics", "corpus/shutdown-metrics.jsonl"),
         ("generate_worker_metrics", "--check-stages", "corpus/stage-metrics.jsonl"),
         (
+            "generate_worker_metrics",
+            "--check-stages-cli",
+            "corpus/stage-metrics-cli.jsonl",
+        ),
+        (
             "generate_resume_budget",
             "--check-recheck",
             "corpus/resume-budget-recheck.jsonl",
