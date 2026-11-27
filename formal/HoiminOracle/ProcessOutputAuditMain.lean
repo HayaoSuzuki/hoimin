@@ -52,11 +52,26 @@ def renderDrainCorpus : String :=
   String.join (drainAssignments.map fun (stdout, stderr, collector) =>
     (drainJson stdout stderr collector).compress ++ "\n")
 
+private def resumeJson (item : ResumeCase) : Lean.Json :=
+  let status (value : Option HoiminOracle.SessionAudit.Status) :=
+    optionJson (value.map HoiminOracle.SessionAudit.statusName)
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("id", .str item.id),
+    ("termination", .str (terminationName item.termination)),
+    ("close_timed_out", Lean.toJson item.closeTimedOut),
+    ("expected_stored", status item.expected.stored),
+    ("expected_reused", status item.expected.reused),
+    ("expected_replacement_error", optionJson item.expected.replacementError),
+    ("expected_stored_after_replacement", status item.expected.storedAfterReplacement) ]
+
+def renderResumeCorpus : String :=
+  String.join (resumeCases.map fun item => (resumeJson item).compress ++ "\n")
+
 private def ensureAudit : IO (Except UInt32 Unit) := do
   unless allSafe do
     IO.eprintln "process output decision table is unsafe"
     return .error 2
-  unless sensitivityPasses && drainErrorSensitivity do
+  unless sensitivityPasses && drainErrorSensitivity && resumeSensitivity do
     IO.eprintln "process output audit missed a broken family"
     return .error 2
   unless cases.length == 63 && cases.all caseSafe do
@@ -64,6 +79,9 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
     return .error 2
   unless drainAssignments.length == 27 do
     IO.eprintln "process output drain cases do not cover the closed table"
+    return .error 2
+  unless resumeCases.length == 12 do
+    IO.eprintln "process output resume cases do not cover the closed table"
     return .error 2
   return .ok ()
 
@@ -91,7 +109,8 @@ private def checkCorpus (path : System.FilePath) (content : String) : IO UInt32 
 private def printSensitivity : IO UInt32 := do
   IO.println s!"broken_families_detected={sensitivityPasses}"
   IO.println s!"drain_error_detected={drainErrorSensitivity}"
-  return if sensitivityPasses && drainErrorSensitivity then 0 else 2
+  IO.println s!"resume_error_detected={resumeSensitivity}"
+  return if sensitivityPasses && drainErrorSensitivity && resumeSensitivity then 0 else 2
 
 private def printCases : IO UInt32 := do
   for item in cases do IO.println s!"{item.id}={caseSafe item}"
@@ -104,10 +123,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check", path] => checkCorpus path renderCorpus
   | ["--output-drain", path] => writeCorpus path renderDrainCorpus
   | ["--check-drain", path] => checkCorpus path renderDrainCorpus
+  | ["--output-resume", path] => writeCorpus path renderResumeCorpus
+  | ["--check-resume", path] => checkCorpus path renderResumeCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--cases"] => printCases
   | _ =>
-      IO.eprintln "usage: generate_process_output (--output | --check | --output-drain | --check-drain) PATH | --sensitivity | --cases"
+      IO.eprintln "usage: generate_process_output (--output | --check | --output-drain | --check-drain | --output-resume | --check-resume) PATH | --sensitivity | --cases"
       return 2
 
 end HoiminOracle.ProcessOutput.Executable

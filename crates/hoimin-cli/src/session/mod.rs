@@ -14,7 +14,7 @@ use hoimin_core::{
     SessionLoaded, SessionResumeRef, SessionStarted, StoredResult, StoredResultLoaded,
     contract_ensure,
 };
-#[cfg(feature = "contracts")]
+#[cfg(any(test, feature = "contracts"))]
 use hoimin_core::{ByteSpan, MutationCandidate};
 use rusqlite::{
     Connection, ErrorCode, OptionalExtension, Transaction, TransactionBehavior, params,
@@ -619,7 +619,7 @@ impl SessionHandler {
         })
     }
 
-    #[cfg(feature = "contracts")]
+    #[cfg(any(test, feature = "contracts"))]
     fn read_result(&self, run_id: &str, mutant_id: &str) -> Result<MutantResult, String> {
         let raw = self
             .connection
@@ -930,7 +930,7 @@ fn corrupt(message: &str) -> EffectFailure {
     }
 }
 
-#[cfg(feature = "contracts")]
+#[cfg(any(test, feature = "contracts"))]
 struct RawResult {
     sequence: i64,
     path: String,
@@ -947,7 +947,7 @@ struct RawResult {
     resource_mode: String,
 }
 
-#[cfg(feature = "contracts")]
+#[cfg(any(test, feature = "contracts"))]
 impl RawResult {
     fn into_result(self, run_id: &str, mutant_id: &str) -> Result<MutantResult, String> {
         let nonnegative =

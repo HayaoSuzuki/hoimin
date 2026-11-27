@@ -1,6 +1,12 @@
 use super::*;
-use hoimin_core::{ByteSpan, MutationCandidate, RunFingerprint};
+use hoimin_core::{
+    ByteSpan, MutationCandidate, OutputSpoolRef, PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
+    ProcessOutputState, ProcessTermination, ResumeDecision, ReusedMutationStatus, RunFingerprint,
+    resume_policy,
+};
+use serde::Deserialize;
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
 fn begin_request() -> BeginSession {
     BeginSession {
@@ -645,4 +651,157 @@ fn beginning_again_after_external_row_removal_retains_the_existing_finish_author
 
     assert_eq!(ownerships_before_finish, 1);
     assert!(released_after_finish);
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProcessResumeCase {
+    schema: u64,
+    id: String,
+    termination: String,
+    close_timed_out: bool,
+    expected_stored: Option<String>,
+    expected_reused: Option<String>,
+    expected_replacement_error: Option<String>,
+    expected_stored_after_replacement: Option<String>,
+}
+
+fn executed_outcome(
+    termination: ProcessTermination,
+    timed_out: bool,
+    token: &str,
+) -> MutationOutcome {
+    let (output_state, retained, observed) = if timed_out {
+        (ProcessOutputState::CloseTimedOut, 0, 0)
+    } else {
+        (ProcessOutputState::Complete, 3, 8)
+    };
+    MutationOutcome::Executed {
+        termination,
+        output_state,
+        output: OutputSpoolRef {
+            token: token.to_owned(),
+            retained,
+            observed,
+        },
+        elapsed: Duration::from_millis(5),
+    }
+}
+
+#[test]
+fn reopened_process_results_and_replacement_match_lean() {
+    let cases: Vec<ProcessResumeCase> =
+        include_str!("../../../../formal/HoiminOracle/corpus/process-output-resume.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+    assert_eq!(cases.len(), 12);
+    let mut seen = std::collections::BTreeSet::new();
+    for case in &cases {
+        assert_eq!(case.schema, 1);
+        assert!(seen.insert((&case.termination, case.close_timed_out)));
+        check_process_resume(case);
+    }
+}
+
+fn check_process_resume(case: &ProcessResumeCase) {
+    let termination = match case.termination.as_str() {
+        "exit_success" => ProcessTermination::Exit(0),
+        "exit_failure" => ProcessTermination::Exit(7),
+        "timeout" => ProcessTermination::Timeout,
+        "out_of_memory" => ProcessTermination::OutOfMemory,
+        "process_limit" => ProcessTermination::ProcessLimit,
+        "cancelled" => ProcessTermination::Cancelled,
+        other => panic!("unknown process termination {other}"),
+    };
+
+    let (directory, mut handler) = fixture();
+    handler.begin(begin_request()).unwrap();
+    let mut request = persist_request();
+    request.result.outcome = executed_outcome(termination, case.close_timed_out, "capture");
+    request.result.diagnostics.clear();
+    if case.close_timed_out {
+        request.result.diagnostics.push(SessionDiagnostic {
+            mutant_id: request.result.candidate.id.clone(),
+            level: "error".to_owned(),
+            code: PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE.to_owned(),
+            message: "capture timed out".to_owned(),
+        });
+    }
+    handler.persist(&request).unwrap();
+    let lookup = LookupStoredResult {
+        id: EffectId(5),
+        worker: request.worker,
+        run_id: request.result.run_id.clone(),
+        mutant_id: request.result.candidate.id.clone(),
+    };
+    handler
+        .finish(FinishSession {
+            id: EffectId(4),
+            run_id: lookup.run_id.clone(),
+            complete: false,
+        })
+        .unwrap();
+    drop(handler);
+
+    let mut handler = SessionHandler::open(directory.path().join("session.sqlite3")).unwrap();
+    let loaded = handler.load(&load_request()).unwrap();
+    let SessionLoadOutcome::Resumed(resume) = loaded.outcome else {
+        panic!("{}: expected the stored run to resume", case.id);
+    };
+    assert_eq!(resume.run_id, lookup.run_id, "{}", case.id);
+    let stored = handler.lookup(&lookup).unwrap().result.unwrap();
+    assert_eq!(stored.mutant_id, lookup.mutant_id, "{}", case.id);
+    assert_eq!(
+        Some(stored.status.as_str()),
+        case.expected_stored.as_deref(),
+        "{}",
+        case.id
+    );
+    let reused = match resume_policy(Some(&stored)) {
+        ResumeDecision::Rerun => None,
+        ResumeDecision::Reuse(ReusedMutationStatus::Killed) => Some("killed"),
+        ResumeDecision::Reuse(ReusedMutationStatus::Survived) => Some("survived"),
+    };
+    assert_eq!(reused, case.expected_reused.as_deref(), "{}", case.id);
+    assert_eq!(
+        handler
+            .read_result(&lookup.run_id, &lookup.mutant_id)
+            .unwrap(),
+        request.result,
+        "{}",
+        case.id
+    );
+
+    let mut replacement = request.clone();
+    replacement.id = EffectId(6);
+    replacement.result.outcome = executed_outcome(ProcessTermination::Exit(0), false, "rerun");
+    replacement.result.diagnostics.clear();
+    let error = handler.persist(&replacement).err();
+    assert_eq!(
+        error.as_ref().map(|error| error.failure.code()),
+        case.expected_replacement_error.as_deref(),
+        "{}",
+        case.id
+    );
+    let stored = handler.lookup(&lookup).unwrap().result.unwrap();
+    assert_eq!(
+        Some(stored.status.as_str()),
+        case.expected_stored_after_replacement.as_deref(),
+        "{}",
+        case.id
+    );
+    let expected_result = if case.expected_replacement_error.is_some() {
+        &request.result
+    } else {
+        &replacement.result
+    };
+    assert_eq!(
+        &handler
+            .read_result(&lookup.run_id, &lookup.mutant_id)
+            .unwrap(),
+        expected_result,
+        "{}",
+        case.id
+    );
 }

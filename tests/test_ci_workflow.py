@@ -1571,9 +1571,13 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             for selected in (executable,)
             if selected in LEAN_SENSITIVITY_EXECUTABLES
         )
-    drain_corpus = "corpus/process-output-drain.jsonl"
-    expected_remaining.append(
-        ["lake", "exe", "generate_process_output", "--", "--check-drain", drain_corpus]
+    process_companions = {
+        "--check-drain": "corpus/process-output-drain.jsonl",
+        "--check-resume": "corpus/process-output-resume.jsonl",
+    }
+    expected_remaining.extend(
+        ["lake", "exe", "generate_process_output", "--", flag, corpus]
+        for flag, corpus in process_companions.items()
     )
     corpus_paths = {
         path.relative_to(LEAN_ORACLE).as_posix()
@@ -1610,7 +1614,10 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
     ), "dependencies must be built before their importers"
     assert executable_names == list(LEAN_CORPUS_BY_EXECUTABLE)
     assert guarded_commands[module_count:] == expected_remaining
-    assert set(LEAN_CORPUS_BY_EXECUTABLE.values()) | {drain_corpus} == corpus_paths
+    assert (
+        set(LEAN_CORPUS_BY_EXECUTABLE.values()) | set(process_companions.values())
+        == corpus_paths
+    )
 
 
 def test_bounded_audit_stops_after_the_first_failed_gate(tmp_path: Path) -> None:

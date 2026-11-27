@@ -159,3 +159,25 @@ The decision table now covers all 63 combinations of baseline, mutant, and
 probe execution with the process and output outcomes. The Lean theorem gives
 the process failure precedence for every execution kind. In fatal cases the
 Rust adapter compares the full error selected by the handler.
+
+## SQLite resume correspondence
+
+The process-output table feeds the Lean session model for all 12 mutant
+completions. The model saves each result, closes and reopens an incomplete
+session, reads the result, and attempts to replace it with a survived result.
+The Lean theorem covers every known termination with a close timeout. It
+predicts a stored `Error`, rerun on resume, and acceptance of the replacement.
+
+The Rust adapter runs each case through the real SQLite handler in a separate
+database. It checks the status and resume decision after reopening, the
+replacement verdict, and the stored termination, spool metadata, and
+diagnostics before and after the replacement attempt. The session is finished
+as incomplete in every case so a determinate result can exercise reuse and
+replacement rejection as part of a resumable run.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_process_output -- --check-resume corpus/process-output-resume.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib reopened_process_results_and_replacement_match_lean
+```
