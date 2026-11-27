@@ -305,6 +305,16 @@ def deliverSession (evidence : DeliveryEvidence) (runComplete commit : Bool) : S
     complete := delivered && commit && runComplete
     exitCode := if delivered then some (if commit then runExit else 2) else none }
 
+structure SessionResumeAfterDelivery where
+  resumesPrior : Bool
+  executesMore : Bool
+
+-- One matching history row, unchanged sources, and enough budget for all candidates.
+def resumeAfterDelivery (session : SessionDelivery) (priorExecutedAll : Bool) :
+    SessionResumeAfterDelivery :=
+  { resumesPrior := !session.complete
+    executesMore := session.complete || !priorExecutedAll }
+
 inductive ReportTask where
   | queued | active | refused | returned
   deriving BEq, DecidableEq

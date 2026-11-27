@@ -450,6 +450,24 @@ theorem delivery_failure_leaves_session_unfinished
       (deliverSession evidence runComplete commit).complete = false := by
   simp [deliverSession, failed]
 
+theorem incomplete_session_resumes_even_when_finished (session : SessionDelivery)
+    (priorExecutedAll : Bool) (incomplete : session.complete = false) :
+    (resumeAfterDelivery session priorExecutedAll).resumesPrior = true := by
+  simp [resumeAfterDelivery, incomplete]
+
+theorem completed_session_starts_fresh (session : SessionDelivery)
+    (priorExecutedAll : Bool) (complete : session.complete = true) :
+    (resumeAfterDelivery session priorExecutedAll).resumesPrior = false ∧
+      (resumeAfterDelivery session priorExecutedAll).executesMore = true := by
+  simp [resumeAfterDelivery, complete]
+
+theorem failed_delivery_resumes_without_reexecution_after_full_run
+    (evidence : DeliveryEvidence) (commit : Bool)
+    (failed : (deliveryErrors evidence).isEmpty = false) :
+    (resumeAfterDelivery (deliverSession evidence true commit) true).resumesPrior = true ∧
+      (resumeAfterDelivery (deliverSession evidence true commit) true).executesMore = false := by
+  simp [resumeAfterDelivery, deliverSession, failed]
+
 theorem report_deadline_cannot_be_extended (state : ReportAdmissionState)
     (prior newDeadline : Nat) (limited : state.deadline = some prior) :
     (reportAdmissionStep state (.restrict newDeadline)).deadline =

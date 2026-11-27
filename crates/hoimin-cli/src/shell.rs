@@ -8635,6 +8635,21 @@ mod tests {
 
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
+    struct ResumeDeliveryExpectation {
+        resumes_prior: bool,
+        executes_more: bool,
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct StoredDeliveryRun {
+        run_id: String,
+        finished: bool,
+        complete: bool,
+        outcomes: BTreeMap<String, hoimin_core::MutationOutcome>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
     #[allow(clippy::struct_excessive_bools)] // The run, delivery stages, and commit vary independently.
     struct FinalDeliveryCase {
         schema: u8,
@@ -8649,6 +8664,7 @@ mod tests {
         expected_errors: Vec<FinalDeliveryError>,
         expected_events: Vec<String>,
         expected_session: SessionDeliveryObservation,
+        expected_resume: ResumeDeliveryExpectation,
     }
 
     #[tokio::test]
@@ -8683,17 +8699,7 @@ mod tests {
             path: session.clone(),
         });
         let config = RunConfig::try_from(config).unwrap();
-        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
-            owned_bytes: 0,
-            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
-            conservative_entries: false,
-            elapsed: Duration::from_millis(1),
-        }));
-        control.override_end_available(if case.capacity_ok {
-            Ok(BTreeMap::from([(FilesystemKey(7), 500)]))
-        } else {
-            Err("injected final capacity query failure".to_owned())
-        });
+        let control = delivery_test_control(case.capacity_ok);
         if !case.cleanup_ok {
             control.inject_delivery_cleanup_identity_failure();
         }
@@ -8708,7 +8714,7 @@ mod tests {
             reject_commit: (!case.commit_ok).then(|| session.clone()),
         };
 
-        let result = run_loop_with_control(config, writer, Vec::new(), control).await;
+        let result = run_loop_with_control(config.clone(), writer, Vec::new(), control).await;
         let events = observed
             .finalization_events()
             .into_iter()
@@ -8733,7 +8739,7 @@ mod tests {
                 "{id}: {error}"
             );
         }
-        let observation = observe_delivery_session(
+        let (observation, prior) = observe_delivery_session(
             &session,
             &stdout.snapshot(),
             events.contains(&"session_finish_requested"),
@@ -8755,30 +8761,36 @@ mod tests {
                 .expect("original delivery root");
             assert!(original.exists(), "{id}: original delivery root");
         }
+        resume_after_final_delivery(config, &session, &prior, &case).await;
     }
 
-    fn observe_delivery_session(
-        session: &Utf8Path,
-        stdout: &[u8],
-        finish_requested: bool,
-        exit_code: Option<i32>,
-        case: &FinalDeliveryCase,
-    ) -> SessionDeliveryObservation {
-        let id = &case.id;
-        let database = rusqlite::Connection::open_with_flags(
-            session,
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
-        )
-        .unwrap();
-        let (run_id, finished, complete): (String, bool, bool) = database
-            .query_row("SELECT run_id, finished, complete FROM runs", [], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-            })
+    fn delivery_test_control(capacity_ok: bool) -> RunControl {
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
+        control.override_end_available(if capacity_ok {
+            Ok(BTreeMap::from([(FilesystemKey(7), 500)]))
+        } else {
+            Err("injected final capacity query failure".to_owned())
+        });
+        control
+    }
+
+    fn read_delivery_run(database: &rusqlite::Connection, run_id: String) -> StoredDeliveryRun {
+        let (finished, complete) = database
+            .query_row(
+                "SELECT finished, complete FROM runs WHERE run_id=?1",
+                [&run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
             .unwrap();
         let mut query = database
             .prepare("SELECT mutant_id, outcome_json FROM results WHERE run_id=?1")
             .unwrap();
-        let persisted = query
+        let outcomes = query
             .query_map([&run_id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
             })
@@ -8788,7 +8800,41 @@ mod tests {
                 let outcome: hoimin_core::MutationOutcome = serde_json::from_str(&json).unwrap();
                 (mutant, outcome)
             })
-            .collect::<BTreeMap<_, _>>();
+            .collect();
+        StoredDeliveryRun {
+            run_id,
+            finished,
+            complete,
+            outcomes,
+        }
+    }
+
+    fn open_delivery_database(session: &Utf8Path) -> rusqlite::Connection {
+        rusqlite::Connection::open_with_flags(session, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+    }
+
+    fn complete_delivery_events(stdout: &[u8]) -> impl Iterator<Item = OutputEvent> + '_ {
+        // A writer failure can leave an unterminated final record in the stream.
+        stdout
+            .split_inclusive(|byte| *byte == b'\n')
+            .filter(|line| line.ends_with(b"\n"))
+            .map(|line| serde_json::from_slice(line).unwrap())
+    }
+
+    fn observe_delivery_session(
+        session: &Utf8Path,
+        stdout: &[u8],
+        finish_requested: bool,
+        exit_code: Option<i32>,
+        case: &FinalDeliveryCase,
+    ) -> (SessionDeliveryObservation, StoredDeliveryRun) {
+        let id = &case.id;
+        let database = open_delivery_database(session);
+        let run_id = database
+            .query_row("SELECT run_id FROM runs", [], |row| row.get(0))
+            .unwrap();
+        let stored = read_delivery_run(&database, run_id);
         if !case.commit_ok {
             let fault_rows: i64 = database
                 .query_row("SELECT count(*) FROM finish_fault", [], |row| row.get(0))
@@ -8802,27 +8848,23 @@ mod tests {
         let mut started = false;
         let mut report_complete = None;
         let mut reported = BTreeMap::new();
-        // A writer failure can leave an unterminated final record in the stream.
-        for line in stdout
-            .split_inclusive(|byte| *byte == b'\n')
-            .filter(|line| line.ends_with(b"\n"))
-        {
-            match serde_json::from_slice::<OutputEvent>(line).unwrap() {
+        for event in complete_delivery_events(stdout) {
+            match event {
                 OutputEvent::RunStarted(event) => {
-                    assert_eq!(event.run_id, run_id, "{id}");
+                    assert_eq!(event.run_id, stored.run_id, "{id}");
                     started = true;
                 }
                 OutputEvent::MutantFinished(event)
                     if event.outcome.status() != hoimin_core::MutationStatus::NotRun =>
                 {
-                    assert_eq!(event.run_id, run_id, "{id}");
+                    assert_eq!(event.run_id, stored.run_id, "{id}");
                     assert!(
                         reported.insert(event.candidate.id, event.outcome).is_none(),
                         "{id}"
                     );
                 }
                 OutputEvent::RunFinished(event) => {
-                    assert_eq!(event.run_id, run_id, "{id}");
+                    assert_eq!(event.run_id, stored.run_id, "{id}");
                     assert!(report_complete.replace(event.complete).is_none(), "{id}");
                 }
                 _ => {}
@@ -8830,14 +8872,141 @@ mod tests {
         }
         assert!(started, "{id}: expected a run-start record");
         assert_ne!(reported, BTreeMap::new(), "{id}: expected a mutant result");
-        assert_eq!(persisted, reported, "{id}: durable mutant results");
-        SessionDeliveryObservation {
-            report_complete,
-            finish_requested,
-            finished,
-            complete,
-            exit_code,
+        assert_eq!(stored.outcomes, reported, "{id}: durable mutant results");
+        (
+            SessionDeliveryObservation {
+                report_complete,
+                finish_requested,
+                finished: stored.finished,
+                complete: stored.complete,
+                exit_code,
+            },
+            stored,
+        )
+    }
+
+    async fn resume_after_final_delivery(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        prior: &StoredDeliveryRun,
+        case: &FinalDeliveryCase,
+    ) {
+        let id = &case.id;
+        let expected = &case.expected_resume;
+        if !case.commit_ok {
+            rusqlite::Connection::open(session)
+                .unwrap()
+                .execute_batch("DROP TRIGGER reject_finish; DROP TABLE finish_fault;")
+                .unwrap();
         }
+        let mut config = config.into_data();
+        config.session = hoimin_core::SessionMode::Resume(hoimin_core::SessionConfig {
+            path: session.to_owned(),
+        });
+        config.limits.max_mutants = std::num::NonZeroUsize::new(100).unwrap();
+        let metrics_path = session.with_file_name("resume-metrics.json");
+        config.output.metrics = Some(metrics_path.clone());
+        let stdout = CollectingWriter::default();
+        let result = run_loop_with_control(
+            RunConfig::try_from(config).unwrap(),
+            stdout.clone(),
+            Vec::new(),
+            delivery_test_control(true),
+        )
+        .await;
+        assert_eq!(result, Ok(0), "{id}: resume run");
+        let bytes = stdout.snapshot();
+        let Some(OutputEvent::RunStarted(header)) = complete_delivery_events(&bytes).next() else {
+            panic!("{id}: expected resume run header");
+        };
+        assert_eq!(
+            header.run_id == prior.run_id,
+            expected.resumes_prior,
+            "{id}"
+        );
+        let resume = if expected.resumes_prior {
+            hoimin_core::ResumeOutcome::Resumed
+        } else {
+            hoimin_core::ResumeOutcome::Fresh {
+                reason: hoimin_core::ResumeFreshReason::MatchingRunComplete,
+            }
+        };
+        assert_eq!(header.resume, Some(resume), "{id}");
+        let summary = last_jsonl_run_summary(&stdout, id);
+        assert_eq!(summary.run_id, header.run_id, "{id}");
+        assert!(summary.complete, "{id}");
+        let database = open_delivery_database(session);
+        let current = read_delivery_run(&database, header.run_id);
+        assert!(current.finished && current.complete, "{id}");
+        let run_count: i64 = database
+            .query_row("SELECT count(*) FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            run_count,
+            if expected.resumes_prior { 1 } else { 2 },
+            "{id}"
+        );
+        if !expected.resumes_prior {
+            assert_eq!(
+                &read_delivery_run(&database, prior.run_id.clone()),
+                prior,
+                "{id}"
+            );
+        }
+        let executed = assert_delivery_resume_outcomes(&bytes, prior, &current, case);
+        let metrics: hoimin_core::RunMetrics =
+            serde_json::from_slice(&std::fs::read(metrics_path).unwrap()).unwrap();
+        assert_eq!(metrics.run_id, current.run_id, "{id}");
+        assert_eq!(metrics.executed, executed, "{id}");
+        assert_eq!(executed > 0, expected.executes_more, "{id}");
+    }
+
+    fn assert_delivery_resume_outcomes(
+        stdout: &[u8],
+        prior: &StoredDeliveryRun,
+        current: &StoredDeliveryRun,
+        case: &FinalDeliveryCase,
+    ) -> u64 {
+        let id = &case.id;
+        let mut reported = BTreeMap::new();
+        let mut reused = BTreeSet::new();
+        let mut executed = 0;
+        for event in complete_delivery_events(stdout) {
+            let OutputEvent::MutantFinished(event) = event else {
+                continue;
+            };
+            assert_eq!(event.run_id, current.run_id, "{id}");
+            let mutant = event.candidate.id;
+            let status = event.outcome.status();
+            let stored = match event.outcome {
+                hoimin_core::MutationOutcome::Reused { .. } => {
+                    assert!(reused.insert(mutant.clone()), "{id}");
+                    let outcome = prior
+                        .outcomes
+                        .get(&mutant)
+                        .expect("reused mutant was saved");
+                    assert_eq!(status, outcome.status(), "{id}");
+                    outcome.clone()
+                }
+                outcome @ hoimin_core::MutationOutcome::Executed { .. } => {
+                    executed += 1;
+                    outcome
+                }
+                hoimin_core::MutationOutcome::NotRun => panic!("{id}: incomplete resumed outcome"),
+            };
+            assert!(reported.insert(mutant, stored).is_none(), "{id}");
+        }
+        let expected_reuse = if case.expected_resume.resumes_prior {
+            prior.outcomes.keys().cloned().collect()
+        } else {
+            BTreeSet::new()
+        };
+        assert_eq!(reused, expected_reuse, "{id}");
+        assert_eq!(
+            reported, current.outcomes,
+            "{id}: durable results after resume"
+        );
+        executed
     }
 
     #[tokio::test(flavor = "current_thread")]

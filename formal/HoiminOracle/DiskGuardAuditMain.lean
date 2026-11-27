@@ -401,6 +401,7 @@ private def deliveryCase (evidence : DeliveryEvidence) (runComplete commit : Boo
   let delivery := if id.isEmpty then "all_succeeded" else id
   let transaction := if commit then "" else "_commit_failed"
   let session := deliverSession evidence runComplete commit
+  let resume := resumeAfterDelivery session runComplete
   let events := (deliveryEvents evidence).map deliveryEventName ++
     (if session.finishRequested then ["session_finish_requested"] else []) ++
     (if session.finished then ["session_finished"] else []) ++
@@ -417,7 +418,10 @@ private def deliveryCase (evidence : DeliveryEvidence) (runComplete commit : Boo
       ("report_complete", (session.reportComplete.map Lean.toJson).getD .null),
       ("finish_requested", Lean.toJson session.finishRequested),
       ("finished", Lean.toJson session.finished), ("complete", Lean.toJson session.complete),
-      ("exit_code", optionNatJson session.exitCode)])]
+      ("exit_code", optionNatJson session.exitCode)]),
+    ("expected_resume", Lean.Json.mkObj [
+      ("resumes_prior", Lean.toJson resume.resumesPrior),
+      ("executes_more", Lean.toJson resume.executesMore)])]
 
 def renderDeliveryCorpus : String :=
   let switches := [true, false]
@@ -435,11 +439,15 @@ private def deliverySensitivity : Bool :=
   let allSucceeded : DeliveryEvidence := ⟨true, true, true, true⟩
   let failedCommit := deliverSession allSucceeded true false
   let limited := deliverSession allSucceeded false true
+  let limitedResume := resumeAfterDelivery limited false
+  let failedDeliveryResume := resumeAfterDelivery (deliverSession flushFailed true true) true
   deliveryErrors allFailed != (deliveryErrors allFailed).reverse &&
     !(deliveryEvents flushFailed).contains .acknowledged &&
     (deliveryEvents allFailed).contains .cleanupRequested &&
     !(deliverSession flushFailed true true).finished && failedCommit.finishRequested &&
-    !failedCommit.finished && limited.finished && !limited.complete
+    !failedCommit.finished && limited.finished && !limited.complete &&
+    limitedResume.resumesPrior && limitedResume.executesMore &&
+    failedDeliveryResume.resumesPrior && !failedDeliveryResume.executesMore
 
 private def admissionEventJson : ReportAdmissionEvent → Lean.Json
   | .restrict atDeadline =>

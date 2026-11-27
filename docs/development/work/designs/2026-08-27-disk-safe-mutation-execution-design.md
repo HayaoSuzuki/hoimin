@@ -1200,6 +1200,20 @@ The finish flags and trigger insert roll back, and earlier mutant results
 survive. Each fixture reads the JSONL and compares the reported mutant
 outcomes with the stored outcomes.
 
+Each of the 34 fixtures then requests resume with unchanged input and a
+budget large enough to execute every candidate. The model uses the stored
+`complete` flag to select the existing run or start a fresh one. It
+predicts whether any mutant processes are needed. The replay checks the
+reported resume reason, the run ID, each reused outcome, the executed count
+in metrics, and the final rows in SQLite. A run whose first attempt
+persisted every mutant can resume after delivery failure with zero mutant
+processes. A budget-limited run reuses its saved results and runs the
+remaining candidates.
+
+The commit-failure fixtures remove the trigger and table used to inject
+the fault before requesting resume. The stored run and results are read
+back without editing their rows.
+
 ```sh
 cd formal/HoiminOracle
 lake exe generate_disk_guard -- --check-delivery corpus/disk-delivery.jsonl
