@@ -5906,6 +5906,7 @@ fn combine_close_results(
 #[cfg(test)]
 mod tests {
     mod fingerprint_preflight_oracle;
+    mod session_artifacts_oracle;
 
     use super::*;
     use crate::test_writer::CollectingWriter;

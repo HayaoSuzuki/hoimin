@@ -1778,3 +1778,56 @@ a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_fingerprint_preflight -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib fingerprint_preflight_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of session artifact exclusions
+
+Preflight reserves the resolved session database and its SQLite
+companions as exact file exclusions. It reserves the lexical lock
+directory and any distinct canonical lock directory as tree exclusions.
+Each path is projected into the project independently. A symlink from
+an external session into the project can therefore exclude an in-project
+lock tree. Component comparison keeps a sibling project with a similar
+name outside the copy scope.
+
+Lean proves that an in-project database file or companion is reserved
+without an existence check, that an absent lock tree still reserves its
+lexical name, and that a canonical lock tree inside the project is
+reserved even when the lexical lock is outside. A proper descendant of
+a reserved tree remains excluded when explicit includes are enabled.
+The model takes filesystem resolution as an input and reuses the
+workspace selection model for the effect of the resulting exclusions.
+
+| Observation | Lean | Rust fixture |
+| --- | --- | --- |
+| Session preparation | Resolved database path, exact exclusions, tree exclusions or refusal | Create finite directory and symlink layouts and call the shell preparation helper |
+| Files created after preparation | Exclusions apply to newly present artifacts | Create the files and lock directory before constructing the snapshot |
+| Copy contents | Files, directories and skipped links | Run actual workspace preflight and materialize a worker |
+| Read-only preparation | Test premise | Compare both project and sibling trees immediately before and after the helper |
+
+Cases cover existing and missing artifacts, literal metacharacters,
+similar names, file and directory type boundaries, and broad includes.
+Unix cases additionally exercise symlink resolution, aliases across the
+project boundary, dangling paths, and loops. An alias to the project root
+produces an empty relative exclusion and fails workspace validation. The
+adapter stops at worker materialization. Session opening and ownership
+acquisition have separate tests.
+
+The corpus has 31 Unix cases and 22 Windows cases. Six broken variants
+test missing companions, missing and canonical lock reservations,
+resolution-error propagation, scope across siblings, and the effect of
+removing protection from the copy itself. The Windows cases cover
+portable layouts and case-insensitive path matching. The Unix cases
+include the native symlink fixtures.
+
+All 31 Unix cases matched on macOS in the default and `contracts`
+configurations. The 23 active-session CLI tests, three session lock-tree
+tests, and 222 CI workflow tests passed. The Windows corpus passed
+generation and freshness checks. Windows implementation correspondence
+requires a Windows host. Lean ran under a 2 GiB limit and single-job
+Rust ran under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_artifacts -- --check corpus/session-artifacts.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_artifacts -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_artifacts_match_lean_oracle -- --test-threads=1
+```
