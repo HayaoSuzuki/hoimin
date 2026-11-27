@@ -1,0 +1,424 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "command": {
+          "tag": "Init",
+          "value": {
+            "#tup": []
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "0"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "0"
+              },
+              "generation": {
+                "#bigint": "0"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "0"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "command": {
+          "tag": "Save",
+          "value": {
+            "cursor": {
+              "#bigint": "3"
+            },
+            "mode": {
+              "tag": "BeforeWrite",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "0"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "0"
+              },
+              "generation": {
+                "#bigint": "0"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "1"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "s": {
+        "command": {
+          "tag": "Save",
+          "value": {
+            "cursor": {
+              "#bigint": "2"
+            },
+            "mode": {
+              "tag": "SyncError",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "1"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "2"
+              },
+              "generation": {
+                "#bigint": "1"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "2"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "2"
+                  },
+                  "generation": {
+                    "#bigint": "1"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "s": {
+        "command": {
+          "tag": "Save",
+          "value": {
+            "cursor": {
+              "#bigint": "3"
+            },
+            "mode": {
+              "tag": "Commit",
+              "value": {
+                "#tup": []
+              }
+            }
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "0"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "3"
+              },
+              "generation": {
+                "#bigint": "2"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "3"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "3"
+                  },
+                  "generation": {
+                    "#bigint": "2"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "2"
+                  },
+                  "generation": {
+                    "#bigint": "1"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "s": {
+        "command": {
+          "tag": "Damage",
+          "value": {
+            "index": {
+              "#bigint": "0"
+            },
+            "wasCurrent": true
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "1"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "2"
+              },
+              "generation": {
+                "#bigint": "1"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "4"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Invalid",
+                "value": {
+                  "#tup": []
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "2"
+                  },
+                  "generation": {
+                    "#bigint": "1"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "s": {
+        "command": {
+          "tag": "Damage",
+          "value": {
+            "index": {
+              "#bigint": "1"
+            },
+            "wasCurrent": true
+          }
+        },
+        "observed": {
+          "tag": "Unusable",
+          "value": {
+            "#tup": []
+          }
+        },
+        "operations": {
+          "#bigint": "5"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Invalid",
+                "value": {
+                  "#tup": []
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Invalid",
+                "value": {
+                  "#tup": []
+                }
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

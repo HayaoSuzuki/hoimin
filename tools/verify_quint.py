@@ -37,6 +37,14 @@ class Model:
 
 MODELS = (
     Model(
+        "janitor_cursor_recovery.qnt",
+        "JanitorCursorRecovery",
+        "janitor_cursor_recovery",
+        scenarios=("recoverStep", "interruptedWriteStep"),
+        simulation_only=True,
+        simulation_mutant_step="preferOlderStep",
+    ),
+    Model(
         "janitor_diagnostics.qnt",
         "JanitorDiagnostics",
         "janitor_diagnostics",

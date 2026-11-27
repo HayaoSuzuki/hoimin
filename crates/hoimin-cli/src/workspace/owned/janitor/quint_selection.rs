@@ -3,6 +3,7 @@ use super::super::{
     COORDINATOR_FILE, CoordinatorLockGuard, ManagedRootCoordinator, read_coordinator_state,
     select_reclaim_candidates_locked_until_with_hooks,
 };
+use super::quint_cursor_name as name;
 use crate::quint_itf::{number, set, states};
 use camino::Utf8Path;
 use hoimin_core::{JanitorReason, JanitorScan};
@@ -10,14 +11,6 @@ use serde_json::Value;
 use std::cell::Cell;
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
-
-fn name(rank: u64) -> String {
-    if rank == 0 {
-        String::new()
-    } else {
-        format!("run-00000000-0000-0000-0000-{rank:012x}")
-    }
-}
 
 fn update_listing(
     coordinator: &ManagedRootCoordinator,

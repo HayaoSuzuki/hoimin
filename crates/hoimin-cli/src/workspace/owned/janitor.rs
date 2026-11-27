@@ -3,6 +3,9 @@ use hoimin_core::{JanitorDetail, JanitorReason, JanitorSummary};
 use std::collections::VecDeque;
 
 #[cfg(test)]
+#[path = "janitor/quint_cursor_recovery.rs"]
+mod quint_cursor_recovery;
+#[cfg(test)]
 #[path = "janitor/quint_diagnostics.rs"]
 mod quint_diagnostics;
 #[cfg(test)]
@@ -14,6 +17,18 @@ mod quint_retry;
 #[cfg(test)]
 #[path = "janitor/quint_selection.rs"]
 mod quint_selection;
+
+#[cfg(test)]
+fn quint_cursor_name(rank: u64) -> String {
+    if rank == 0 {
+        String::new()
+    } else {
+        format!(
+            "{}00000000-0000-0000-0000-{rank:012x}",
+            super::ACTIVE_PREFIX
+        )
+    }
+}
 
 /// Visits the roots present at the beginning of each round in FIFO order.
 /// A slice returns its removal count if deferred, or `None` if it reached an outcome.

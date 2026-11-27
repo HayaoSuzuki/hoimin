@@ -293,6 +293,33 @@ candidate ordering or the cursor publication boundary changes.
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_selection
 ```
 
+## Startup janitor cursor recovery
+
+`janitor_cursor_recovery.qnt` models two slots and up to eight operations.
+Each valid slot contains a generation and cursor rank. A save writes the
+inactive slot and preserves the current slot. Reopening chooses the highest
+valid generation, uses slot zero for the initial identical pair, and rejects
+a file with both slots invalid. After the newest digest is damaged, recovery
+uses the preceding slot, and the next save increments that recovered generation.
+`preferOlderStep` selects the older slot after a successful save and violates
+`Safety`.
+
+`interruptedWriteStep` covers a failure before writing, a partial write with
+an invalid digest, and a complete write whose sync reports an error. The last
+case records bytes visible on the next open under the injected fault. Survival
+across actual power loss is outside the model.
+
+The Rust replay uses `persist_coordinator_cursor`, `decode_coordinator_slot`,
+and `ManagedRootCoordinator::open` from
+`crates/hoimin-cli/src/workspace/owned.rs` on a temporary file. It injects
+write and sync errors, checks each slot after every command, and reopens the
+coordinator to check which record it uses. Update the model and regenerate
+its fixtures when cursor write ordering or recovery semantics change.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_cursor_recovery
+```
+
 ## SQLite persistence, resume selection and ownership
 
 The SQLite extension adds three domains to the earlier configurations:
