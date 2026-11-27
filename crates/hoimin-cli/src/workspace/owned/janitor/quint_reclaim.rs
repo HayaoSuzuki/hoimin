@@ -1,7 +1,8 @@
 //! Compare janitor observations from the ledger and real selected directories.
 use super::super::{
-    DELETING_PREFIX, JANITOR_CLEANUP_BUDGET, ManagedRootCoordinator, ManagedRunRoot, OwnerKind,
-    STALE_AFTER, TEST_CLEANUP_SLICE_ENTRIES, create_owned_directory, select_reclaim_candidates,
+    COORDINATOR_FILE, DELETING_PREFIX, JANITOR_CLEANUP_BUDGET, ManagedRootCoordinator,
+    ManagedRunRoot, OwnerKind, STAGING_PREFIX, STALE_AFTER, TEST_CLEANUP_SLICE_ENTRIES,
+    create_owned_directory, read_coordinator_state, select_reclaim_candidates,
 };
 use super::{DeletionProgress, ReclaimLedger};
 use crate::quint_itf::{number, states};
@@ -118,6 +119,9 @@ const SELECTED: &str = include_str!(
 const DEFERRED: &str = include_str!(
     "../../../../../../formal/quint/traces/janitor_reclaim_deferredReportStep_0.itf.json"
 );
+const SHELL: &str = include_str!(
+    "../../../../../../formal/quint/traces/janitor_reclaim_shellReportStep_0.itf.json"
+);
 
 #[rstest::rstest]
 #[case::trace_0(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_0.itf.json"))]
@@ -127,7 +131,7 @@ const DEFERRED: &str = include_str!(
 #[case::acknowledged(ACKNOWLEDGED)]
 #[case::partial(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_partialStep_0.itf.json"))]
 #[case::selected(SELECTED)]
-#[case::shell(include_str!("../../../../../../formal/quint/traces/janitor_reclaim_shellReportStep_0.itf.json"))]
+#[case::shell(SHELL)]
 #[case::deferred(DEFERRED)]
 fn quint_history_matches_reclaim_summary(#[case] trace: &str) {
     assert_eq!(replay(trace, false), Ok(()));
@@ -271,4 +275,71 @@ fn quint_deferred_cleanup_progress_reaches_the_report() {
         std::fs::read(deep_deleting.join("branch/nested/leaf/payload")).unwrap(),
         b"beyond the traversal cap",
     );
+}
+
+#[test]
+fn quint_mixed_namespaces_wrap_after_reopening_the_coordinator() {
+    let directory = tempfile::tempdir().unwrap();
+    let parent = Utf8Path::from_path(directory.path()).unwrap();
+    let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+    let behind = format!("{DELETING_PREFIX}{}", uuid::Uuid::from_u128(1));
+    let deleting = format!("{DELETING_PREFIX}{}", uuid::Uuid::from_u128(2));
+    let staging = format!("{STAGING_PREFIX}{}", uuid::Uuid::from_u128(3));
+    seed_cursor(&coordinator, &behind);
+    drop(create_owned_directory(&coordinator.dir, &deleting).unwrap());
+    let stage = create_owned_directory(&coordinator.dir, &staging).unwrap();
+    let threshold = stage.metadata(".").unwrap().modified().unwrap().into_std() + STALE_AFTER;
+    drop(stage);
+
+    let first =
+        ManagedRunRoot::reclaim_abandoned(&coordinator, threshold - Duration::from_nanos(1));
+    let first_trace = states(SHELL);
+    let expected = &first_trace.last().unwrap()["summary"];
+    assert_eq!(actual_counts(&first), expected_counts(expected));
+    assert_eq!(first.details.len(), 1);
+    assert_eq!(first.details[0].reason, JanitorReason::Young);
+    assert!(first.scan.cursor_deferred);
+    assert!(coordinator.dir.exists(&behind));
+    assert!(!coordinator.dir.exists(&deleting));
+    assert!(coordinator.dir.exists(&staging));
+    drop(coordinator);
+
+    let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+    let path = coordinator.path.join(COORDINATOR_FILE);
+    let (_, saved) = read_coordinator_state(&coordinator.file, &path).unwrap();
+    assert_eq!(saved.cursor, staging);
+    assert_eq!(saved.generation, 2);
+    let second = ManagedRunRoot::reclaim_abandoned(&coordinator, threshold);
+
+    let namespace_trace = states(include_str!(
+        "../../../../../../formal/quint/traces/janitor_namespace_recovery_unmarkedStep_0.itf.json"
+    ));
+    let reports: Vec<_> = namespace_trace
+        .iter()
+        .skip(1)
+        .map(|row| &row["s"]["last"]["value"]["report"])
+        .filter(|report| report["outcome"]["tag"] == "Reclaimed")
+        .collect();
+    let reclaimed = u64::try_from(reports.len()).unwrap();
+    assert_eq!(reclaimed, 2);
+    assert_eq!(second.inspected_roots, reclaimed);
+    assert_eq!(second.reclaimed_roots, reclaimed);
+    assert_eq!(
+        second.removed_entries,
+        reports
+            .iter()
+            .map(|report| number(&report["removed"]))
+            .sum::<u64>()
+    );
+    assert_eq!(second.scan.selected_roots, 2);
+    assert_eq!(second.scan.uninspected_selected_roots, 0);
+    assert_eq!(second.scan.selection_omitted_observed_entries, 0);
+    assert!(second.scan.directory_scan_complete);
+    assert!(!second.scan.cursor_deferred);
+    assert_eq!(second.details, Vec::new());
+    assert!(!coordinator.dir.exists(&behind));
+    assert!(!coordinator.dir.exists(&staging));
+    let (_, advanced) = read_coordinator_state(&coordinator.file, &path).unwrap();
+    assert_eq!(advanced.cursor, staging);
+    assert_eq!(advanced.generation, 3);
 }

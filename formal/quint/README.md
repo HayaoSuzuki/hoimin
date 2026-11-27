@@ -194,7 +194,7 @@ each boundary.
 | Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Input listings remain stable within each modelled scan |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy | Windows mutation barrier needs native Rust verification |
-| Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, diagnostics, surviving entries, and acknowledged deletions across claim and slice interruptions | Startup selection and reporting across multiple roots |
+| Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` covers individual roots and interrupted cleanup. A joined Rust replay checks mixed namespaces across two scans and a coordinator reopen | Native replay on Windows |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion | Windows lease reacquisition needs native Rust verification |
 | Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, and partial deletion with a small tree. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Integration of the Windows pinned handle, pending rounds, and report accounting |
 | Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline. `janitor_reclaim.qnt` compares the real janitor's finished report after two deferred roots are retried | Windows pinned-handle verification |
@@ -453,6 +453,12 @@ removed. The last case retains the acknowledgement and records a coordinator
 diagnostic. `sliceFailureStep` covers a failed payload unlink and a deadline
 after one acknowledged unlink. The restart check resumes the remaining
 deleting directory after the injected fault or deadline clears.
+
+The mixed-namespace replay joins the namespace and reclaim histories with
+the real cursor. The first scan removes an empty deleting root and holds an
+empty staging root just before the stale threshold. After reopening the
+coordinator at that threshold, the cursor wraps. The second scan removes the
+root left behind the previous page and the now-stale staging root.
 
 Present markers are valid and no owner holds the lease. `ignoreStagingAgeStep`
 must violate `Safety` by allowing removal of a young empty staging directory.
