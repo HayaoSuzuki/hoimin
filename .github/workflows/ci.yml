@@ -608,6 +608,9 @@ jobs:
             NullableGateAuditMain
             HoiminOracle.EnvironmentFingerprintModel
             EnvironmentFingerprintAuditMain
+            HoiminOracle.WorkerMetricsModel
+            HoiminOracle.WorkerMetricsProofs
+            WorkerMetricsAuditMain
             HoiminOracle
             MultipleHandlerJoinAuditMain
             NestedMatchExitAuditMain
@@ -682,6 +685,7 @@ jobs:
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'
+            'generate_worker_metrics|corpus/worker-metrics.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"

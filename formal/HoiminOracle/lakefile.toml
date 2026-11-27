@@ -241,3 +241,7 @@ root = "SamplingAuditMain"
 [[lean_exe]]
 name = "generate_reduce_spec"
 root = "ReduceSpecAuditMain"
+
+[[lean_exe]]
+name = "generate_worker_metrics"
+root = "WorkerMetricsAuditMain"

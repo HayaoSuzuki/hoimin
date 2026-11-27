@@ -115,3 +115,4 @@ import HoiminOracle.EnvironmentFingerprintModel
 import HoiminOracle.ResumeDiagnosticModel
 import HoiminOracle.ExceptionHierarchyModel
 import HoiminOracle.ExceptionHierarchyProofs
+import HoiminOracle.WorkerMetricsProofs

@@ -138,6 +138,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",
+    "generate_worker_metrics": "corpus/worker-metrics.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name

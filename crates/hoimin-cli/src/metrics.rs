@@ -788,4 +788,8 @@ mod tests {
 
         assert_eq!(collector.finish(0, 0).unwrap().run_id, "run-1");
     }
+
+    mod worker_oracle {
+        include!("metrics_worker_oracle_tests.rs");
+    }
 }
