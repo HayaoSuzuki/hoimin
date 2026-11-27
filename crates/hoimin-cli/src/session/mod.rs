@@ -118,16 +118,28 @@ impl SessionArtifacts {
 #[cfg(test)]
 type ResumeCandidateHook = Box<dyn FnOnce(&str) + Send>;
 
+#[cfg(test)]
+type SessionHook = Box<dyn FnOnce() + Send>;
+
+#[cfg(test)]
+fn run_session_hook(hook: Option<SessionHook>) {
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
 pub struct SessionHandler {
     connection: Connection,
     lock_directory: PathBuf,
     ownerships: HashMap<String, ownership::RunOwnership>,
     #[cfg(test)]
-    persist_after_reads: Option<Arc<Barrier>>,
+    persist_after_reads: Option<SessionHook>,
     #[cfg(test)]
     resume_after_candidate: Option<ResumeCandidateHook>,
     #[cfg(test)]
-    finish_before_commit: Option<Box<dyn FnOnce() + Send>>,
+    finish_before_commit: Option<SessionHook>,
+    #[cfg(test)]
+    persist_before_commit: Option<SessionHook>,
 }
 
 fn validate_resume_budget(
@@ -179,6 +191,8 @@ impl SessionHandler {
             resume_after_candidate: None,
             #[cfg(test)]
             finish_before_commit: None,
+            #[cfg(test)]
+            persist_before_commit: None,
         })
     }
 
@@ -492,10 +506,7 @@ impl SessionHandler {
             result_shape(&transaction, &run_id, &mutant_id)
                 .map_err(|error| failed(id, "session.persist", "read existing result", &error))?;
         #[cfg(test)]
-        if let Some(barrier) = &self.persist_after_reads {
-            barrier.wait();
-            barrier.wait();
-        }
+        run_session_hook(self.persist_after_reads.take());
         if let Some(stored) =
             decode_stored_result(&mutant_id, candidate_count, result_count, outcome_json)
                 .map_err(|failure| EffectFailed { id, failure })?
@@ -536,6 +547,8 @@ impl SessionHandler {
             &request.result.diagnostics,
             id,
         )?;
+        #[cfg(test)]
+        run_session_hook(self.persist_before_commit.take());
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit mutant result", &error))?;
@@ -586,9 +599,7 @@ impl SessionHandler {
             });
         }
         #[cfg(test)]
-        if let Some(before_commit) = self.finish_before_commit.take() {
-            before_commit();
-        }
+        run_session_hook(self.finish_before_commit.take());
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit run finish", &error))?;
@@ -699,26 +710,54 @@ pub(crate) struct SessionDispatcher {
 
 #[cfg(test)]
 #[derive(Debug)]
-pub(crate) struct FinishCommitPause {
+pub(crate) struct SessionCommitPause {
     pub(crate) entered: tokio::sync::oneshot::Sender<std::sync::Weak<Mutex<SessionHandler>>>,
     pub(crate) release: std::sync::mpsc::Receiver<()>,
 }
 
-impl SessionDispatcher {
-    #[cfg(test)]
-    pub(crate) fn pause_finish_before_commit(&self, pause: FinishCommitPause) {
-        let handler = Arc::downgrade(&self.handler);
-        self.handler.lock().unwrap().finish_before_commit = Some(Box::new(move || {
-            pause.entered.send(handler).unwrap();
-            pause
-                .release
+#[cfg(test)]
+impl SessionCommitPause {
+    fn into_hook(self, handler: std::sync::Weak<Mutex<SessionHandler>>) -> SessionHook {
+        Box::new(move || {
+            self.entered.send(handler).unwrap();
+            self.release
                 .recv_timeout(std::time::Duration::from_secs(5))
                 .unwrap();
-        }));
+        })
+    }
+}
+
+impl SessionDispatcher {
+    #[cfg(test)]
+    pub(crate) fn pause_finish_before_commit(&self, pause: SessionCommitPause) {
+        self.handler.lock().unwrap().finish_before_commit =
+            Some(pause.into_hook(Arc::downgrade(&self.handler)));
     }
 
     #[cfg(test)]
-    pub(crate) async fn wait_for_finish_worker_drop(
+    pub(crate) fn pause_persist_before_commit(
+        &self,
+        pause: SessionCommitPause,
+        reject_commit: bool,
+    ) {
+        let mut handler = self.handler.lock().unwrap();
+        if reject_commit {
+            handler
+                .connection
+                .execute_batch(
+                    "CREATE TEMP TABLE persist_fault_parent(id INTEGER PRIMARY KEY);
+                 CREATE TEMP TABLE persist_fault(child INTEGER REFERENCES persist_fault_parent(id)
+                     DEFERRABLE INITIALLY DEFERRED);
+                 CREATE TEMP TRIGGER reject_result_commit AFTER INSERT ON main.results
+                 BEGIN INSERT INTO persist_fault VALUES(42); END;",
+                )
+                .expect("install deferred foreign-key failure before result persistence");
+        }
+        handler.persist_before_commit = Some(pause.into_hook(Arc::downgrade(&self.handler)));
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn wait_for_session_worker_drop(
         handler: &std::sync::Weak<Mutex<SessionHandler>>,
     ) {
         tokio::time::timeout(std::time::Duration::from_secs(2), async {
@@ -727,7 +766,7 @@ impl SessionDispatcher {
             }
         })
         .await
-        .expect("finished worker must release its handler");
+        .expect("session worker must release its handler");
     }
 
     pub(crate) async fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
@@ -1060,7 +1099,11 @@ mod dispatch_tests {
         competitor.busy_timeout(Duration::ZERO).unwrap();
 
         let barrier = Arc::new(Barrier::new(2));
-        owner.persist_after_reads = Some(barrier.clone());
+        let worker_barrier = Arc::clone(&barrier);
+        owner.persist_after_reads = Some(Box::new(move || {
+            worker_barrier.wait();
+            worker_barrier.wait();
+        }));
         let persist = std::thread::spawn(move || owner.persist(&persist_request()));
 
         barrier.wait();

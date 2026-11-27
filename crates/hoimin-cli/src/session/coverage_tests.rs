@@ -953,7 +953,7 @@ async fn replay_finish_wait(case: FinishWaitCase) {
             drop(finish);
             drop(dispatcher);
             check_pending();
-            SessionDispatcher::wait_for_finish_worker_drop(&handler).await;
+            SessionDispatcher::wait_for_session_worker_drop(&handler).await;
             None
         }
     };

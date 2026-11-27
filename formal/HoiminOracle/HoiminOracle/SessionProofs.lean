@@ -255,4 +255,15 @@ theorem late_session_finish_can_still_commit (pending : PendingFinishWait)
       (stopHandler (finishRun pending.session handler runId complete).state handler).state := by
   simp [finishAcrossShutdown, settleFinishWait, dropFinishDriver, cancelFinishWait]
 
+theorem expired_persist_returns_before_result_is_visible (state : State) (handler : Handler)
+    (runId : Run) (mutant : Mutant) (status : Status) (commit : Bool) :
+    let result := persistAcrossShutdown state handler runId mutant status .afterGrace commit
+    result.atReturn = state ∧ result.reported = none ∧ result.exitCode = none := by
+  simp [persistAcrossShutdown]
+
+theorem rejected_result_commit_preserves_durable_rows (state : State) (handler : Handler)
+    (runId : Run) (mutant : Mutant) (status : Status) (release : FinishRelease) :
+    (persistAcrossShutdown state handler runId mutant status release false).settled = state := by
+  simp [persistAcrossShutdown]
+
 end HoiminOracle.SessionAudit

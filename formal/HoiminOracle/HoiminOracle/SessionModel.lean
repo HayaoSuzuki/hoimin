@@ -471,6 +471,24 @@ def finishAcrossShutdown (pending : PendingFinishWait) (handler : Handler) (runI
     sessionAcknowledged := !expired && commit
     commitFailureObserved := !expired && !commit }
 
+structure PersistShutdown where
+  atReturn : State
+  settled : State
+  reported : Option Status
+  exitCode : Option Nat
+
+-- The fixture stops after at most one execution. SQLite and reporting settle separately.
+def persistAcrossShutdown (state : State) (handler : Handler) (runId : Run)
+    (mutant : Mutant) (status : Status) (release : FinishRelease) (commit : Bool) :
+    PersistShutdown :=
+  let expired := decide (release = .afterGrace)
+  let stored := if commit then (persistResult state handler runId mutant status .p0 .valid).state
+    else state
+  { atReturn := if expired then state else stored
+    settled := stored
+    reported := if expired then none else some status
+    exitCode := if expired then none else some (if commit && status != .error then 4 else 2) }
+
 def readLoadCandidate (state : State) (handler : Handler)
     (fingerprint : Fingerprint) : Verdict :=
   if !handlerLive state handler then

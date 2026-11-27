@@ -341,7 +341,12 @@ pub struct RunControl {
     #[cfg(test)]
     final_measurement_pause: Option<FinalMeasurementPause>,
     #[cfg(test)]
-    session_finish_pause: Arc<std::sync::Mutex<Option<crate::session::FinishCommitPause>>>,
+    session_finish_pause: Arc<std::sync::Mutex<Option<crate::session::SessionCommitPause>>>,
+    #[cfg(test)]
+    session_persist_pause:
+        Arc<std::sync::Mutex<Option<(crate::session::SessionCommitPause, bool)>>>,
+    #[cfg(test)]
+    mutant_output_close_timeout_once: Arc<AtomicBool>,
     #[cfg(test)]
     post_drain_disk_failure: Arc<std::sync::Mutex<Option<hoimin_core::DiskFailure>>>,
     #[cfg(test)]
@@ -504,6 +509,10 @@ impl RunControl {
             final_measurement_pause: None,
             #[cfg(test)]
             session_finish_pause: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(test)]
+            session_persist_pause: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(test)]
+            mutant_output_close_timeout_once: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             post_drain_disk_failure: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(test)]
@@ -3500,6 +3509,12 @@ async fn run_loop_context(
                     }
                     control.observe_finalization_event("session_finish_requested");
                 }
+                #[cfg(test)]
+                if matches!(&effect, RunEffect::PersistResult(_))
+                    && let Some((pause, reject)) = control.session_persist_pause.lock().unwrap().take()
+                {
+                    context.session.as_ref().expect("session was started").pause_persist_before_commit(pause, reject);
+                }
                 match effect {
                     RunEffect::RunBaseline(request) => {
                         let id = request.id;
@@ -4442,6 +4457,12 @@ async fn run_loop_context(
                 ),
             };
             finalization_errors.append(&mut context.blocking_secondary_errors);
+            #[cfg(test)]
+            if let RunEvent::MutantFinished(finished) = &mut event
+                && control.mutant_output_close_timeout_once.swap(false, Ordering::AcqRel)
+            {
+                finished.output_state = hoimin_core::ProcessOutputState::CloseTimedOut;
+            }
             if let RunEvent::CleanupFinished(value) = &event
                 && finalization.safety_proven()
                 && !finalization.cleaned()
@@ -9081,10 +9102,36 @@ mod tests {
         assert_eq!(ids.len(), 12);
     }
 
-    async fn advance_finish_clock(elapsed: Duration) {
+    async fn advance_test_clock(elapsed: Duration) {
         tokio::time::pause();
         tokio::time::advance(elapsed).await;
         tokio::time::resume();
+    }
+
+    async fn await_cli_at_session_commit(
+        run: &mut (impl Future<Output = Result<i32, String>> + Unpin),
+        observed: &RunControl,
+        release_point: &FinishRelease,
+        release: &std::sync::mpsc::Sender<()>,
+        timeout: Duration,
+        grace: Duration,
+        id: &str,
+    ) -> Result<i32, String> {
+        if *release_point != FinishRelease::BeforeDeadline {
+            advance_test_clock(timeout).await;
+            tokio::select! {
+                result = &mut *run => panic!("{id}: run returned before grace: {result:?}"),
+                () = coverage_tests::wait_for_finalization_event(observed, "serial_report_deadline_observed") => {}
+            }
+        }
+        if *release_point == FinishRelease::AfterGrace {
+            advance_test_clock(grace).await;
+        } else {
+            release.send(()).unwrap();
+        }
+        tokio::time::timeout(Duration::from_secs(4), run)
+            .await
+            .unwrap()
     }
 
     async fn replay_finish_deadline(case: FinishDeadlineCase) {
@@ -9099,7 +9146,7 @@ mod tests {
         control.shutdown_grace = grace;
         let (entered, ready) = tokio::sync::oneshot::channel();
         let (release, hold) = std::sync::mpsc::channel();
-        *control.session_finish_pause.lock().unwrap() = Some(crate::session::FinishCommitPause {
+        *control.session_finish_pause.lock().unwrap() = Some(crate::session::SessionCommitPause {
             entered,
             release: hold,
         });
@@ -9136,22 +9183,17 @@ mod tests {
             "{id}: durable mutant results"
         );
 
-        if case.release != FinishRelease::BeforeDeadline {
-            advance_finish_clock(timeout).await;
-            tokio::select! {
-                result = &mut run => panic!("{id}: run returned before grace: {result:?}"),
-                () = coverage_tests::wait_for_finalization_event(&observed, "serial_report_deadline_observed") => {}
-            }
-        }
         let expired = case.release == FinishRelease::AfterGrace;
-        if expired {
-            advance_finish_clock(grace).await;
-        } else {
-            release.send(()).unwrap();
-        }
-        let result = tokio::time::timeout(Duration::from_secs(4), &mut run)
-            .await
-            .unwrap();
+        let result = await_cli_at_session_commit(
+            &mut run,
+            &observed,
+            &case.release,
+            &release,
+            timeout,
+            grace,
+            id,
+        )
+        .await;
         drop(run);
         assert_finish_deadline_return(&result, &observed, &case);
         let at_return = snapshot();
@@ -9170,7 +9212,7 @@ mod tests {
                 "{id}: running commit retains the session"
             );
             release.send(()).unwrap();
-            SessionDispatcher::wait_for_finish_worker_drop(&handler).await;
+            SessionDispatcher::wait_for_session_worker_drop(&handler).await;
         }
         let settled = snapshot();
         assert_eq!(
@@ -9217,6 +9259,255 @@ mod tests {
                 .iter()
                 .all(|root| !root.exists()),
             "{id}"
+        );
+    }
+
+    #[derive(Debug, Default, Eq, PartialEq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PersistReadback {
+        status: Option<hoimin_core::MutationStatus>,
+        diagnostics: Vec<String>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PersistDeadlineCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        release: FinishRelease,
+        diagnostic: bool,
+        commit: bool,
+        exit_code: Option<i32>,
+        at_return: PersistReadback,
+        settled: PersistReadback,
+        reported: PersistReadback,
+        resume_reuses: bool,
+    }
+
+    fn read_persisted_mutant(
+        database: &rusqlite::Connection,
+        run: &str,
+        mutant: &str,
+    ) -> PersistReadback {
+        use rusqlite::OptionalExtension;
+
+        let outcome = database
+            .query_row(
+                "SELECT outcome_json FROM results WHERE run_id=?1 AND mutant_id=?2",
+                [run, mutant],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .unwrap();
+        let status = outcome.as_ref().map(|json| {
+            let outcome: hoimin_core::MutationOutcome = serde_json::from_str(json).unwrap();
+            outcome.status()
+        });
+        let candidates: i64 = database
+            .query_row(
+                "SELECT count(*) FROM candidates WHERE run_id=?1 AND mutant_id=?2",
+                [run, mutant],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            candidates,
+            i64::from(status.is_some()),
+            "candidate and result must commit together"
+        );
+        let mut query = database
+            .prepare("SELECT code FROM diagnostics WHERE run_id=?1 AND mutant_id=?2 ORDER BY id")
+            .unwrap();
+        let diagnostics = query
+            .query_map([run, mutant], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<String>, _>>()
+            .unwrap();
+        PersistReadback {
+            status,
+            diagnostics,
+        }
+    }
+
+    fn read_reported_mutant(
+        stdout: &[u8],
+        run: &str,
+        mutant: &str,
+    ) -> Option<hoimin_core::MutantFinished> {
+        let mut events = complete_delivery_events(stdout).filter_map(|event| match event {
+            OutputEvent::MutantFinished(result) if result.candidate.id == mutant => Some(result),
+            _ => None,
+        });
+        let result = events.next()?;
+        assert_eq!(result.run_id, run);
+        assert!(events.next().is_none(), "result was emitted twice");
+        Some(result)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mutant_persistence_across_cli_shutdown_deadline_matches_lean() {
+        let mut ids = BTreeSet::new();
+        for line in
+            include_str!("../../../formal/HoiminOracle/corpus/session-persist-deadline.jsonl")
+                .lines()
+        {
+            let case: PersistDeadlineCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            replay_persist_deadline(case).await;
+        }
+        assert_eq!(ids.len(), 12);
+    }
+
+    async fn replay_persist_deadline(case: PersistDeadlineCase) {
+        let id = &case.id;
+        let project = tempfile::tempdir().unwrap();
+        let artifacts = tempfile::tempdir().unwrap();
+        let session = Utf8PathBuf::from_path_buf(artifacts.path().join("session.sqlite3")).unwrap();
+        let config = delivery_session_test_config(&project, &session, false);
+        let timeout = config.limits.total_timeout.get();
+        let grace = Duration::from_secs(5);
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, hold) = std::sync::mpsc::channel();
+        let mut control = delivery_test_control(true);
+        control.shutdown_grace = grace;
+        control
+            .mutant_output_close_timeout_once
+            .store(case.diagnostic, Ordering::Release);
+        *control.session_persist_pause.lock().unwrap() = Some((
+            crate::session::SessionCommitPause {
+                entered,
+                release: hold,
+            },
+            !case.commit,
+        ));
+        let observed = control.clone();
+        let stdout = CollectingWriter::default();
+        let mut run = Box::pin(run_loop_with_control(
+            config.clone(),
+            stdout.clone(),
+            Vec::new(),
+            control,
+        ));
+        let handler = tokio::select! {
+            result = &mut run => panic!("{id}: run returned before persist entered: {result:?}"),
+            entered = tokio::time::timeout(Duration::from_secs(5), ready) => entered.unwrap().unwrap(),
+        };
+        let header = stdout.snapshot();
+        let mutant = complete_delivery_events(&header)
+            .find_map(|event| match event {
+                OutputEvent::MutantStarted(started) => Some(started),
+                _ => None,
+            })
+            .expect("executed candidate must be announced before persistence");
+        let readback = || {
+            read_persisted_mutant(
+                &open_delivery_database(&session),
+                &mutant.run_id,
+                &mutant.mutant_id,
+            )
+        };
+        assert_eq!(
+            readback(),
+            PersistReadback::default(),
+            "{id}: pending transaction"
+        );
+        let result = await_cli_at_session_commit(
+            &mut run,
+            &observed,
+            &case.release,
+            &release,
+            timeout,
+            grace,
+            id,
+        )
+        .await;
+        drop(run);
+        assert_eq!(
+            result.as_ref().ok().copied(),
+            case.exit_code,
+            "{id}: {result:?}"
+        );
+        if let Err(error) = &result {
+            assert!(error.contains("shutdown grace expired"), "{id}: {error}");
+        }
+        let reported = read_reported_mutant(&stdout.snapshot(), &mutant.run_id, &mutant.mutant_id)
+            .map_or_else(PersistReadback::default, |result| PersistReadback {
+                status: Some(result.outcome.status()),
+                diagnostics: result
+                    .diagnostics
+                    .into_iter()
+                    .map(|item| item.code)
+                    .collect(),
+            });
+        assert_eq!(reported, case.reported, "{id}: reported result");
+        assert_eq!(readback(), case.at_return, "{id}: database at return");
+        if case.release == FinishRelease::AfterGrace {
+            assert!(
+                handler.upgrade().is_some(),
+                "{id}: persist operation retains the session"
+            );
+            release.send(()).unwrap();
+            SessionDispatcher::wait_for_session_worker_drop(&handler).await;
+        }
+        assert_eq!(readback(), case.settled, "{id}: database after settlement");
+        resume_after_pending_persist(config, &session, &mutant, &case).await;
+    }
+
+    async fn resume_after_pending_persist(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        mutant: &hoimin_core::MutantStarted,
+        case: &PersistDeadlineCase,
+    ) {
+        use hoimin_core::MutationOutcome;
+
+        let id = &case.id;
+        let mut config = config.into_data();
+        config.session = hoimin_core::SessionMode::Resume(hoimin_core::SessionConfig {
+            path: session.to_owned(),
+        });
+        config.limits.max_mutants = std::num::NonZeroUsize::new(100).unwrap();
+        let stdout = CollectingWriter::default();
+        let exit = run_loop_with_control(
+            RunConfig::try_from(config).unwrap(),
+            stdout.clone(),
+            Vec::new(),
+            delivery_test_control(true),
+        )
+        .await;
+        assert_eq!(exit, Ok(0), "{id}: resume run");
+        let captured = stdout.snapshot();
+        let Some(OutputEvent::RunStarted(header)) = complete_delivery_events(&captured).next()
+        else {
+            panic!("{id}: expected resume header");
+        };
+        assert_eq!(
+            header.resume,
+            Some(hoimin_core::ResumeOutcome::Resumed),
+            "{id}"
+        );
+        assert_eq!(header.run_id, mutant.run_id, "{id}");
+        let resumed = read_reported_mutant(&captured, &mutant.run_id, &mutant.mutant_id).unwrap();
+        match resumed.outcome {
+            MutationOutcome::Reused { .. } => assert!(case.resume_reuses, "{id}"),
+            MutationOutcome::Executed { .. } => assert!(!case.resume_reuses, "{id}"),
+            MutationOutcome::NotRun => panic!("{id}: resume did not resolve the mutant"),
+        }
+        let saved = read_persisted_mutant(
+            &open_delivery_database(session),
+            &mutant.run_id,
+            &mutant.mutant_id,
+        );
+        assert_eq!(
+            saved,
+            PersistReadback {
+                status: Some(hoimin_core::MutationStatus::Survived),
+                diagnostics: Vec::new()
+            },
+            "{id}: database after resume"
         );
     }
 

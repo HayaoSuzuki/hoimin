@@ -155,7 +155,8 @@ def traceName (trace : List Event) : String :=
   String.intercalate " -> " (trace.map eventName)
 
 private def ensureAudit (depth : Nat) : IO (Except UInt32 Unit) := do
-  unless sensitivityPasses && finishWaitSensitivity && finishDeadlineSensitivity do
+  unless sensitivityPasses && finishWaitSensitivity && finishDeadlineSensitivity &&
+      persistDeadlineSensitivity do
     IO.eprintln "session audit did not detect every broken family"
     return .error 2
   unless boundedAuditPasses depth do
@@ -202,7 +203,9 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"lookup_ownership detected={lookupOwnershipWitnessDetected}"
   IO.println s!"finish_wait detected={finishWaitSensitivity}"
   IO.println s!"finish_deadline detected={finishDeadlineSensitivity}"
-  return if sensitivityPasses && finishWaitSensitivity && finishDeadlineSensitivity then 0 else 2
+  IO.println s!"persist_deadline detected={persistDeadlineSensitivity}"
+  return if sensitivityPasses && finishWaitSensitivity && finishDeadlineSensitivity &&
+    persistDeadlineSensitivity then 0 else 2
 
 def main (args : List String) : IO UInt32 := do
   let args := match args with
@@ -229,10 +232,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check-finish-wait", path] => checkCorpus path depth renderFinishWaitCorpus
   | ["--output-finish-deadline", path] => writeCorpus path depth renderFinishDeadlineCorpus
   | ["--check-finish-deadline", path] => checkCorpus path depth renderFinishDeadlineCorpus
+  | ["--output-persist-deadline", path] => writeCorpus path depth renderPersistDeadlineCorpus
+  | ["--check-persist-deadline", path] => checkCorpus path depth renderPersistDeadlineCorpus
   | ["--stats"] => printStats depth
   | ["--sensitivity"] => printSensitivity
   | _ =>
-      IO.eprintln "usage: generate_session [--depth 1..8] ((--output | --check | --output-load-recheck | --check-load-recheck | --output-finish-wait | --check-finish-wait | --output-finish-deadline | --check-finish-deadline) PATH | --stats | --sensitivity)"
+      IO.eprintln "usage: generate_session [--depth 1..8] ((--output | --check | --output-load-recheck | --check-load-recheck | --output-finish-wait | --check-finish-wait | --output-finish-deadline | --check-finish-deadline | --output-persist-deadline | --check-persist-deadline) PATH | --stats | --sensitivity)"
       return 2
 
 end HoiminOracle.SessionAudit.Executable

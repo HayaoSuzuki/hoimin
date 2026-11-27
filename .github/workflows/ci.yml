@@ -702,6 +702,8 @@ jobs:
             lake exe generate_session -- --depth 4 --check-finish-wait corpus/session-finish-wait.jsonl
           run_guard check-session-finish-deadline \
             lake exe generate_session -- --depth 4 --check-finish-deadline corpus/session-finish-deadline.jsonl
+          run_guard check-session-persist-deadline \
+            lake exe generate_session -- --depth 4 --check-persist-deadline corpus/session-persist-deadline.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \

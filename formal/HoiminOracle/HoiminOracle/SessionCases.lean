@@ -420,4 +420,39 @@ def finishDeadlineSensitivity : Bool :=
   late.exitCode.isNone && !late.sessionAcknowledged && !runComplete late.atReturn .r0 &&
     runComplete late.settled .r0 && timely.sessionAcknowledged && runComplete timely.atReturn .r0
 
+private def persistReadbackJson (status : Option Status) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("status", optionalJson (fun status => .str (statusName status)) status),
+    ("diagnostics", stringsJson (if status == some .error then ["process.output.close.timeout"] else []))]
+
+private def persistDeadlineCase (release : FinishRelease) (diagnostic commit : Bool) : Lean.Json :=
+  let state := run State.initial [.open .h0, .begin .h0 .r0 .f0]
+  let result := persistAcrossShutdown state .h0 .r0 .m0
+    (if diagnostic then .error else .survived) release commit
+  let statusAtReturn := (findResult result.atReturn .r0 .m0).map ResultRow.status
+  let settledStatus := (findResult result.settled .r0 .m0).map ResultRow.status
+  let name := finishReleaseName release
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"{name}_diagnostic_{diagnostic}_commit_{commit}"),
+    ("release", .str name), ("diagnostic", Lean.toJson diagnostic), ("commit", Lean.toJson commit),
+    ("exit_code", optionalJson Lean.toJson result.exitCode),
+    ("at_return", persistReadbackJson statusAtReturn), ("settled", persistReadbackJson settledStatus),
+    ("reported", persistReadbackJson result.reported),
+    ("resume_reuses", Lean.toJson (settledStatus.any Status.isDeterminate))]
+
+def renderPersistDeadlineCorpus : String :=
+  let releases : List FinishRelease := [.beforeDeadline, .withinGrace, .afterGrace]
+  let cases := releases.flatMap fun release => [false, true].flatMap fun diagnostic =>
+    [false, true].map fun commit => persistDeadlineCase release diagnostic commit
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+def persistDeadlineSensitivity : Bool :=
+  let seed := run State.initial [.open .h0, .begin .h0 .r0 .f0]
+  let late := persistAcrossShutdown seed .h0 .r0 .m0 .survived .afterGrace true
+  let failed := persistAcrossShutdown seed .h0 .r0 .m0 .survived .withinGrace false
+  (findResult late.atReturn .r0 .m0).isNone && late.reported.isNone &&
+    (findResult late.settled .r0 .m0).any (fun result => result.status.isDeterminate) &&
+    (findResult failed.settled .r0 .m0).isNone && failed.reported == some .survived
+
 end HoiminOracle.SessionAudit

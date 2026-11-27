@@ -307,3 +307,32 @@ lake exe generate_session -- --depth 4 --check-finish-deadline corpus/session-fi
 cd ../..
 cargo test --locked -p hoimin-cli --lib session_finish_across_cli_shutdown_deadline_matches_lean
 ```
+
+## Mutant result commits across the CLI shutdown deadline
+
+These fixtures stop the first mutant's persistence transaction immediately
+before commit. The CLI run has a one-mutant limit. Lean models the
+observable result at CLI return, the committed result after settlement,
+and whether a later resume can reuse it. An expired wait returns before
+the pending transaction becomes visible. Commit failure leaves the
+previous durable rows intact. The model also represents an observed
+execution result that reaches the report after a failed persistence attempt.
+An output-close timeout makes that result an infrastructure error, which
+takes precedence over the exit status for the mutant limit.
+
+Twelve cases combine the three release points with successful or rejected
+commits and with complete output or an injected output-close timeout.
+The adapter uses the real CLI run loop, a controlled Tokio clock, and an
+independent SQLite connection. It queries candidate, result, and diagnostic
+rows, reads the emitted result, and resumes the same run with a larger
+budget. The output-close timeout is injected at the process completion
+boundary. It produces a real session diagnostic through the core transition.
+A deferred foreign-key violation on the writer connection injects commit
+failure.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-persist-deadline corpus/session-persist-deadline.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib mutant_persistence_across_cli_shutdown_deadline_matches_lean
+```
