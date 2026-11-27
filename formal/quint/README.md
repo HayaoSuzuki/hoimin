@@ -865,6 +865,9 @@ Fifteen ITF histories compare persisted and reported evidence, bad run and
 candidate IDs, retired or duplicate acknowledgements, summary counts, and
 exit status through public transitions. They end at pending pre-report
 verification. Persistence is represented by its request and acknowledgement.
+The Rust replay then acknowledges verification and cleanup, comparing the
+emitted final report and the session finish request with the terminal model
+state before acknowledging session completion.
 
 ```sh
 cargo test --locked -p hoimin-core --test machine quint_worker_failure
