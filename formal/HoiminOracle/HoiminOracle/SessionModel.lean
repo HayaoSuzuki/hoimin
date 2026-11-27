@@ -482,7 +482,7 @@ def persistAcrossShutdown (state : State) (handler : Handler) (runId : Run)
     (mutant : Mutant) (status : Status) (release : FinishRelease) (commit : Bool) :
     PersistShutdown :=
   let expired := decide (release = .afterGrace)
-  let stored := if commit then (persistResult state handler runId mutant status .p0 .valid).state
+  let stored := if commit then (persistResult state handler runId mutant status .p1 .valid).state
     else state
   { atReturn := if expired then state else stored
     settled := stored

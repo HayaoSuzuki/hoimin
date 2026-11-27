@@ -320,15 +320,22 @@ execution result that reaches the report after a failed persistence attempt.
 An output-close timeout makes that result an infrastructure error, which
 takes precedence over the exit status for the mutant limit.
 
-Twelve cases combine the three release points with successful or rejected
-commits and with complete output or an injected output-close timeout.
+Twenty-four cases combine the three release points with successful or rejected
+commits, complete output or an injected output-close timeout, and either an
+initial insert or replacement of a saved inconclusive result. The replacement
+fixtures seed the old outcome through an actual CLI run and resume it with
+the same one-mutant limit. Lean proves that the old result remains visible at
+CLI return after expiry and a later successful commit replaces only the
+target result.
+
 The adapter uses the real CLI run loop, a controlled Tokio clock, and an
-independent SQLite connection. It queries candidate, result, and diagnostic
-rows, reads the emitted result, and resumes the same run with a larger
-budget. The output-close timeout is injected at the process completion
-boundary. It produces a real session diagnostic through the core transition.
-A deferred foreign-key violation on the writer connection injects commit
-failure.
+independent SQLite connection. It compares the complete stored outcome and
+diagnostic rows, using SQLite diagnostic IDs to distinguish a replacement
+even when the old and new diagnostic codes agree. It reads the emitted
+result and resumes the same run with a larger budget. The output-close
+timeout is injected at the process completion boundary. It produces a real
+session diagnostic through the core transition. A deferred foreign-key
+violation on the writer connection injects commit failure.
 
 ```sh
 cd formal/HoiminOracle

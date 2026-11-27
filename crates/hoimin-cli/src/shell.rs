@@ -9232,14 +9232,7 @@ mod tests {
         case: &FinishDeadlineCase,
     ) {
         let id = &case.id;
-        assert_eq!(
-            result.as_ref().ok().copied(),
-            case.exit_code,
-            "{id}: {result:?}"
-        );
-        if let Err(error) = result {
-            assert!(error.contains("shutdown grace expired"), "{id}: {error}");
-        }
+        assert_cli_shutdown_return(result, case.exit_code, id);
         let events = observed.finalization_events();
         assert!(events.contains(&"output_acknowledged"), "{id}");
         assert!(events.contains(&"session_finish_requested"), "{id}");
@@ -9262,6 +9255,13 @@ mod tests {
         );
     }
 
+    fn assert_cli_shutdown_return(result: &Result<i32, String>, exit_code: Option<i32>, id: &str) {
+        assert_eq!(result.as_ref().ok().copied(), exit_code, "{id}: {result:?}");
+        if let Err(error) = result {
+            assert!(error.contains("shutdown grace expired"), "{id}: {error}");
+        }
+    }
+
     #[derive(Debug, Default, Eq, PartialEq, serde::Deserialize)]
     #[serde(deny_unknown_fields)]
     struct PersistReadback {
@@ -9269,18 +9269,93 @@ mod tests {
         diagnostics: Vec<String>,
     }
 
+    impl From<&hoimin_core::MutantFinished> for PersistReadback {
+        fn from(result: &hoimin_core::MutantFinished) -> Self {
+            Self {
+                status: Some(result.outcome.status()),
+                diagnostics: result
+                    .diagnostics
+                    .iter()
+                    .map(|item| item.code.clone())
+                    .collect(),
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum PersistOrigin {
+        Prior,
+        Current,
+    }
+
+    #[derive(Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PersistSnapshot {
+        result: PersistReadback,
+        origin: Option<PersistOrigin>,
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct PersistedMutant {
+        outcome: Option<hoimin_core::MutationOutcome>,
+        diagnostics: Vec<(i64, hoimin_core::SessionDiagnostic)>,
+    }
+
+    impl PersistedMutant {
+        fn readback(&self) -> PersistReadback {
+            PersistReadback {
+                status: self
+                    .outcome
+                    .as_ref()
+                    .map(hoimin_core::MutationOutcome::status),
+                diagnostics: self
+                    .diagnostics
+                    .iter()
+                    .map(|(_, item)| item.code.clone())
+                    .collect(),
+            }
+        }
+
+        fn assert_report(&self, report: &hoimin_core::MutantFinished, id: &str) {
+            assert_eq!(
+                self.outcome.as_ref(),
+                Some(&report.outcome),
+                "{id}: stored outcome"
+            );
+            let diagnostics = self
+                .diagnostics
+                .iter()
+                .map(|(_, item)| item)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                diagnostics,
+                report.diagnostics.iter().collect::<Vec<_>>(),
+                "{id}"
+            );
+        }
+    }
+
+    struct PriorPersistedMutant {
+        started: hoimin_core::MutantStarted,
+        stored: PersistedMutant,
+    }
+
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)] // The fixture varies four independent conditions.
     struct PersistDeadlineCase {
         schema: u8,
         mode: String,
         id: String,
         release: FinishRelease,
+        replaces: bool,
         diagnostic: bool,
         commit: bool,
         exit_code: Option<i32>,
-        at_return: PersistReadback,
-        settled: PersistReadback,
+        pending: PersistSnapshot,
+        at_return: PersistSnapshot,
+        settled: PersistSnapshot,
         reported: PersistReadback,
         resume_reuses: bool,
     }
@@ -9289,7 +9364,7 @@ mod tests {
         database: &rusqlite::Connection,
         run: &str,
         mutant: &str,
-    ) -> PersistReadback {
+    ) -> PersistedMutant {
         use rusqlite::OptionalExtension;
 
         let outcome = database
@@ -9300,10 +9375,7 @@ mod tests {
             )
             .optional()
             .unwrap();
-        let status = outcome.as_ref().map(|json| {
-            let outcome: hoimin_core::MutationOutcome = serde_json::from_str(json).unwrap();
-            outcome.status()
-        });
+        let outcome = outcome.map(|json| serde_json::from_str(&json).unwrap());
         let candidates: i64 = database
             .query_row(
                 "SELECT count(*) FROM candidates WHERE run_id=?1 AND mutant_id=?2",
@@ -9313,21 +9385,75 @@ mod tests {
             .unwrap();
         assert_eq!(
             candidates,
-            i64::from(status.is_some()),
+            i64::from(outcome.is_some()),
             "candidate and result must commit together"
         );
         let mut query = database
-            .prepare("SELECT code FROM diagnostics WHERE run_id=?1 AND mutant_id=?2 ORDER BY id")
+            .prepare("SELECT id, level, code, message FROM diagnostics WHERE run_id=?1 AND mutant_id=?2 ORDER BY id")
             .unwrap();
         let diagnostics = query
-            .query_map([run, mutant], |row| row.get(0))
+            .query_map([run, mutant], |row| {
+                Ok((
+                    row.get(0)?,
+                    hoimin_core::SessionDiagnostic {
+                        mutant_id: mutant.to_owned(),
+                        level: row.get(1)?,
+                        code: row.get(2)?,
+                        message: row.get(3)?,
+                    },
+                ))
+            })
             .unwrap()
-            .collect::<Result<Vec<String>, _>>()
+            .collect::<Result<Vec<_>, _>>()
             .unwrap();
-        PersistReadback {
-            status,
+        PersistedMutant {
+            outcome,
             diagnostics,
         }
+    }
+
+    fn assert_persist_snapshot(
+        actual: &PersistedMutant,
+        prior: Option<&PersistedMutant>,
+        expected: &PersistSnapshot,
+        id: &str,
+        point: &str,
+    ) {
+        let origin = actual.outcome.as_ref().map(|_| {
+            if prior == Some(actual) {
+                PersistOrigin::Prior
+            } else {
+                PersistOrigin::Current
+            }
+        });
+        assert_eq!(
+            PersistSnapshot {
+                result: actual.readback(),
+                origin
+            },
+            *expected,
+            "{id}: {point}"
+        );
+        if origin == Some(PersistOrigin::Current)
+            && let Some(prior) = prior
+        {
+            assert!(
+                actual
+                    .diagnostics
+                    .iter()
+                    .all(|(new, _)| { prior.diagnostics.iter().all(|(old, _)| old != new) }),
+                "{id}: replacement retained an old diagnostic row"
+            );
+        }
+    }
+
+    fn first_started_mutant(stdout: &[u8]) -> hoimin_core::MutantStarted {
+        complete_delivery_events(stdout)
+            .find_map(|event| match event {
+                OutputEvent::MutantStarted(started) => Some(started),
+                _ => None,
+            })
+            .expect("executed candidate must be announced before persistence")
     }
 
     fn read_reported_mutant(
@@ -9358,15 +9484,56 @@ mod tests {
             assert!(ids.insert(case.id.clone()));
             replay_persist_deadline(case).await;
         }
-        assert_eq!(ids.len(), 12);
+        assert_eq!(ids.len(), 24);
     }
 
     async fn replay_persist_deadline(case: PersistDeadlineCase) {
-        let id = &case.id;
         let project = tempfile::tempdir().unwrap();
         let artifacts = tempfile::tempdir().unwrap();
         let session = Utf8PathBuf::from_path_buf(artifacts.path().join("session.sqlite3")).unwrap();
         let config = delivery_session_test_config(&project, &session, false);
+        let (config, prior) = if case.replaces {
+            let prior = seed_persisted_mutant(config.clone(), &session, &case.id).await;
+            (persist_resume_config(config, &session, 1), Some(prior))
+        } else {
+            (config, None)
+        };
+        let (mutant, settled) =
+            run_persist_deadline(config.clone(), &session, prior.as_ref(), &case).await;
+        resume_after_pending_persist(config, &session, &mutant, settled, &case).await;
+    }
+
+    async fn seed_persisted_mutant(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        id: &str,
+    ) -> PriorPersistedMutant {
+        let stdout = CollectingWriter::default();
+        let control = delivery_test_control(true);
+        control
+            .mutant_output_close_timeout_once
+            .store(true, Ordering::Release);
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control).await;
+        assert_eq!(exit, Ok(2), "{id}: seed run");
+        let bytes = stdout.snapshot();
+        let started = first_started_mutant(&bytes);
+        let report = read_reported_mutant(&bytes, &started.run_id, &started.mutant_id).unwrap();
+        let stored = read_persisted_mutant(
+            &open_delivery_database(session),
+            &started.run_id,
+            &started.mutant_id,
+        );
+        stored.assert_report(&report, id);
+        PriorPersistedMutant { started, stored }
+    }
+
+    async fn run_persist_deadline(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        prior: Option<&PriorPersistedMutant>,
+        case: &PersistDeadlineCase,
+    ) -> (hoimin_core::MutantStarted, PersistedMutant) {
+        let id = &case.id;
         let timeout = config.limits.total_timeout.get();
         let grace = Duration::from_secs(5);
         let (entered, ready) = tokio::sync::oneshot::channel();
@@ -9386,7 +9553,7 @@ mod tests {
         let observed = control.clone();
         let stdout = CollectingWriter::default();
         let mut run = Box::pin(run_loop_with_control(
-            config.clone(),
+            config,
             stdout.clone(),
             Vec::new(),
             control,
@@ -9395,25 +9562,23 @@ mod tests {
             result = &mut run => panic!("{id}: run returned before persist entered: {result:?}"),
             entered = tokio::time::timeout(Duration::from_secs(5), ready) => entered.unwrap().unwrap(),
         };
-        let header = stdout.snapshot();
-        let mutant = complete_delivery_events(&header)
-            .find_map(|event| match event {
-                OutputEvent::MutantStarted(started) => Some(started),
-                _ => None,
-            })
-            .expect("executed candidate must be announced before persistence");
+        let mutant = first_started_mutant(&stdout.snapshot());
+        if let Some(prior) = prior {
+            assert_eq!(mutant.run_id, prior.started.run_id, "{id}: resumed run");
+            assert_eq!(
+                mutant.mutant_id, prior.started.mutant_id,
+                "{id}: replacement mutant"
+            );
+        }
+        let prior = prior.map(|record| &record.stored);
         let readback = || {
             read_persisted_mutant(
-                &open_delivery_database(&session),
+                &open_delivery_database(session),
                 &mutant.run_id,
                 &mutant.mutant_id,
             )
         };
-        assert_eq!(
-            readback(),
-            PersistReadback::default(),
-            "{id}: pending transaction"
-        );
+        assert_persist_snapshot(&readback(), prior, &case.pending, id, "pending transaction");
         let result = await_cli_at_session_commit(
             &mut run,
             &observed,
@@ -9425,25 +9590,22 @@ mod tests {
         )
         .await;
         drop(run);
+        assert_cli_shutdown_return(&result, case.exit_code, id);
+        let reported = read_reported_mutant(&stdout.snapshot(), &mutant.run_id, &mutant.mutant_id);
         assert_eq!(
-            result.as_ref().ok().copied(),
-            case.exit_code,
-            "{id}: {result:?}"
+            reported
+                .as_ref()
+                .map_or_else(PersistReadback::default, PersistReadback::from),
+            case.reported,
+            "{id}: reported result"
         );
-        if let Err(error) = &result {
-            assert!(error.contains("shutdown grace expired"), "{id}: {error}");
-        }
-        let reported = read_reported_mutant(&stdout.snapshot(), &mutant.run_id, &mutant.mutant_id)
-            .map_or_else(PersistReadback::default, |result| PersistReadback {
-                status: Some(result.outcome.status()),
-                diagnostics: result
-                    .diagnostics
-                    .into_iter()
-                    .map(|item| item.code)
-                    .collect(),
-            });
-        assert_eq!(reported, case.reported, "{id}: reported result");
-        assert_eq!(readback(), case.at_return, "{id}: database at return");
+        assert_persist_snapshot(
+            &readback(),
+            prior,
+            &case.at_return,
+            id,
+            "database at return",
+        );
         if case.release == FinishRelease::AfterGrace {
             assert!(
                 handler.upgrade().is_some(),
@@ -9452,27 +9614,48 @@ mod tests {
             release.send(()).unwrap();
             SessionDispatcher::wait_for_session_worker_drop(&handler).await;
         }
-        assert_eq!(readback(), case.settled, "{id}: database after settlement");
-        resume_after_pending_persist(config, &session, &mutant, &case).await;
+        let settled = readback();
+        assert_persist_snapshot(
+            &settled,
+            prior,
+            &case.settled,
+            id,
+            "database after settlement",
+        );
+        if case.commit
+            && let Some(reported) = &reported
+        {
+            settled.assert_report(reported, id);
+        }
+        (mutant, settled)
+    }
+
+    fn persist_resume_config(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        limit: usize,
+    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
+        let mut config = config.into_data();
+        config.session = hoimin_core::SessionMode::Resume(hoimin_core::SessionConfig {
+            path: session.to_owned(),
+        });
+        config.limits.max_mutants = std::num::NonZeroUsize::new(limit).unwrap();
+        RunConfig::try_from(config).unwrap()
     }
 
     async fn resume_after_pending_persist(
         config: RunConfig<hoimin_core::EnvironmentRequest>,
         session: &Utf8Path,
         mutant: &hoimin_core::MutantStarted,
+        settled: PersistedMutant,
         case: &PersistDeadlineCase,
     ) {
         use hoimin_core::MutationOutcome;
 
         let id = &case.id;
-        let mut config = config.into_data();
-        config.session = hoimin_core::SessionMode::Resume(hoimin_core::SessionConfig {
-            path: session.to_owned(),
-        });
-        config.limits.max_mutants = std::num::NonZeroUsize::new(100).unwrap();
         let stdout = CollectingWriter::default();
         let exit = run_loop_with_control(
-            RunConfig::try_from(config).unwrap(),
+            persist_resume_config(config, session, 100),
             stdout.clone(),
             Vec::new(),
             delivery_test_control(true),
@@ -9491,18 +9674,24 @@ mod tests {
         );
         assert_eq!(header.run_id, mutant.run_id, "{id}");
         let resumed = read_reported_mutant(&captured, &mutant.run_id, &mutant.mutant_id).unwrap();
-        match resumed.outcome {
-            MutationOutcome::Reused { .. } => assert!(case.resume_reuses, "{id}"),
-            MutationOutcome::Executed { .. } => assert!(!case.resume_reuses, "{id}"),
-            MutationOutcome::NotRun => panic!("{id}: resume did not resolve the mutant"),
-        }
         let saved = read_persisted_mutant(
             &open_delivery_database(session),
             &mutant.run_id,
             &mutant.mutant_id,
         );
+        match resumed.outcome {
+            MutationOutcome::Reused { .. } => {
+                assert!(case.resume_reuses, "{id}");
+                assert_eq!(saved, settled, "{id}: reuse preserves the committed rows");
+            }
+            MutationOutcome::Executed { .. } => {
+                assert!(!case.resume_reuses, "{id}");
+                saved.assert_report(&resumed, id);
+            }
+            MutationOutcome::NotRun => panic!("{id}: resume did not resolve the mutant"),
+        }
         assert_eq!(
-            saved,
+            saved.readback(),
             PersistReadback {
                 status: Some(hoimin_core::MutationStatus::Survived),
                 diagnostics: Vec::new()

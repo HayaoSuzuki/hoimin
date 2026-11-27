@@ -425,34 +425,57 @@ private def persistReadbackJson (status : Option Status) : Lean.Json :=
     ("status", optionalJson (fun status => .str (statusName status)) status),
     ("diagnostics", stringsJson (if status == some .error then ["process.output.close.timeout"] else []))]
 
-private def persistDeadlineCase (release : FinishRelease) (diagnostic commit : Bool) : Lean.Json :=
-  let state := run State.initial [.open .h0, .begin .h0 .r0 .f0]
+private def persistSnapshotJson (row : Option ResultRow) : Lean.Json :=
+  let origin := row.map fun result => if result.payload == .p0 then "prior" else "current"
+  Lean.Json.mkObj [
+    ("result", persistReadbackJson (row.map ResultRow.status)),
+    ("origin", optionalJson Lean.Json.str origin)]
+
+private def persistDeadlineSeed (replaces : Bool) : State :=
+  let fresh := run State.initial [.open .h0, .begin .h0 .r0 .f0]
+  if replaces then run fresh [
+    .persist .h0 .r0 .m0 .error .p0 .valid, .finish .h0 .r0 false, .load .h0 .f0]
+  else fresh
+
+private def persistDeadlineCase (release : FinishRelease)
+    (replaces diagnostic commit : Bool) : Lean.Json :=
+  let state := persistDeadlineSeed replaces
   let result := persistAcrossShutdown state .h0 .r0 .m0
     (if diagnostic then .error else .survived) release commit
-  let statusAtReturn := (findResult result.atReturn .r0 .m0).map ResultRow.status
-  let settledStatus := (findResult result.settled .r0 .m0).map ResultRow.status
-  let name := finishReleaseName release
+  let settled := findResult result.settled .r0 .m0
+  let stage := finishReleaseName release
+  let operation := if replaces then "replace" else "insert"
   Lean.Json.mkObj [
     ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
-    ("id", .str s!"{name}_diagnostic_{diagnostic}_commit_{commit}"),
-    ("release", .str name), ("diagnostic", Lean.toJson diagnostic), ("commit", Lean.toJson commit),
+    ("id", .str s!"{operation}_{stage}_diagnostic_{diagnostic}_commit_{commit}"),
+    ("replaces", Lean.toJson replaces),
+    ("release", .str stage), ("diagnostic", Lean.toJson diagnostic), ("commit", Lean.toJson commit),
     ("exit_code", optionalJson Lean.toJson result.exitCode),
-    ("at_return", persistReadbackJson statusAtReturn), ("settled", persistReadbackJson settledStatus),
+    ("pending", persistSnapshotJson (findResult state .r0 .m0)),
+    ("at_return", persistSnapshotJson (findResult result.atReturn .r0 .m0)),
+    ("settled", persistSnapshotJson settled),
     ("reported", persistReadbackJson result.reported),
-    ("resume_reuses", Lean.toJson (settledStatus.any Status.isDeterminate))]
+    ("resume_reuses", Lean.toJson (settled.any (fun row => row.status.isDeterminate)))]
 
 def renderPersistDeadlineCorpus : String :=
   let releases : List FinishRelease := [.beforeDeadline, .withinGrace, .afterGrace]
-  let cases := releases.flatMap fun release => [false, true].flatMap fun diagnostic =>
-    [false, true].map fun commit => persistDeadlineCase release diagnostic commit
+  let cases := [false, true].flatMap fun replaces =>
+    releases.flatMap fun release => [false, true].flatMap fun diagnostic =>
+      [false, true].map fun commit => persistDeadlineCase release replaces diagnostic commit
   String.join (cases.map fun item => item.compress ++ "\n")
 
 def persistDeadlineSensitivity : Bool :=
-  let seed := run State.initial [.open .h0, .begin .h0 .r0 .f0]
+  let seed := persistDeadlineSeed false
   let late := persistAcrossShutdown seed .h0 .r0 .m0 .survived .afterGrace true
   let failed := persistAcrossShutdown seed .h0 .r0 .m0 .survived .withinGrace false
+  let previous := persistDeadlineSeed true
+  let replaced := persistAcrossShutdown previous .h0 .r0 .m0 .error .afterGrace true
+  let rolledBack := persistAcrossShutdown previous .h0 .r0 .m0 .error .afterGrace false
   (findResult late.atReturn .r0 .m0).isNone && late.reported.isNone &&
     (findResult late.settled .r0 .m0).any (fun result => result.status.isDeterminate) &&
-    (findResult failed.settled .r0 .m0).isNone && failed.reported == some .survived
+    (findResult failed.settled .r0 .m0).isNone && failed.reported == some .survived &&
+    (findResult replaced.atReturn .r0 .m0).map ResultRow.payload == some .p0 &&
+    (findResult replaced.settled .r0 .m0).map ResultRow.payload == some .p1 &&
+    (findResult rolledBack.settled .r0 .m0).map ResultRow.payload == some .p0
 
 end HoiminOracle.SessionAudit

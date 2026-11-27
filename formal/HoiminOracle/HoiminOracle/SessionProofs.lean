@@ -266,4 +266,17 @@ theorem rejected_result_commit_preserves_durable_rows (state : State) (handler :
     (persistAcrossShutdown state handler runId mutant status release false).settled = state := by
   simp [persistAcrossShutdown]
 
+theorem late_replacement_preserves_old_result_until_commit
+    (state : State) (handler : Handler) (old : ResultRow) (status : Status)
+    (present : findResult state old.run old.mutant = some old)
+    (inconclusive : old.status.isDeterminate = false)
+    (accepted : (step state (.persist handler old.run old.mutant status .p1 .valid)).rejection = none) :
+    let result := persistAcrossShutdown state handler old.run old.mutant status .afterGrace true
+    findResult result.atReturn old.run old.mutant = some old ∧
+      SameExceptResult state result.settled { old with status := status, payload := .p1 } := by
+  refine ⟨present, ?_⟩
+  simpa [persistAcrossShutdown, step] using
+    successful_replacement_is_exact state handler old { old with status := status, payload := .p1 }
+      present inconclusive accepted
+
 end HoiminOracle.SessionAudit
