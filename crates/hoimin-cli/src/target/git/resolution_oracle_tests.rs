@@ -23,6 +23,11 @@ if [ ! -f "status-$index" ]; then
 fi
 read -r status < "status-$index"
 cat "stdout-$index"
+if [ "$status" = signal ]; then
+    printf '%s\n' "fixture failure" >&2
+    kill -TERM "$$"
+    exit 97
+fi
 if [ "$status" -ne 0 ]; then
     printf '%s\n' "fixture failure" >&2
 fi
@@ -45,7 +50,7 @@ enum Outcome {
 
 #[derive(serde::Deserialize)]
 struct Reply {
-    status: u8,
+    status: Option<u8>,
     bytes: Vec<u8>,
 }
 
@@ -91,9 +96,12 @@ async fn replay(evidence: &Path) {
         let root = tempfile::tempdir_in(evidence).unwrap();
         let root_path = Utf8Path::from_path(root.path()).unwrap();
         for (index, response) in (1..).zip(fixture.responses) {
+            let status = response
+                .status
+                .map_or_else(|| "signal".to_owned(), |code| code.to_string());
             fs::write(
                 root_path.join(format!("status-{index}")),
-                format!("{}\n", response.status),
+                format!("{status}\n"),
             )
             .unwrap();
             fs::write(root_path.join(format!("stdout-{index}")), response.bytes).unwrap();
@@ -145,7 +153,7 @@ async fn replay(evidence: &Path) {
         };
         assert_eq!(outcome, fixture.expected, "{}", fixture.id);
     }
-    assert_eq!(ids.len(), 36);
+    assert_eq!(ids.len(), 39);
     fs::write(evidence.join("replayed"), ids.len().to_string()).unwrap();
 }
 
@@ -192,6 +200,6 @@ async fn git_resolution_calls_match_lean() {
     );
     assert_eq!(
         fs::read_to_string(directory.path().join("replayed")).unwrap(),
-        "36"
+        "39"
     );
 }

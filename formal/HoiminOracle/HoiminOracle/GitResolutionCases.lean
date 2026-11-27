@@ -36,29 +36,29 @@ private def scopes : List (String × Option (List String)) :=
 private def matrix : List (String × Input) :=
   let inputs : List (String × Input) := [
     ("head", { context := 2, changedPatch := true }),
-    ("indexed", { headStatus := 1 }),
-    ("base", { revision := some "topic", headStatus := 1, changedPatch := true, context := 7 })]
+    ("indexed", { headStatus := some 1 }),
+    ("base", { revision := some "topic", headStatus := some 128, changedPatch := true, context := 7 })]
   inputs.flatMap fun (name, input) => scopes.map fun (suffix, scope) =>
     (name ++ "-" ++ suffix, { input with scope })
 
 private def fixtures : List (String × Input) := matrix ++ [
-  ("worktree-false", { worktree := ⟨0, utf8 "false\n"⟩, revision := some "topic" }),
-  ("worktree-status-before-valid-reply", { worktree := ⟨2, utf8 "true\n"⟩ }),
-  ("worktree-ascii-trim", { worktree := ⟨0, utf8 " \ttrue\r\n"⟩ }),
-  ("worktree-unexpected-encoding", { worktree := ⟨0, [255]⟩ }),
+  ("worktree-false", { worktree := .exited 0 (utf8 "false\n"), revision := some "topic" }),
+  ("worktree-status-before-valid-reply", { worktree := .exited 2 (utf8 "true\n") }),
+  ("worktree-ascii-trim", { worktree := .exited 0 (utf8 " \ttrue\r\n") }),
+  ("worktree-unexpected-encoding", { worktree := .exited 0 [255] }),
   ("base-sha256-and-ascii-trim", {
     revision := some "HEAD~2",
-    oid := ⟨0, [32,9] ++ List.replicate 64 70 ++ [13,10]⟩,
+    oid := .exited 0 ([32,9] ++ List.replicate 64 70 ++ [13,10]),
     scope := some [selectedPath] }),
   ("base-option-shaped-revision", { revision := some "--help" }),
-  ("base-status-before-valid-oid", { revision := some "broken", oid := ⟨23, List.replicate 40 65⟩ }),
-  ("base-invalid-oid-length", { revision := some "broken", oid := ⟨0, List.replicate 39 65⟩ }),
-  ("base-invalid-oid-character", { revision := some "broken", oid := ⟨0, 122 :: List.replicate 39 65⟩ }),
-  ("base-invalid-utf8", { revision := some "broken", oid := ⟨0, 255 :: List.replicate 39 65⟩ }),
+  ("base-status-before-valid-oid", { revision := some "broken", oid := .exited 23 (List.replicate 40 65) }),
+  ("base-invalid-oid-length", { revision := some "broken", oid := .exited 0 (List.replicate 39 65) }),
+  ("base-invalid-oid-character", { revision := some "broken", oid := .exited 0 (122 :: List.replicate 39 65) }),
+  ("base-invalid-utf8", { revision := some "broken", oid := .exited 0 (255 :: List.replicate 39 65) }),
   ("base-invalid-embedded-newline", {
     revision := some "broken",
-    oid := ⟨0, List.replicate 20 65 ++ [10] ++ List.replicate 19 65⟩ }),
-  ("base-invalid-even-with-empty-scope", { revision := some "broken", oid := ⟨0, []⟩, scope := some [] }),
+    oid := .exited 0 (List.replicate 20 65 ++ [10] ++ List.replicate 19 65) }),
+  ("base-invalid-even-with-empty-scope", { revision := some "broken", oid := .exited 0, scope := some [] }),
   ("scoped-empty-inventory", { scope := some [selectedPath], inventory := .empty }),
   ("scoped-related-rename-falls-back", {
     scope := some [selectedPath], inventory := .renamed, changedPatch := true, context := 12 }),
@@ -71,9 +71,12 @@ private def fixtures : List (String × Input) := matrix ++ [
     failAt := some (.patch .head 0 [selectedPath]) }),
   ("numstat-command-fails", { failAt := some (.numstat .head []), changedPatch := true }),
   ("invalid-patch-hunk", { corruptPatch := true }),
-  ("indexed-command-fails", { headStatus := 1, failAt := some .indexed }),
+  ("indexed-command-fails", { headStatus := some 1, failAt := some .indexed }),
   ("untracked-command-fails-after-patch", { changedPatch := true, failAt := some .untracked }),
-  ("untracked-command-fails-after-indexed", { headStatus := 1, failAt := some .untracked })]
+  ("untracked-command-fails-after-indexed", { headStatus := some 1, failAt := some .untracked }),
+  ("head-execution-failure", { headStatus := some 2 }),
+  ("corrupt-head-even-with-empty-scope", { headStatus := some 128, scope := some [] }),
+  ("head-terminated-by-signal", { headStatus := none })]
 
 private def failureText : Failure → String
   | .repository => "repository"
@@ -110,7 +113,12 @@ def sensitivity : IO UInt32 := do
     ("resolution_use_head_despite_base", fun input : Input => execute (requests { input with revision := none })),
     ("resolution_skip_inventory", fun input => execute (requests { input with scope := none })),
     ("resolution_continue_after_error", requests),
-    ("resolution_use_patch_on_missing_head", fun input => execute (requests { input with headStatus := 0 })),
+    ("resolution_use_patch_on_missing_head", fun input =>
+      execute (requests { input with headStatus := some 0 })),
+    ("resolution_treat_fatal_head_as_missing", fun input =>
+      execute (requests (match headRoute input.headStatus with
+        | .error _ => { input with headStatus := some 1 }
+        | .ok _ => input))),
     ("resolution_omit_untracked", fun input => (execute (requests input)).filter (·.request != .untracked))] do
     match fixtures.find? (fun (_, input) => (wrong input).map Exchange.request !=
         (execute (requests input)).map Exchange.request) with

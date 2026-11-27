@@ -21,9 +21,11 @@ inductive Inventory | empty | modified | renamed | malformed
   deriving BEq
 
 structure Reply where
-  status : Nat := 0
+  status : Option Nat := some 0
   bytes : List UInt8 := []
   deriving BEq
+
+def Reply.exited (status : Nat) (bytes : List UInt8 := []) : Reply := ⟨some status, bytes⟩
 
 def utf8 (s : String) : List UInt8 := s.toUTF8.data.toList
 
@@ -37,9 +39,9 @@ structure Input where
   revision : Option String := none
   context : Nat := 0
   scope : Option (List String) := none
-  worktree : Reply := ⟨0, utf8 "true\n"⟩
-  headStatus : Nat := 0
-  oid : Reply := ⟨0, List.replicate 40 97 ++ [10]⟩
+  worktree : Reply := .exited 0 (utf8 "true\n")
+  headStatus : Option Nat := some 0
+  oid : Reply := .exited 0 (List.replicate 40 97 ++ [10])
   inventory : Inventory := .modified
   changedPatch : Bool := false
   corruptPatch : Bool := false
@@ -58,7 +60,7 @@ private def asciiHex (byte : UInt8) : Bool :=
   (48 ≤ byte && byte ≤ 57) || (65 ≤ byte && byte ≤ 70) || (97 ≤ byte && byte ≤ 102)
 
 def readOid (reply : Reply) : Except Failure String :=
-  if reply.status != 0 then .error .command
+  if reply.status != some 0 then .error .command
   else
     let bytes := trim reply.bytes
     match String.fromUTF8? ⟨bytes.toArray⟩ with
@@ -69,7 +71,7 @@ def readOid (reply : Reply) : Except Failure String :=
 
 private def response (input : Input) (request : Request) (reply : Reply) (failure : Option Failure := none) :
     Exchange :=
-  if input.failAt == some request then ⟨request, ⟨23, []⟩, some .command⟩
+  if input.failAt == some request then ⟨request, .exited 23, some .command⟩
   else ⟨request, reply, failure⟩
 
 private def inventoryFacts (inventory : Inventory) : List HoiminOracle.GitInventory.Record :=
@@ -93,32 +95,51 @@ private def patchWire (input : Input) : List UInt8 :=
 
 private def tracked (input : Input) (base : Comparison) : List Exchange :=
   let pair (paths : List String) := [
-    response input (.patch base input.context paths) ⟨0, patchWire input⟩
+    response input (.patch base input.context paths) (.exited 0 (patchWire input))
       (if input.corruptPatch then some .hunk else none),
     response input (.numstat base paths) {}]
   match input.scope with
   | none => pair []
   | some scope =>
-    let inventory := response input (.inventory base) ⟨0, inventoryWire input.inventory⟩
+    let inventory := response input (.inventory base) (.exited 0 (inventoryWire input.inventory))
       (if input.inventory == .malformed then some .inventory else none)
     let batches := match HoiminOracle.GitInventory.plan scope (inventoryFacts input.inventory) with
       | .legacy => pair []
       | .scoped parts => parts.flatMap pair
     inventory :: batches
 
+def headRoute : Option Nat → Except Failure Bool
+  | some 0 => .ok true
+  | some 1 => .ok false
+  | _ => .error .command
+
+theorem headRoute_failure_iff (status : Option Nat) :
+    headRoute status = .error .command ↔ status ≠ some 0 ∧ status ≠ some 1 := by
+  cases status with
+  | none => simp [headRoute]
+  | some code =>
+    cases code with
+    | zero => simp [headRoute]
+    | succ rest => cases rest <;> simp [headRoute]
+
+private def worktreeAccepted (reply : Reply) : Bool :=
+  reply.status == some 0 && trim reply.bytes == utf8 "true"
+
 def requests (input : Input) : List Exchange :=
-  let worktreeFailure := if input.worktree.status == 0 && trim input.worktree.bytes == utf8 "true"
-    then none else some Failure.repository
+  let worktreeFailure := if worktreeAccepted input.worktree then none else some Failure.repository
   let start : Exchange := ⟨.worktree, input.worktree, worktreeFailure⟩
   let selected := if let some revision := input.revision then
     match readOid input.oid with
     | .error failure => [⟨.revision revision, input.oid, some failure⟩]
     | .ok oid => ⟨.revision revision, input.oid, none⟩ :: tracked input (.mergeBase oid)
   else
-    let probe := ⟨Request.head, ⟨input.headStatus, []⟩, none⟩
-    probe :: (if input.headStatus == 0 then tracked input .head
-      else [response input .indexed ⟨0, utf8 (selectedPath ++ "\x00")⟩])
-  start :: selected ++ [response input .untracked ⟨0, utf8 (untrackedPath ++ "\x00")⟩]
+    let reply : Reply := ⟨input.headStatus, []⟩
+    match headRoute input.headStatus with
+    | .ok true => ⟨.head, reply, none⟩ :: tracked input .head
+    | .ok false => [
+        ⟨.head, reply, none⟩, response input .indexed (.exited 0 (utf8 (selectedPath ++ "\x00")))]
+    | .error failure => [⟨.head, reply, some failure⟩]
+  start :: selected ++ [response input .untracked (.exited 0 (utf8 (untrackedPath ++ "\x00")))]
 
 theorem explicit_revision_first (input : Input) (name : String) (specified : input.revision = some name) :
     ((requests input).map (·.request)).take 2 = [.worktree, .revision name] := by
@@ -128,6 +149,12 @@ theorem explicit_revision_first (input : Input) (name : String) (specified : inp
 def execute : List Exchange → List Exchange
   | [] => []
   | call :: remaining => call :: if call.failure.isSome then [] else execute remaining
+
+theorem fatal_head_stops (input : Input) (ordinary : input.revision = none)
+    (accepted : worktreeAccepted input.worktree = true)
+    (fatal : headRoute input.headStatus = .error .command) :
+    (execute (requests input)).map (·.request) = [.worktree, .head] := by
+  simp [requests, ordinary, accepted, fatal, execute]
 
 theorem stops_at_failure (before after : List Exchange) (failed : Exchange)
     (ok : ∀ call ∈ before, call.failure = none) (hasError : failed.failure.isSome = true) :

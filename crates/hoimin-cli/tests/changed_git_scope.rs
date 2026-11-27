@@ -263,6 +263,43 @@ async fn scoped_changes_preserve_modification_deletion_binary_and_untracked_sele
 }
 
 #[tokio::test]
+async fn corrupt_head_stops_changed_target_resolution() {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 4\nc = 5 + 6\n");
+    repo.commit().await;
+    repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 9\nc = 5 + 6\n");
+
+    let selection = repo.selection();
+    let control = TargetHandler::resolve(&selection).await.unwrap();
+    assert_eq!(control.len(), 1);
+    assert_eq!(control[0].lines, [LineRange { start: 2, end: 2 }]);
+
+    let oid = repo.git(&["rev-parse", "HEAD"]).await;
+    let oid = std::str::from_utf8(&oid).unwrap().trim_ascii();
+    let object = repo
+        .root()
+        .join(".git/objects")
+        .join(&oid[..2])
+        .join(&oid[2..]);
+    #[cfg(windows)]
+    {
+        let mut permissions = std::fs::metadata(&object).unwrap().permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&object, permissions).unwrap();
+    }
+    std::fs::remove_file(&object).unwrap();
+    std::fs::write(&object, b"not a git object").unwrap();
+
+    let error = TargetHandler::resolve(&selection).await.unwrap_err();
+    let text = error.to_string();
+    assert!(
+        text.contains("git rev-parse --verify --quiet HEAD^{commit} exited with")
+            && text.contains("128"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
 async fn scoped_diff_base_and_unborn_sources_match_unscoped_resolution() {
     let repo = Repository::new().await;
     repo.write("selected/staged.py", "x = 1\ny = 2\n");

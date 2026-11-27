@@ -301,8 +301,12 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --
 Changed-target resolution first checks that Git reports a worktree. An
 explicit base is verified as a commit before any comparison, and the resolved
 object ID is passed to the merge-base diff commands. Without an explicit base,
-a successful `HEAD` probe selects the HEAD comparison. The corpus uses status 1
-for the indexed-file route. A successful resolution ends by reading
+a successful `HEAD` probe selects the HEAD comparison. Quiet verification
+uses status 1 for an unresolved revision, which selects the indexed-file route.
+Other exit codes and signal termination stop resolution with the Git diagnostic.
+[Git rev-parse implementation](https://github.com/git/git/blob/v2.39.0/builtin/rev-parse.c#L519-L525)
+
+A successful resolution ends by reading
 untracked files. Tracked resolution with an explicit scope first requests the
 name-status inventory, then uses it to decide which diff requests to send.
 
@@ -313,40 +317,41 @@ name-status inventory, then uses it to decide which diff requests to send.
 | Request sequence | Ordered argv vectors and replies through the first semantic failure | Exact NUL-delimited argv captured by the fixture Git executable |
 | Final result | Physical range map or failure class | Actual result of `resolve_changed_scoped` against temporary source files |
 
-The 36 `internal-fixture` cases use a subprocess-local fixture Git and run on
+The 39 `internal-fixture` cases use a subprocess-local fixture Git and run on
 Unix. They cover tracked, explicit-base, and indexed routes over four scopes,
 plus revision validation, rename fallback, literal pathspec flags, and failure
 at individual requests. Commit ID validation distinguishes unsuccessful
 commands, malformed UTF-8, and invalid hexadecimal form and accepts 40- and
 64-byte hexadecimal IDs. The model uses observable HEAD probe status. A real
 Git probe returned status 1 for both an unborn HEAD and a dangling commit ID.
+The probe leaves these status-1 cases indistinguishable. The corpus includes
+status 2, status 128, and signal termination as fatal outcomes.
 Git supplies the merge-base and rename outcomes for the command dispatcher.
 
 Lean proves that an explicit revision appears directly after the worktree
 check in the planned sequence and that execution stops at the first failure
-for every command list. Five sensitivity checks detect substituting HEAD for
+for every command list. It also proves that the HEAD probe fails for exactly
+the statuses other than exit codes 0 and 1, and that this failure ends the
+command sequence. Six sensitivity checks detect substituting HEAD for
 an explicit base, bypassing the inventory, continuing after an error,
-attempting a patch when HEAD is absent, and omitting untracked discovery.
+attempting a patch when HEAD is absent, treating a fatal HEAD probe as a
+missing commit, and omitting untracked discovery.
 
-All 36 cases matched Rust on macOS. The Git unit suite passed 115 tests, and
-the real-Git scope and environment suites passed 48 tests. Lean ran serially
-with a 20-second deadline and 2 GiB RSS ceiling, peaking at 1,326,000 KiB.
-The single-job Rust checks peaked at 2,292,624 KiB under a 3 GiB ceiling.
+All 39 cases matched Rust on macOS. The Git unit suite passed 115 tests and
+the four integration suites passed 64 tests. Final Lean checks ran serially
+with a 20-second deadline and 2 GiB RSS limit, peaking at 1,280,912 KiB.
+The single-job Rust checks peaked at 2,336,544 KiB under a 3 GiB limit.
 
 ### Corrupt HEAD counterexample
 
-A separate real-Git probe reproduced a command failure outside the passing
-corpus. The worktree probe returns status 0 with `true` after a loose commit
-object is corrupted. The HEAD probe exits 128 and reports that it cannot
-unpack the object. Hoimin treats the failed probe as an absent HEAD, reads
-the index, and succeeds. The control plan selected only changed line 2.
-With the corrupt object, the same command selected lines 1, 2, and 3.
+A real-Git regression corrupts a loose commit object in a temporary repository.
+Git still confirms the worktree and then exits 128 when it tries to unpack HEAD.
+Before the repair, the control selected only changed line 2, and the corrupt
+case succeeded with lines 1, 2, and 3. The regression reproduced that range
+expansion before the implementation change.
 
-This is a confirmed changed-selection defect for an explicit Git execution
-failure. The desired result for status 128 is to stop target resolution and
-surface the Git error. Status 1 requires separate treatment because it is
-also the observed status for an unborn repository. The audit records the
-counterexample for a subsequent behavior change.
+After the repair, target resolution reports the failing HEAD command and
+its stderr. The same reproduction exits at target resolution with CLI status 2.
 
 Reproduce in an isolated temporary repository with a built debug CLI.
 
@@ -397,7 +402,7 @@ with TemporaryDirectory() as directory:
 (cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-resolution corpus/git-resolution.jsonl)
 (cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
-CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test changed_git_environment
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test changed_git_environment --test changed_git_cancellation --test lean_changed_target_oracle
 ```
 
 ## Binary numstat exclusions

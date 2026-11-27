@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::process::Output;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_core::{
@@ -190,14 +191,14 @@ async fn head_exists(
     runner: &GitRunner,
     cancellation: &ProcessCancellation,
 ) -> Result<bool, GitError> {
-    let output = runner
-        .output(
-            root,
-            &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
-            cancellation,
-        )
-        .await?;
-    Ok(output.status.success())
+    const ARGS: &[&str] = &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"];
+    let output = runner.output(root, ARGS, cancellation).await?;
+    match output.status.code() {
+        Some(0) => Ok(true),
+        // Quiet verification exits 1 when the revision cannot be resolved.
+        Some(1) => Ok(false),
+        _ => Err(git_exit_error(ARGS, &output)),
+    }
 }
 
 async fn ensure_git_worktree(
@@ -246,13 +247,18 @@ async fn run_git(
         return Ok(output.stdout);
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    Err(TargetError::GitFailed(format!(
-        "git {} exited with {}: {stderr}",
+    Err(git_exit_error(args, &output))
+}
+
+fn git_exit_error(args: &[&str], output: &Output) -> GitError {
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    TargetError::GitFailed(format!(
+        "git {} exited with {}: {}",
         args.join(" "),
-        output.status
+        output.status,
+        stderr.trim()
     ))
-    .into())
+    .into()
 }
 
 fn parse_diff(
