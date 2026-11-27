@@ -14,6 +14,16 @@ theorem pairPass_strict (num den original reduced : Nat)
   exact (Nat.mul_lt_mul_left hdpos).mp hlt
 
 set_option maxHeartbeats 20000 in
+theorem pairPass_iff_threshold (num den original reduced : Nat)
+    (rate : validRate num den = true) (originalPositive : 0 < original)
+    (reducedPositive : 0 < reduced) :
+    pairPass num den original reduced = true ↔ reduced ≤ (den - num) * original / den := by
+  have valid : 0 < num ∧ num < den := by simpa [validRate] using rate
+  have denominatorPositive : 0 < den := Nat.lt_trans valid.1 valid.2
+  simp [pairPass, rate, originalPositive, reducedPositive,
+    Nat.le_div_iff_mul_le denominatorPositive, Nat.mul_comm den reduced]
+
+set_option maxHeartbeats 20000 in
 theorem certified_protected (ctx : Context) (p : Proposal) (h : Certified ctx p) :
     ctx.keptSpans.all (fun k => p.retained.contains k.id &&
       p.removed.all (fun r => !overlaps r k)) = true := by

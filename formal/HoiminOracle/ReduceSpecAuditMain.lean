@@ -33,11 +33,17 @@ def timingInputs : List (Nat × Nat × Nat × Nat) :=
   [0,1,20,21].flatMap fun n => [0,1,20,100].flatMap fun o =>
     [0,1,19,20,94,95,96,100,101].map fun r => (n,20,o,r)
 
-def timingRows : List Json := timingInputs.map fun (n,d,o,r) =>
-  row "pair" s!"pair-{n}-{d}-{o}-{r}"
+def pairRow (id : String) (n d o r : Nat) : Json :=
+  row "pair" id
     (Json.mkObj [("numerator",toJson n),("denominator",toJson d),
       ("original",toJson o),("reduced",toJson r)])
     (toJson (pairPass n d o r))
+
+def timingRows : List Json := timingInputs.map fun (n,d,o,r) =>
+  pairRow s!"pair-{n}-{d}-{o}-{r}" n d o r
+
+def fullWidthTimingRows : List Json := fullWidthTimingInputs.map fun (id,n,d,o,r) =>
+  pairRow s!"pair-full-width-{id}" n d o r
 
 def matrixRows : List Json :=
   let outcomes := [Outcome.killed,.survived,.inconclusive]
@@ -68,7 +74,8 @@ def traceRow (index : Nat) (events : List Event) : Json :=
 
 def corpus (depth : Nat) : String := String.join <|
   ((certificationCases.map certificationRow) ++ timingRows ++ matrixRows ++ medianRows ++
-    overlapRows ++ ((tracesUpTo depth).zipIdx.map fun (t,i) => traceRow i t)).map
+    overlapRows ++ ((tracesUpTo depth).zipIdx.map fun (t,i) => traceRow i t) ++
+    fullWidthTimingRows).map
       (fun (j : Json) => j.compress ++ "\n")
 
 def checkAudit (depth : Nat) : IO Unit := do
@@ -101,5 +108,6 @@ def main (rawArgs : List String) : IO Unit := do
     for (name,a,b) in sensitivity do IO.println s!"{name}: correct={a} broken={b} detected={a != b}"
   | ["--stats"] | ["--stats",_] =>
     let ts := tracesUpTo depth
-    IO.println s!"depth={depth} alphabet={alphabet.length} traces={ts.length} transitions={(ts.map List.length).foldl (·+·) 0} certification={certificationCases.length} pairs={timingRows.length} results={matrixRows.length} medians={medianRows.length} overlaps={overlapRows.length} rows={certificationCases.length+timingRows.length+matrixRows.length+medianRows.length+overlapRows.length+ts.length} sensitivity={sensitivity.length}"
+    let pairs := timingRows.length + fullWidthTimingRows.length
+    IO.println s!"depth={depth} alphabet={alphabet.length} traces={ts.length} transitions={(ts.map List.length).foldl (·+·) 0} certification={certificationCases.length} pairs={pairs} results={matrixRows.length} medians={medianRows.length} overlaps={overlapRows.length} rows={certificationCases.length+pairs+matrixRows.length+medianRows.length+overlapRows.length+ts.length} sensitivity={sensitivity.length}"
   | _ => throw (IO.userError "--output PATH | --check PATH | --stats [1..3] | --sensitivity")

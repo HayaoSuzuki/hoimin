@@ -118,6 +118,25 @@ def rawPairPass (num den original reduced : Nat) : Bool :=
 def subtractRoundedDiscount (num den original reduced : Nat) : Bool :=
   reduced ≤ original - original * num / den
 
+def maxTick : Nat := 2^128 - 1
+def divisibleOriginal : Nat := maxTick - maxTick % 20
+def exactThreshold : Nat := 19 * divisibleOriginal / 20
+def fractionalThreshold : Nat := 19 * maxTick / 20
+
+def fullWidthTimingInputs : List (String × Nat × Nat × Nat × Nat) := [
+  ("exact-threshold", 1, 20, divisibleOriginal, exactThreshold),
+  ("exact-threshold-plus-one", 1, 20, divisibleOriginal, exactThreshold + 1),
+  ("fractional-threshold", 1, 20, maxTick, fractionalThreshold),
+  ("fractional-threshold-plus-one", 1, 20, maxTick, fractionalThreshold + 1),
+  ("maximum-denominator-threshold", maxTick - 1, maxTick, maxTick, 1),
+  ("maximum-denominator-threshold-plus-one", maxTick - 1, maxTick, maxTick, 2) ]
+
+def compareSaturatingProducts (num den original reduced : Nat) : Bool :=
+  min (den * reduced) maxTick ≤ min ((den - num) * original) maxTick
+
+def compareWrappingProducts (num den original reduced : Nat) : Bool :=
+  (den * reduced) % (maxTick + 1) ≤ ((den - num) * original) % (maxTick + 1)
+
 def sensitivity : List (String × Bool × Bool) := [
   ("atomicity/publish-before-complete", stateSafe (step baseContext {deadline:=4}
     {tick:=3,proposal:=some pending}), stateSafe (brokenEarlyPublish {deadline:=4}
@@ -145,6 +164,10 @@ def sensitivity : List (String × Bool × Bool) := [
     (brokenEarlyPublish {deadline:=4} {tick:=1,proposal:=some {good with exploration:=⟨0,90,90⟩}}).stopped),
   ("boundary/hundred-percent-zero-time", pairPass 20 20 1 0, rawPairPass 20 20 1 0),
   ("arithmetic/rounded-discount", pairPass 1 20 1 1, subtractRoundedDiscount 1 20 1 1),
+  ("arithmetic/saturated-products", pairPass 1 20 divisibleOriginal (exactThreshold + 1),
+    compareSaturatingProducts 1 20 divisibleOriginal (exactThreshold + 1)),
+  ("arithmetic/wrapped-products", pairPass (maxTick - 1) maxTick maxTick 2,
+    compareWrappingProducts (maxTick - 1) maxTick maxTick 2),
   ("precedence/deadline-equality", (step baseContext {deadline:=1}
     {tick:=1,proposal:=some good}).best.isSome,
     (brokenEarlyPublish {deadline:=1} {tick:=1,proposal:=some good}).best.isSome) ]

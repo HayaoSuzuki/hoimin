@@ -2,6 +2,18 @@
 
 > 実装後の追記: `reduce` の製品実装と952行の内部判定adapterを追加した。[実装・検証記録](../../reviews/2026-11-19-issue-1172-reduce.md)を参照。以下は実装前監査の記録であり、当時の model-only 分類と未実装という記述を保存している。
 
+## 実装後に追加した 128 ビット境界の検証
+
+有効な短縮率 `0 < n < d` と正の測定値に対して、`pairPass_iff_threshold` は、一組の短縮率判定が `reduced ≤ ⌊(d − n) × original / d⌋` と同値であることを示す。定理の入力は自然数である。[Lean の証明](../../../../../formal/HoiminOracle/HoiminOracle/ReduceSpecProofs.lean)
+
+Rust の `pair_pass` には、Lean から生成した `u128` 上限付近の6入力を追加した。積が `u128` に収まらない場合も含め、閾値ちょうどの3入力と、1 tick 超過の3入力を個別に比較する。積を飽和させる対照と、128 ビットで折り返す対照は、どちらも超過した入力を誤って受理する。既存の状態遷移の深さは3のままで、コーパスは計958行となった。[生成ケース](../../../../../formal/HoiminOracle/HoiminOracle/ReduceSpecCases.lean) · [Rust の照合](../../../../../crates/hoimin-core/tests/lean_reduce_spec_oracle.rs)
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_reduce_spec -- --check corpus/reduce-spec.jsonl)
+(cd formal/HoiminOracle && lake exe generate_reduce_spec -- --sensitivity)
+cargo test --locked -p hoimin-core --test lean_reduce_spec_oracle --test reduce_policy
+```
+
 ## 結果
 
 `reduce` の採用判定と成果物保持をモデル化し、22 個の一般定理を Lean 4.32.2 の kernel で検査した。952 行の期待値付き JSONL オラクルを Lean から生成し、再生成との一致を確認した。意図的に壊した 14 種の判定をすべて検出した。
