@@ -1,6 +1,7 @@
 import HoiminOracle.TimeoutLimitCases
 import HoiminOracle.ResourceSizeCases
 import HoiminOracle.SnapshotReadCases
+import HoiminOracle.BoundedFileReadCases
 import Lean.Data.Json
 
 open HoiminOracle.TimeoutLimit
@@ -115,16 +116,25 @@ def main (args : List String) : IO UInt32 := do
       if (← IO.FS.readFile path) == HoiminOracle.SnapshotRead.corpus then return 0
       IO.eprintln s!"stale snapshot read corpus: {path}"
       return 1
+  | ["--output-bounded-file-reads", path] =>
+      IO.FS.writeFile path HoiminOracle.BoundedFileRead.corpus
+      return 0
+  | ["--check-bounded-file-reads", path] =>
+      if (← IO.FS.readFile path) == HoiminOracle.BoundedFileRead.corpus then return 0
+      IO.eprintln s!"stale bounded file read corpus: {path}"
+      return 1
   | ["--stats"] => printStats
   | ["--sensitivity"] =>
       let status ← printSensitivity
       if status != 0 then return status
       let status ← HoiminOracle.ResourceSize.sensitivity
       if status != 0 then return status
-      HoiminOracle.SnapshotRead.sensitivity
+      let status ← HoiminOracle.SnapshotRead.sensitivity
+      if status != 0 then return status
+      HoiminOracle.BoundedFileRead.sensitivity
   | ["--cases"] => printCases
   | _ => do
-      IO.eprintln "usage: generate_timeout_limit --output PATH | --check PATH | --output-resource-sizes PATH | --check-resource-sizes PATH | --output-snapshot-reads PATH | --check-snapshot-reads PATH | --stats | --sensitivity | --cases"
+      IO.eprintln "usage: generate_timeout_limit --output PATH | --check PATH | --output-resource-sizes PATH | --check-resource-sizes PATH | --output-snapshot-reads PATH | --check-snapshot-reads PATH | --output-bounded-file-reads PATH | --check-bounded-file-reads PATH | --stats | --sensitivity | --cases"
       return 2
 
 end HoiminOracle.TimeoutLimit.Executable

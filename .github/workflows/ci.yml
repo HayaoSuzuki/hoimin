@@ -640,6 +640,8 @@ jobs:
             HoiminOracle.ResourceSizeCases
             HoiminOracle.SnapshotReadModel
             HoiminOracle.SnapshotReadCases
+            HoiminOracle.BoundedFileReadModel
+            HoiminOracle.BoundedFileReadCases
             TimeoutLimitAuditMain
             TopBudgetProjectionAuditMain
             WorkspaceAuditMain
@@ -801,6 +803,8 @@ jobs:
             lake exe generate_timeout_limit -- --check-resource-sizes corpus/resource-sizes.jsonl
           run_guard check-snapshot-reads \
             lake exe generate_timeout_limit -- --check-snapshot-reads corpus/snapshot-reads.jsonl
+          run_guard check-bounded-file-reads \
+            lake exe generate_timeout_limit -- --check-bounded-file-reads corpus/bounded-file-reads.jsonl
           run_guard check-progress-duplicates \
             lake exe generate_progress_input -- --check-duplicates corpus/progress-duplicates.jsonl
           run_guard check-progress-buffered-comparison \

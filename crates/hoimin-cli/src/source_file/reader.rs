@@ -60,6 +60,8 @@ impl PortableFileReader {
                 if metadata.len() > limit as u64 {
                     return Err(exceeds_limit());
                 }
+                #[cfg(test)]
+                crate::finite_file::bounded_read_oracle::after_metadata(&file);
                 let mut bytes = Vec::new();
                 file.take(limit as u64 + 1)
                     .read_to_end(&mut bytes)

@@ -67,6 +67,8 @@ pub(crate) fn bounded_read(path: &Path, limit: u64) -> Result<Vec<u8>, ArtifactR
     if file.metadata()?.len() > limit {
         return Err(invalid());
     }
+    #[cfg(test)]
+    crate::finite_file::bounded_read_oracle::after_metadata(&file);
     let mut bytes = Vec::new();
     file.take(limit + 1).read_to_end(&mut bytes)?;
     if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > limit {

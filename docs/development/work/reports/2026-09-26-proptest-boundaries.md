@@ -729,3 +729,44 @@ runs used one build job and a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 progress::duplicate finite_file artifacts::run_report
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test progress -- --test-threads=2 duplicate output_defers_mixed_history_rendering
 ```
+
+## Lean model of fixed-cap file reads
+
+Plan and review artifact loading and portable source acquisition share a
+two-stage size policy. The length observed on the open regular file must
+fit the cap before reading begins. The admitted read consumes at most
+the cap plus one byte. It returns the complete payload within the cap
+and uses the extra byte as evidence to reject an oversized payload.
+An admitted file that shrinks or grows within the cap can still succeed.
+
+Lean proves the metadata rejection, preservation of every byte in an
+admitted payload, and exact consumption of the first excess byte when
+the payload grows past the cap. The total consumed byte count is bounded
+by the cap plus one in all modeled cases. The model assumes regular files
+and successful underlying reads, with the size change between the
+metadata check and reading. Opening policy and I/O error classification
+are exercised separately by the existing Rust suites.
+
+The corpus crosses four caps, eight metadata lengths, and eight payload
+lengths. A 257th case uses a file extended to one byte above the deployed
+64 MiB artifact cap and checks rejection before the file contents are
+read. The internal-fixture test runs the two existing Rust read paths
+on real files. A test-only hook runs after metadata admission so the
+adapter can replace bytes on the same open file and observe the
+descriptor cursor. It then compares the returned bytes or the size
+diagnostic at each path's boundary.
+
+The six broken variants skip metadata, reject an exact bound in either
+phase, omit the extra byte, use the initially observed length as the
+cap, or read one byte too far.
+
+On macOS, all 257 cases matched for both readers. The targeted Rust
+suite passed 60 tests and the CI workflow suite passed 222. Lean ran
+under a 2 GiB cap and a 20-second timeout per command. The single-job
+Rust run peaked at 2,073,952 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_timeout_limit -- --check-bounded-file-reads corpus/bounded-file-reads.jsonl)
+(cd formal/HoiminOracle && lake exe generate_timeout_limit -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 artifacts::tests finite_file source_file review::input::input_boundary_tests plan::review_tests analyzer::exception_project reduce::input
+```

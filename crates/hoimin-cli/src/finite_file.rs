@@ -4,6 +4,10 @@ use std::fs::File;
 use std::io::Read;
 
 #[cfg(test)]
+#[path = "finite_file/bounded_read_oracle.rs"]
+pub(crate) mod bounded_read_oracle;
+
+#[cfg(test)]
 #[path = "finite_file/oracle_tests.rs"]
 mod oracle_tests;
 
