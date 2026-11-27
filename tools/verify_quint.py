@@ -66,6 +66,14 @@ MODELS = (
         simulation_mutant_step="retentionIgnoredStep",
     ),
     Model(
+        "janitor_namespace_recovery.qnt",
+        "JanitorNamespaceRecovery",
+        "janitor_namespace_recovery",
+        scenarios=("unmarkedStep", "markersStep", "payloadStep", "fallbackStep"),
+        simulation_only=True,
+        simulation_mutant_step="ignoreStagingAgeStep",
+    ),
+    Model(
         "janitor_reclaim.qnt",
         "JanitorReclaim",
         "janitor_reclaim",

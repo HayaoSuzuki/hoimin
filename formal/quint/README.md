@@ -194,7 +194,7 @@ each boundary.
 | Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays normal pages and deadline checkpoints against directory entries | Bounded selection, scan errors, coordinator contention, and uninspected selected roots at the handoff |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow | Integration with reported cursor-write errors |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers a valid lease marker, retention, readiness, and heartbeat evidence | Invalid or absent observations before eligibility, coordinator holds, and the Windows mutation barrier |
-| Startup recovery of staging and deleting roots | Native Rust fixtures create interrupted namespaces | Admission and hold rules for incomplete workspace creation and deletion |
+| Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
 | Claim and lease handoff | Native Rust fixtures exercise rename, cancellation, replacement, and Windows lease reacquisition | Namespace and lease authority at the claim boundary |
 | Bounded removal within a claimed root | The Lean `CleanupCapabilityModel` checks retained write authority across replacement. Rust has bounded removal and replacement fixtures | Traversal, slice limits, partial deletion acknowledgements, and preserving other identities |
 | Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler | Composition of real deletion outcomes, pending progress, and final root disposition |
@@ -376,6 +376,27 @@ regenerate its fixtures when reclaim eligibility or diagnostic precedence change
 
 ```sh
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_eligibility
+```
+
+## Startup janitor staging and deleting recovery
+
+`janitor_namespace_recovery.qnt` tests one interrupted root per observation.
+Empty staging requires directory age at or beyond the stale threshold. Staging
+with only a valid lease uses the lease creation time, and staging with a
+heartbeat uses its modification time. Any payload entry prevents staging
+admission. Deleting can resume immediately when empty or when it only
+contains a valid lease. With additional entries it uses ordinary eligibility
+and needs a stale heartbeat in the absence of a cleanup-ready marker.
+
+The Rust replay creates these layouts under the real managed directory,
+supplies the clock observation, and compares the disposition, ordered
+diagnostics, and surviving paths and payloads. The layouts assume that
+present markers are valid, no owner holds the lease, and the coordinator
+and removal are available. `ignoreStagingAgeStep` must violate `Safety`
+by allowing removal of a young empty staging directory.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_namespace_recovery
 ```
 
 ## SQLite persistence, resume selection and ownership

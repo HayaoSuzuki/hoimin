@@ -12,6 +12,9 @@ mod quint_diagnostics;
 #[path = "janitor/quint_eligibility.rs"]
 mod quint_eligibility;
 #[cfg(test)]
+#[path = "janitor/quint_namespace_recovery.rs"]
+mod quint_namespace_recovery;
+#[cfg(test)]
 #[path = "janitor/quint_reclaim.rs"]
 mod quint_reclaim;
 #[cfg(test)]
