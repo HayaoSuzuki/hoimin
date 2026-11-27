@@ -19,6 +19,8 @@ private def diffOptions : List String :=
 private def args : Request → List String
   | .worktree => ["rev-parse", "--is-inside-work-tree"]
   | .head => ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"]
+  | .symbolicHead => ["symbolic-ref", "HEAD"]
+  | .headReference => ["show-ref", "--verify", "--quiet", "--", "HEAD"]
   | .revision name => ["rev-parse", "--verify", "--end-of-options", name ++ "^{commit}"]
   | .inventory base => ["diff", "--name-status", "-z"] ++ diffOptions ++ comparisonArgs base
   | .patch base context paths =>
@@ -76,7 +78,13 @@ private def fixtures : List (String × Input) := matrix ++ [
   ("untracked-command-fails-after-indexed", { headStatus := some 1, failAt := some .untracked }),
   ("head-execution-failure", { headStatus := some 2 }),
   ("corrupt-head-even-with-empty-scope", { headStatus := some 128, scope := some [] }),
-  ("head-terminated-by-signal", { headStatus := none })]
+  ("head-terminated-by-signal", { headStatus := none }),
+  ("head-symbolic-read-error", { headStatus := some 1, symbolicStatus := some 128 }),
+  ("head-symbolic-status-one", { headStatus := some 1, symbolicStatus := some 1 }),
+  ("head-symbolic-terminated", { headStatus := some 1, symbolicStatus := none }),
+  ("head-reference-present", { headStatus := some 1, referenceStatus := some 0 }),
+  ("head-reference-lookup-error", { headStatus := some 1, referenceStatus := some 128 }),
+  ("head-reference-terminated", { headStatus := some 1, referenceStatus := none })]
 
 private def failureText : Failure → String
   | .repository => "repository"
@@ -119,6 +127,9 @@ def sensitivity : IO UInt32 := do
       execute (requests (match headRoute input.headStatus with
         | .error _ => { input with headStatus := some 1 }
         | .ok _ => input))),
+    ("resolution_index_without_confirming_unborn_head", fun input =>
+      (execute (requests { input with symbolicStatus := some 0, referenceStatus := some 1 })).filter
+        (fun call => call.request != .symbolicHead && call.request != .headReference)),
     ("resolution_omit_untracked", fun input => (execute (requests input)).filter (·.request != .untracked))] do
     match fixtures.find? (fun (_, input) => (wrong input).map Exchange.request !=
         (execute (requests input)).map Exchange.request) with

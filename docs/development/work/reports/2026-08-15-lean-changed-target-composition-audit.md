@@ -301,10 +301,15 @@ CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --
 Changed-target resolution first checks that Git reports a worktree. An
 explicit base is verified as a commit before any comparison, and the resolved
 object ID is passed to the merge-base diff commands. Without an explicit base,
-a successful `HEAD` probe selects the HEAD comparison. Quiet verification
-uses status 1 for an unresolved revision, which selects the indexed-file route.
-Other exit codes and signal termination stop resolution with the Git diagnostic.
-[Git rev-parse implementation](https://github.com/git/git/blob/v2.39.0/builtin/rev-parse.c#L519-L525)
+a successful `HEAD` probe selects the HEAD comparison. When quiet commit
+verification returns 1, Hoimin checks that HEAD is symbolic and verifies the
+exact HEAD reference. Only a successful symbolic check followed by status 1
+from the reference check selects the indexed-file route. A present reference
+that failed commit verification surfaces the original commit probe diagnostic.
+Fatal exit codes and signal termination stop resolution at their own command.
+[Git rev-parse implementation](https://github.com/git/git/blob/v2.39.0/builtin/rev-parse.c#L519-L525),
+[Git symbolic-ref implementation](https://github.com/git/git/blob/v2.39.0/builtin/symbolic-ref.c#L13-L35),
+[Git show-ref implementation](https://github.com/git/git/blob/v2.39.0/builtin/show-ref.c#L182-L197)
 
 A successful resolution ends by reading
 untracked files. Tracked resolution with an explicit scope first requests the
@@ -317,30 +322,33 @@ name-status inventory, then uses it to decide which diff requests to send.
 | Request sequence | Ordered argv vectors and replies through the first semantic failure | Exact NUL-delimited argv captured by the fixture Git executable |
 | Final result | Physical range map or failure class | Actual result of `resolve_changed_scoped` against temporary source files |
 
-The 39 `internal-fixture` cases use a subprocess-local fixture Git and run on
+The 45 `internal-fixture` cases use a subprocess-local fixture Git and run on
 Unix. They cover tracked, explicit-base, and indexed routes over four scopes,
 plus revision validation, rename fallback, literal pathspec flags, and failure
 at individual requests. Commit ID validation distinguishes unsuccessful
 commands, malformed UTF-8, and invalid hexadecimal form and accepts 40- and
 64-byte hexadecimal IDs. The model uses observable HEAD probe status. A real
 Git probe returned status 1 for both an unborn HEAD and a dangling commit ID.
-The probe leaves these status-1 cases indistinguishable. The corpus includes
-status 2, status 128, and signal termination as fatal outcomes.
+The additional probes distinguish these repositories. The corpus includes
+detachment, a present but unresolved reference, status 2, status 128, and
+signal termination during the initial and follow-up probes.
 Git supplies the merge-base and rename outcomes for the command dispatcher.
 
 Lean proves that an explicit revision appears directly after the worktree
 check in the planned sequence and that execution stops at the first failure
-for every command list. It also proves that the HEAD probe fails for exactly
-the statuses other than exit codes 0 and 1, and that this failure ends the
-command sequence. Six sensitivity checks detect substituting HEAD for
+for every command list. It proves that the first HEAD probe fails for exactly
+the statuses other than exit codes 0 and 1. After status 1, the indexed request
+occurs exactly when the symbolic probe succeeds and the exact reference check
+returns 1. Seven sensitivity checks detect substituting HEAD for
 an explicit base, bypassing the inventory, continuing after an error,
 attempting a patch when HEAD is absent, treating a fatal HEAD probe as a
-missing commit, and omitting untracked discovery.
+missing commit, indexing without confirming an unborn HEAD, and omitting
+untracked discovery.
 
-All 39 cases matched Rust on macOS. The Git unit suite passed 115 tests and
-the four integration suites passed 64 tests. Final Lean checks ran serially
-with a 20-second deadline and 2 GiB RSS limit, peaking at 1,280,912 KiB.
-The single-job Rust checks peaked at 2,336,544 KiB under a 3 GiB limit.
+All 45 cases matched Rust on macOS. The Git unit suite passed 115 tests and
+the five integration suites passed 80 tests. Lean ran serially with a
+20-second deadline and a 2 GiB RSS limit, peaking at 1,236,096 KiB. The
+single-job Rust checks peaked at 2,340,272 KiB under a 3 GiB limit.
 
 ### Corrupt HEAD counterexample
 
@@ -352,6 +360,18 @@ expansion before the implementation change.
 
 After the repair, target resolution reports the failing HEAD command and
 its stderr. The same reproduction exits at target resolution with CLI status 2.
+
+Removing the loose object instead of corrupting its bytes made the commit
+probe return 1. The regression reproduced the same expansion to lines 1–3
+on both a symbolic branch and a detached HEAD. The repaired branch case
+reports the missing object from `show-ref`. The detached case stops at
+`symbolic-ref`. The unborn repository fixtures still read staged and
+untracked Python sources.
+
+Manual CLI replay with Git 2.56.1 confirmed status 0 and all three staged
+lines for an unborn branch. A missing object, a malformed branch ref, and
+a branch ref pointing at a blob each returned CLI status 2 with empty stdout
+and the diagnostic of the corresponding failed Git command.
 
 Reproduce in an isolated temporary repository with a built debug CLI.
 
@@ -402,7 +422,7 @@ with TemporaryDirectory() as directory:
 (cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-resolution corpus/git-resolution.jsonl)
 (cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
-CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test changed_git_environment --test changed_git_cancellation --test lean_changed_target_oracle
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test changed_git_environment --test changed_git_cancellation --test changed_excluded_paths --test lean_changed_target_oracle
 ```
 
 ## Binary numstat exclusions

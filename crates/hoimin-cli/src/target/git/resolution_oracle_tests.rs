@@ -153,7 +153,7 @@ async fn replay(evidence: &Path) {
         };
         assert_eq!(outcome, fixture.expected, "{}", fixture.id);
     }
-    assert_eq!(ids.len(), 39);
+    assert_eq!(ids.len(), 45);
     fs::write(evidence.join("replayed"), ids.len().to_string()).unwrap();
 }
 
@@ -200,6 +200,6 @@ async fn git_resolution_calls_match_lean() {
     );
     assert_eq!(
         fs::read_to_string(directory.path().join("replayed")).unwrap(),
-        "39"
+        "45"
     );
 }

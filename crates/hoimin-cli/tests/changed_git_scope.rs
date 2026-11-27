@@ -262,11 +262,22 @@ async fn scoped_changes_preserve_modification_deletion_binary_and_untracked_sele
     );
 }
 
+#[rstest::rstest]
+#[case::corrupt_object(false, Some(b"not a git object".as_slice()), "git rev-parse --verify --quiet HEAD^{commit}")]
+#[case::dangling_branch(false, None, "git show-ref --verify --quiet -- HEAD")]
+#[case::dangling_detached_head(true, None, "git symbolic-ref HEAD")]
 #[tokio::test]
-async fn corrupt_head_stops_changed_target_resolution() {
+async fn unreadable_head_stops_changed_target_resolution(
+    #[case] detached: bool,
+    #[case] replacement: Option<&[u8]>,
+    #[case] failing_command: &str,
+) {
     let repo = Repository::new().await;
     repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 4\nc = 5 + 6\n");
     repo.commit().await;
+    if detached {
+        repo.git(&["checkout", "--quiet", "--detach"]).await;
+    }
     repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 9\nc = 5 + 6\n");
 
     let selection = repo.selection();
@@ -288,13 +299,14 @@ async fn corrupt_head_stops_changed_target_resolution() {
         std::fs::set_permissions(&object, permissions).unwrap();
     }
     std::fs::remove_file(&object).unwrap();
-    std::fs::write(&object, b"not a git object").unwrap();
+    if let Some(bytes) = replacement {
+        std::fs::write(&object, bytes).unwrap();
+    }
 
     let error = TargetHandler::resolve(&selection).await.unwrap_err();
     let text = error.to_string();
     assert!(
-        text.contains("git rev-parse --verify --quiet HEAD^{commit} exited with")
-            && text.contains("128"),
+        text.contains(&format!("{failing_command} exited with")) && text.contains("128"),
         "{text}"
     );
 }

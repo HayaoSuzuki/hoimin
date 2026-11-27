@@ -191,13 +191,22 @@ async fn head_exists(
     runner: &GitRunner,
     cancellation: &ProcessCancellation,
 ) -> Result<bool, GitError> {
-    const ARGS: &[&str] = &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"];
-    let output = runner.output(root, ARGS, cancellation).await?;
-    match output.status.code() {
-        Some(0) => Ok(true),
-        // Quiet verification exits 1 when the revision cannot be resolved.
+    const COMMIT_ARGS: &[&str] = &["rev-parse", "--verify", "--quiet", "HEAD^{commit}"];
+    const REF_ARGS: &[&str] = &["show-ref", "--verify", "--quiet", "--", "HEAD"];
+    let commit = runner.output(root, COMMIT_ARGS, cancellation).await?;
+    match commit.status.code() {
+        Some(0) => return Ok(true),
+        Some(1) => {}
+        _ => return Err(git_exit_error(COMMIT_ARGS, &commit)),
+    }
+
+    // An unborn HEAD must be symbolic and have no resolvable reference.
+    run_git(root, &["symbolic-ref", "HEAD"], runner, cancellation).await?;
+    let reference = runner.output(root, REF_ARGS, cancellation).await?;
+    match reference.status.code() {
         Some(1) => Ok(false),
-        _ => Err(git_exit_error(ARGS, &output)),
+        Some(0) => Err(git_exit_error(COMMIT_ARGS, &commit)),
+        _ => Err(git_exit_error(REF_ARGS, &reference)),
     }
 }
 

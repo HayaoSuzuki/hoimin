@@ -7,7 +7,7 @@ inductive Comparison | head | mergeBase (oid : String)
   deriving BEq
 
 inductive Request
-  | worktree | head | revision (name : String)
+  | worktree | head | symbolicHead | headReference | revision (name : String)
   | inventory (base : Comparison)
   | patch (base : Comparison) (context : Nat) (paths : List String := [])
   | numstat (base : Comparison) (paths : List String := [])
@@ -41,6 +41,8 @@ structure Input where
   scope : Option (List String) := none
   worktree : Reply := .exited 0 (utf8 "true\n")
   headStatus : Option Nat := some 0
+  symbolicStatus : Option Nat := some 0
+  referenceStatus : Option Nat := some 1
   oid : Reply := .exited 0 (List.replicate 40 97 ++ [10])
   inventory : Inventory := .modified
   changedPatch : Bool := false
@@ -125,6 +127,14 @@ theorem headRoute_failure_iff (status : Option Nat) :
 private def worktreeAccepted (reply : Reply) : Bool :=
   reply.status == some 0 && trim reply.bytes == utf8 "true"
 
+private def confirmUnborn (input : Input) : List Exchange :=
+  let symbolic : Exchange := ⟨.symbolicHead, ⟨input.symbolicStatus, utf8 "refs/heads/fixture\n"⟩,
+    if input.symbolicStatus == some 0 then none else some .command⟩
+  let reference : Exchange := ⟨.headReference, ⟨input.referenceStatus, []⟩,
+    if input.referenceStatus == some 1 then none else some .command⟩
+  symbolic :: reference :: (if input.referenceStatus == some 1 then
+    [response input .indexed (.exited 0 (utf8 (selectedPath ++ "\x00")))] else [])
+
 def requests (input : Input) : List Exchange :=
   let worktreeFailure := if worktreeAccepted input.worktree then none else some Failure.repository
   let start : Exchange := ⟨.worktree, input.worktree, worktreeFailure⟩
@@ -136,8 +146,7 @@ def requests (input : Input) : List Exchange :=
     let reply : Reply := ⟨input.headStatus, []⟩
     match headRoute input.headStatus with
     | .ok true => ⟨.head, reply, none⟩ :: tracked input .head
-    | .ok false => [
-        ⟨.head, reply, none⟩, response input .indexed (.exited 0 (utf8 (selectedPath ++ "\x00")))]
+    | .ok false => ⟨.head, reply, none⟩ :: confirmUnborn input
     | .error failure => [⟨.head, reply, some failure⟩]
   start :: selected ++ [response input .untracked (.exited 0 (utf8 (untrackedPath ++ "\x00")))]
 
@@ -155,6 +164,16 @@ theorem fatal_head_stops (input : Input) (ordinary : input.revision = none)
     (fatal : headRoute input.headStatus = .error .command) :
     (execute (requests input)).map (·.request) = [.worktree, .head] := by
   simp [requests, ordinary, accepted, fatal, execute]
+
+theorem indexed_iff_unborn_after_unresolved (input : Input) (ordinary : input.revision = none)
+    (accepted : worktreeAccepted input.worktree = true) (unresolved : input.headStatus = some 1) :
+    Request.indexed ∈ (execute (requests input)).map (·.request) ↔
+      input.symbolicStatus = some 0 ∧ input.referenceStatus = some 1 := by
+  by_cases symbolic : input.symbolicStatus = some 0 <;>
+    by_cases reference : input.referenceStatus = some 1 <;>
+    by_cases injected : (input.failAt == some Request.indexed) = true <;>
+    simp [requests, ordinary, accepted, unresolved, headRoute, confirmUnborn,
+      symbolic, reference, execute, response, injected]
 
 theorem stops_at_failure (before after : List Exchange) (failed : Exchange)
     (ok : ∀ call ∈ before, call.failure = none) (hasError : failed.failure.isSome = true) :
