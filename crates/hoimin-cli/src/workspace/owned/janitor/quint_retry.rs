@@ -1,11 +1,13 @@
 //! Compare production retry order with model histories of injected slice results.
+#[cfg(unix)]
+use super::super::{CleanupCapabilities, open_regular_file_nofollow};
 use super::super::{
-    CleanupCapabilities, DELETING_PREFIX, LEASE_FILE, LEASE_SCHEMA, LeaseMarker,
-    ManagedRootCoordinator, OwnerKind, PendingCleanup, ReclaimRemoval, TEST_CLEANUP_SLICE_ENTRIES,
-    create_owned_directory, directory_identity, open_regular_file_nofollow, reclaim_removal,
+    DELETING_PREFIX, LEASE_FILE, LEASE_SCHEMA, LeaseMarker, ManagedRootCoordinator, OwnerKind,
+    PendingCleanup, ReclaimRemoval, TEST_CLEANUP_SLICE_ENTRIES, create_owned_directory,
+    directory_identity, reclaim_removal,
 };
 #[cfg(windows)]
-use super::super::{inspect_marker_evidence, open_owned_directory_for_rename, reopen_locked_lease};
+use super::quint_removal::pin_cleanup;
 use super::retry_deferred;
 use crate::quint_itf::{number, states};
 use camino::Utf8Path;
@@ -99,21 +101,16 @@ fn make_pending(coordinator: &ManagedRootCoordinator, index: usize) -> PendingCl
         nested.write("payload", b"beyond this slice").unwrap();
     }
     let expected_identity = directory_identity(&root).unwrap();
-    let lease = open_regular_file_nofollow(&root, LEASE_FILE).unwrap();
     #[cfg(unix)]
     let capabilities = {
+        let lease = open_regular_file_nofollow(&root, LEASE_FILE).unwrap();
         lease.try_lock().unwrap();
         CleanupCapabilities::with_lease(Some(lease))
     };
     #[cfg(windows)]
     let capabilities = {
-        let path = coordinator.path.join(&deleting_name);
-        let evidence = inspect_marker_evidence(&lease, &path.join(LEASE_FILE)).unwrap();
-        drop(lease);
         drop(root);
-        let root = open_owned_directory_for_rename(&coordinator.dir, &deleting_name).unwrap();
-        let lease = reopen_locked_lease(&root, &evidence, &path).unwrap();
-        CleanupCapabilities::claimed(root, lease)
+        pin_cleanup(coordinator, &deleting_name)
     };
     PendingCleanup {
         index,

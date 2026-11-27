@@ -196,7 +196,7 @@ each boundary.
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy | Windows mutation barrier needs native Rust verification |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` covers individual roots and interrupted cleanup. A joined Rust replay checks mixed namespaces across two scans and a coordinator reopen | Native replay on Windows |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion | Windows lease reacquisition needs native Rust verification |
-| Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, and partial deletion with a small tree. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Integration of the Windows pinned handle, pending rounds, and report accounting |
+| Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, partial deletion, and replacement after Windows handle consumption. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Native Windows replay of the pinned-handle histories |
 | Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline. `janitor_reclaim.qnt` compares the real janitor's finished report after two deferred roots are retried | Windows pinned-handle verification |
 | Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results, deferred cleanup counters, retained details, and the published shell report | A single model connecting the process phases through publication |
 
@@ -503,7 +503,11 @@ The Rust replay drives `remove_claimed_tree_slice_with_capabilities` against
 the claimed name and its original identity. It checks the per-call and
 cumulative removals, the cap when a slice examines one entry, and the actual
 layout after every operation. The replacement scenario exercises reopening by
-name. Windows exact-handle removal has separate implementation tests.
+name. The native Windows replay also runs the limit and finalization histories
+with pinned root and lease handles. `consumedReplacementStep` installs a
+same-name replacement after the original root has been removed and supplies
+the replacement's own identity. It must survive an attempt through the
+consumed handle.
 
 ```sh
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_removal

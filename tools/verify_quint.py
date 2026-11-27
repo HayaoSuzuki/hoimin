@@ -119,7 +119,12 @@ MODELS = (
         "janitor_removal.qnt",
         "JanitorRemoval",
         "janitor_removal",
-        scenarios=("limitsStep", "finalizationStep", "replacementStep"),
+        scenarios=(
+            "limitsStep",
+            "finalizationStep",
+            "replacementStep",
+            "consumedReplacementStep",
+        ),
         simulation_only=True,
         simulation_mutant_step="removeLeaseEarlyStep",
     ),

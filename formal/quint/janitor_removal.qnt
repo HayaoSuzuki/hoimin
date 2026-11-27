@@ -61,14 +61,15 @@ module JanitorRemoval {
       | _ => recordSlice(limit, s.remaining, Removed)
     }
 
-  action replace = all {
+  action replaceBinding = all {
     s.operations < maxOperations,
-    s.remaining.contains(Root),
     s.binding == Original,
     s' = { ...s, binding: Replacement, remainingAtReplacement: s.remaining,
       operations: s.operations + 1,
       sliceRemoved: 0, command: ReplaceName, result: NotRun },
   }
+
+  action replace = all { s.remaining.contains(Root), replaceBinding }
 
   action step = any {
     replace,
@@ -95,6 +96,18 @@ module JanitorRemoval {
     if (s.operations == 0) runSlice(StopAfterPayload)
     else if (s.operations == 1) replace
     else all { s.operations == 2, runSlice(FullSlice) }
+
+  // An acknowledged Windows root unlink consumes the handle. A later visit
+  // to a same-name replacement still lacks authority, even with its identity.
+  action consumedReplacementStep =
+    if (s.operations == 0) runSlice(FullSlice)
+    else if (s.operations == 1) replaceBinding
+    else all {
+      s.operations == 2,
+      s.binding == Replacement and s.remaining == Set(),
+      s' = { ...s, operations: s.operations + 1, command: RunSlice(FullSlice),
+        result: Refused, sliceRemoved: 0 },
+    }
 
   action removeLeaseEarlyStep = recordSlice(StopAfterPayload, Set(Lease), Deferred)
 
