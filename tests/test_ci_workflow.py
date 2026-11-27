@@ -1614,6 +1614,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/import-roots.jsonl",
         ),
         (
+            "generate_environment_fingerprint",
+            "--check-operator-selectors",
+            "corpus/operator-selectors.jsonl",
+        ),
+        (
             "generate_resume_budget",
             "--check-recheck",
             "corpus/resume-budget-recheck.jsonl",

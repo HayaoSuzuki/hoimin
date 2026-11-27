@@ -9,6 +9,8 @@ use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
 #[path = "support/import_root_oracle.rs"]
 mod import_root_oracle;
+#[path = "support/operator_selector_oracle.rs"]
+mod operator_selector_oracle;
 #[path = "support/resource_size_oracle.rs"]
 mod resource_size_oracle;
 
