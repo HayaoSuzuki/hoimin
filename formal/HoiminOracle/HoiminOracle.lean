@@ -45,6 +45,7 @@ import HoiminOracle.ProgressDecisionProofs
 import HoiminOracle.ProgressDecisionCases
 import HoiminOracle.ProgressInputModel
 import HoiminOracle.ProgressDuplicateModel
+import HoiminOracle.BufferedComparisonModel
 import HoiminOracle.ProgressInputProofs
 import HoiminOracle.NestedTryFlowModel
 import HoiminOracle.NestedTryFlowProofs

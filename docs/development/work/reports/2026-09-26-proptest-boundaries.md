@@ -685,3 +685,47 @@ timeout per command. The Rust runs used one build job and a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- progress::duplicate
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test progress -- duplicate output_defers_mixed_history_rendering
 ```
+
+## Lean model of buffered byte comparison
+
+The exact-byte confirmation used by `progress` compares the common-length
+prefix of the two available buffers. On a match it consumes that many
+bytes on both sides, retaining any remainder in the longer buffer. It
+stops at a byte mismatch or at EOF and returns equality only if both
+streams end together. Each iteration fills the left buffer first and
+propagates the first read error. A successful left EOF still requires a
+right fill because the right stream might have more bytes or a read error.
+
+Lean proves for arbitrary finite, error-free streams that the comparison
+returns equality exactly when all their bytes are equal, regardless of
+how either stream was split into nonempty buffers. The inductive step
+relates the matched prefix to the original byte sequences, then proves
+that the number of remaining bytes decreases. Separate theorems show
+that a left error stops before reading the right side and that a right
+read error takes precedence over a successful left EOF.
+
+The 324 internal-fixture cases pair 18 streams in both orders. They cover
+empty streams, strict prefixes, mismatches before and after a refill,
+different partitions of the same bytes, and interruption and other I/O
+errors before or after a matching prefix. The adapter supplies valid
+`BufRead` buffers to the same private loop used by the real file wrapper.
+It verifies each fill and consume against the generated trace and checks
+the returned result or error. Existing real-file tests cover the wrapper
+and its descriptor-length checks for growth and shrinkage.
+
+The sensitivity check detects six broken variants. They compare full
+buffers, discard a longer buffer's remainder, treat either EOF as equal,
+skip the right fill at left EOF, prefer a right error over a left error,
+or continue beyond a byte mismatch.
+
+On macOS, all 324 traces matched. The targeted Rust runs passed 162 unit
+tests and 34 CLI integration tests, and the CI workflow suite passed
+222. Lean used a 2 GiB cap and a 20-second timeout per command. The Rust
+runs used one build job and a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_progress_input -- --check-buffered-comparison corpus/progress-buffered-comparison.jsonl)
+(cd formal/HoiminOracle && lake exe generate_progress_input -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 progress::duplicate finite_file artifacts::run_report
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test progress -- --test-threads=2 duplicate output_defers_mixed_history_rendering
+```

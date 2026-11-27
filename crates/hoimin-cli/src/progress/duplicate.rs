@@ -7,6 +7,10 @@ use crate::artifacts::open_regular_file;
 use crate::finite_file::SnapshotReader;
 
 #[cfg(test)]
+#[path = "duplicate/buffered_oracle_tests.rs"]
+mod buffered_oracle_tests;
+
+#[cfg(test)]
 #[path = "duplicate/oracle_tests.rs"]
 mod oracle_tests;
 
@@ -79,6 +83,10 @@ fn identical_regular_files(left: &Path, right: &Path) -> io::Result<bool> {
     let mut right = BufReader::new(SnapshotReader::new(right)?);
     #[cfg(test)]
     tests::run_readers_prepared_hook();
+    compare_buffered(&mut left, &mut right)
+}
+
+fn compare_buffered(left: &mut impl BufRead, right: &mut impl BufRead) -> io::Result<bool> {
     loop {
         let left_bytes = left.fill_buf()?;
         let right_bytes = right.fill_buf()?;
