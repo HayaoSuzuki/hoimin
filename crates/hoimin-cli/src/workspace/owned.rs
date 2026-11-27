@@ -3485,6 +3485,13 @@ impl ManagedRootCoordinator {
             local_lock,
         })
     }
+
+    #[cfg(test)]
+    pub(crate) fn create_empty_deleting_fixture(&self, id: uuid::Uuid) -> Utf8PathBuf {
+        let name = format!("{DELETING_PREFIX}{id}");
+        create_owned_directory(&self.dir, &name).unwrap();
+        self.path.join(name)
+    }
 }
 
 fn ensure_bootstrap_deadline(

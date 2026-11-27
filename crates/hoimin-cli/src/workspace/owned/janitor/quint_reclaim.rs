@@ -396,7 +396,7 @@ fn quint_mixed_namespaces_wrap_after_reopening_the_coordinator() {
     drop(stage);
 
     let first =
-        ManagedRunRoot::reclaim_abandoned(&coordinator, threshold - Duration::from_nanos(1));
+        ManagedRunRoot::reclaim_abandoned(&coordinator, threshold - super::STALE_THRESHOLD_TICK);
     let first_trace = states(SHELL);
     let expected = &first_trace.last().unwrap()["summary"];
     assert_eq!(actual_counts(&first), expected_counts(expected));

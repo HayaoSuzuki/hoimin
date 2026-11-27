@@ -30,6 +30,10 @@ mod quint_retry;
 #[path = "janitor/quint_selection.rs"]
 mod quint_selection;
 
+// Windows SystemTime represents times in 100-nanosecond intervals.
+#[cfg(test)]
+const STALE_THRESHOLD_TICK: std::time::Duration = std::time::Duration::from_nanos(100);
+
 #[cfg(test)]
 fn quint_cursor_name(rank: u64) -> String {
     if rank == 0 {

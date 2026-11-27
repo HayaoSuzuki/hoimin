@@ -3,7 +3,7 @@ use super::super::{
     CleanupBudget, CleanupCapabilities, DELETING_PREFIX, HEARTBEAT_FILE, LEASE_FILE, LEASE_SCHEMA,
     LeaseMarker, ManagedRootCoordinator, OwnerKind, TEST_CLEANUP_SLICE_ENTRIES,
     create_owned_directory, directory_identity, open_owned_directory,
-    remove_claimed_tree_slice_with_capabilities,
+    remove_claimed_tree_slice_with_capabilities, write_owned_fixture,
 };
 #[cfg(windows)]
 use super::super::{
@@ -137,8 +137,8 @@ fn replay(trace: &str, claim: impl FnOnce(&ManagedRootCoordinator, &str) -> Clea
         owner: OwnerKind::PublicExecution,
     })
     .unwrap();
-    original.write(HEARTBEAT_FILE, &marker).unwrap();
-    original.write(LEASE_FILE, &marker).unwrap();
+    write_owned_fixture(&original, HEARTBEAT_FILE, &marker);
+    write_owned_fixture(&original, LEASE_FILE, &marker);
     let identity = directory_identity(&original).unwrap();
     drop(branch);
     drop(original);

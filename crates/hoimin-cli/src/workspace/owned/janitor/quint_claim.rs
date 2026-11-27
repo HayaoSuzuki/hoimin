@@ -5,7 +5,7 @@ use super::super::{
     ACTIVE_PREFIX, ClaimResult, CoordinatorLockGuard, DELETING_PREFIX, LEASE_FILE, LEASE_SCHEMA,
     LeaseMarker, ManagedRootCoordinator, OwnerKind, WorkspaceError, claim_managed_child,
     create_owned_directory, directory_identity, file_identity, open_owned_directory,
-    open_regular_file_nofollow,
+    open_regular_file_nofollow, write_owned_fixture,
 };
 use crate::{io_faults, quint_itf::states};
 use camino::Utf8Path;
@@ -25,7 +25,7 @@ fn expected_directory(binding: &Value) -> bool {
 
 fn make_directory(parent: &Dir, name: &str, marker: &[u8]) -> Dir {
     let dir = create_owned_directory(parent, name).unwrap();
-    dir.write(LEASE_FILE, marker).unwrap();
+    write_owned_fixture(&dir, LEASE_FILE, marker);
     dir.write("payload", name.as_bytes()).unwrap();
     dir
 }
@@ -137,7 +137,7 @@ fn prepare_claim<'a>(
         .is_some_and(|binding| tag(&binding["value"]["lease"]) == "OtherLease")
     {
         let name = "prior-lease";
-        original_dir.write(name, &marker).unwrap();
+        write_owned_fixture(&original_dir, name, &marker);
         name
     } else {
         LEASE_FILE

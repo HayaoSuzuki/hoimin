@@ -7671,16 +7671,14 @@ mod tests {
 
     fn quint_janitor_shell_fixture(parent: &Utf8Path) -> [Utf8PathBuf; 3] {
         let coordinator = ManagedRootCoordinator::open(parent).unwrap();
-        let managed = parent.join("hoimin-workspaces-v2");
-        let [behind_cursor, reclaimed] =
-            [1_u128, 2].map(|id| managed.join(format!(".deleting-{}", uuid::Uuid::from_u128(id))));
+        let first_id = uuid::Uuid::from_u128(1);
 
         // Populate the cursor through the real janitor, then rebuild the first name.
-        std::fs::create_dir(&behind_cursor).unwrap();
+        coordinator.create_empty_deleting_fixture(first_id);
         let seed = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
         assert_eq!(seed.reclaimed_roots, 1);
-        std::fs::create_dir(&behind_cursor).unwrap();
-        std::fs::create_dir(&reclaimed).unwrap();
+        let behind_cursor = coordinator.create_empty_deleting_fixture(first_id);
+        let reclaimed = coordinator.create_empty_deleting_fixture(uuid::Uuid::from_u128(2));
         let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
         let preserved_path = preserved.path().to_owned();
         preserved.unlock_fixture_lease();

@@ -1,8 +1,9 @@
 //! Replay candidate scans against real directory entries and coordinator slots.
 use super::super::{
     COORDINATOR_FILE, CoordinatorLockGuard, ManagedRootCoordinator, ManagedRunRoot,
-    decode_coordinator_slot, owned_directory_entries, read_coordinator_state,
-    select_reclaim_candidates, select_reclaim_candidates_controlled_with_hooks,
+    create_owned_directory, decode_coordinator_slot, owned_directory_entries,
+    read_coordinator_state, select_reclaim_candidates,
+    select_reclaim_candidates_controlled_with_hooks,
     select_reclaim_candidates_locked_until_with_hooks,
 };
 use super::quint_cursor_name as name;
@@ -27,7 +28,7 @@ pub(super) fn update_listing(
     }
     let additions: Vec<_> = current.difference(previous).copied().collect();
     for rank in additions.into_iter().rev() {
-        coordinator.dir.create_dir(name(rank)).unwrap();
+        create_owned_directory(&coordinator.dir, &name(rank)).unwrap();
     }
     *previous = current;
 }

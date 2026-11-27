@@ -2,8 +2,9 @@
 use super::super::{
     DELETING_PREFIX, HEARTBEAT_FILE, JANITOR_CLEANUP_BUDGET, LEASE_FILE, LEASE_SCHEMA, LeaseMarker,
     ManagedRootCoordinator, ManagedRunRoot, OwnerKind, STAGING_PREFIX, STALE_AFTER,
-    create_owned_directory,
+    create_owned_directory, write_owned_fixture,
 };
+use super::STALE_THRESHOLD_TICK;
 use crate::quint_itf::number;
 use crate::{io_faults, quint_itf::states};
 use camino::Utf8Path;
@@ -51,9 +52,9 @@ fn populate(candidate: &cap_std::fs::Dir, run_id: String, layout: &str) -> (Syst
             owner: OwnerKind::PublicExecution,
         })
         .unwrap();
-        candidate.write(LEASE_FILE, &marker).unwrap();
+        write_owned_fixture(candidate, LEASE_FILE, &marker);
         if heartbeat {
-            candidate.write(HEARTBEAT_FILE, &marker).unwrap();
+            write_owned_fixture(candidate, HEARTBEAT_FILE, &marker);
         }
     }
     if payload {
@@ -180,7 +181,7 @@ fn replay(value: &Value) {
     let (threshold, payload) = populate(&candidate, run_id, layout);
     drop(candidate);
     let (now, injection) = match tag(&input["age"]) {
-        "BeforeThreshold" => (threshold - Duration::from_nanos(1), None),
+        "BeforeThreshold" => (threshold - STALE_THRESHOLD_TICK, None),
         "AtThreshold" => (threshold, None),
         "AgeReadError" => (
             threshold,

@@ -4,6 +4,7 @@ use super::super::{
     LEASE_FILE, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, STALE_AFTER,
     open_owned_directory, open_regular_file_nofollow,
 };
+use super::STALE_THRESHOLD_TICK;
 use crate::io_faults;
 use crate::quint_itf::states;
 use camino::Utf8Path;
@@ -80,9 +81,9 @@ fn configure(root: &ManagedRunRoot, input: &Value) -> SystemTime {
         .unwrap()
         + STALE_AFTER;
     match heartbeat {
-        "BeforeStale" => threshold - Duration::from_nanos(1),
+        "BeforeStale" => threshold - STALE_THRESHOLD_TICK,
         "AtStale" | "HeartbeatMismatch" => threshold,
-        "AfterStale" => threshold + Duration::from_nanos(1),
+        "AfterStale" => threshold + STALE_THRESHOLD_TICK,
         other => panic!("unexpected heartbeat evidence {other}"),
     }
 }

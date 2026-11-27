@@ -4,7 +4,7 @@ use super::super::{CleanupCapabilities, open_regular_file_nofollow};
 use super::super::{
     DELETING_PREFIX, LEASE_FILE, LEASE_SCHEMA, LeaseMarker, ManagedRootCoordinator, OwnerKind,
     PendingCleanup, ReclaimRemoval, TEST_CLEANUP_SLICE_ENTRIES, create_owned_directory,
-    directory_identity, reclaim_removal,
+    directory_identity, reclaim_removal, write_owned_fixture,
 };
 #[cfg(windows)]
 use super::quint_removal::pin_cleanup;
@@ -91,8 +91,7 @@ fn make_pending(coordinator: &ManagedRootCoordinator, index: usize) -> PendingCl
         created_unix_seconds: 5,
         owner: OwnerKind::PublicExecution,
     };
-    root.write(LEASE_FILE, serde_json::to_vec(&marker).unwrap())
-        .unwrap();
+    write_owned_fixture(&root, LEASE_FILE, &serde_json::to_vec(&marker).unwrap());
     if index == 0 {
         root.write("payload", b"reclaimable").unwrap();
     } else {
