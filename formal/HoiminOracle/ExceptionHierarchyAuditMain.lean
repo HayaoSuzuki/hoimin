@@ -1,4 +1,5 @@
 import HoiminOracle.ExceptionHierarchyProofs
+import HoiminOracle.ExceptionAcquisitionCases
 import Lean.Data.Json
 
 open HoiminOracle.ExceptionHierarchy Lean
@@ -402,12 +403,19 @@ def main (args : List String) : IO Unit := do
   match args with
   | ["--output", path] => IO.FS.writeFile path corpus
   | ["--check", path] => unless (← IO.FS.readFile path) == corpus do throw (IO.userError "stale corpus")
-  | ["--sensitivity"] => checkSensitivity
+  | ["--output-acquisition", path] => IO.FS.writeFile path HoiminOracle.ExceptionAcquisition.corpus
+  | ["--check-acquisition", path] =>
+      unless (← IO.FS.readFile path) == HoiminOracle.ExceptionAcquisition.corpus do
+        throw (IO.userError "stale exception acquisition corpus")
+  | ["--sensitivity"] =>
+      checkSensitivity
+      unless (← HoiminOracle.ExceptionAcquisition.sensitivity) == 0 do
+        throw (IO.userError "exception acquisition sensitivity failed")
   | ["--assert-old-safe"] =>
       match (domain 3).find? (fun es => usable (brokenRun 0 false es)) with
       | some es => throw (IO.userError s!"refuted old current-only check: {repr es}")
       | none => pure ()
-  | _ => throw (IO.userError "usage: --output PATH | --check PATH | --sensitivity | --assert-old-safe")
+  | _ => throw (IO.userError "usage: --output PATH | --check PATH | --output-acquisition PATH | --check-acquisition PATH | --sensitivity | --assert-old-safe")
 
 end ExceptionHierarchyAudit
 

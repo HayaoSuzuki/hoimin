@@ -1609,6 +1609,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/resource-sizes.jsonl",
         ),
         (
+            "generate_exception_hierarchy",
+            "--check-acquisition",
+            "corpus/exception-acquisition.jsonl",
+        ),
+        (
             "generate_environment_fingerprint",
             "--check-import-roots",
             "corpus/import-roots.jsonl",

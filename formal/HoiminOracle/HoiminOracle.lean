@@ -137,6 +137,7 @@ import HoiminOracle.OperatorSelectorModel
 
 import HoiminOracle.ResumeDiagnosticModel
 import HoiminOracle.ExceptionHierarchyModel
+import HoiminOracle.ExceptionAcquisitionModel
 import HoiminOracle.ExceptionHierarchyProofs
 import HoiminOracle.WorkerMetricsProofs
 import HoiminOracle.StageMetricsModel

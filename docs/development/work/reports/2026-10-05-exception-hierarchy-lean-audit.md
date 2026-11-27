@@ -440,3 +440,56 @@ The guarded Lean build/freshness/sensitivity and whole-workspace commands above
 remain applicable. No unresolved mismatch remains in these cases. Untracked
 object/function aliases, arbitrary external monkeypatching, dynamic import hooks
 and general concurrent scheduling remain outside the established correspondence.
+
+## Source acquisition and cache publication
+
+The index loader caps each raw read at the smaller of the per-file limit and
+the remaining decoded-byte budget. After reading a file it checks the prepared
+fingerprint, decodes the bytes, checks the decoded per-file limit, and charges
+the decoded size against the project budget. A depth error from analysis is
+held until the remaining files pass acquisition. A later acquisition error
+terminates the load and leaves an empty cache. A successful load publishes the
+index. On a later call, cancellation is checked before any cached index is
+returned.
+
+| Observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Raw and decoded limits | Separate lengths and a remaining budget | Real retained-root reads and Python decoding of generated ASCII and Latin-1 bytes |
+| Prepared fingerprint | Matching, changed, or absent entry | Prepared hash map and BLAKE3 comparison of actual source bytes |
+| Failure precedence | First acquisition error or deferred depth error | Load result, including the path for file-specific errors |
+| Cache publication and reuse | Sequential load attempts with optional file replacement or cancellation | Cache occupancy and identity of the returned `Arc<ExceptionIndex>` |
+
+The runtime adapter invokes the same loader as production with small byte
+limits. Production supplies its existing 16 MiB per-file and 64 MiB project
+limits. Lean proves that a successful file charge subtracts exactly the
+decoded size, acquisition never increases the remaining budget, a file error
+precedes a pending analysis error, and a failed uncached load cannot publish
+an index. Cancelling at load entry preserves the previous cache state.
+
+The corpus contains 129 cases and 134 load attempts. Seventy-two single-file
+cases vary the byte layout, prepared fingerprint state, and limits. Forty-eight
+two-file cases exercise the project budget. Nine focused cases cover error
+ordering, repair followed by a successful retry, cancellation with and without
+a cache, and reuse after source replacement. At most two sources are present
+in one fixture. Six sensitivity checks detect charging raw bytes, skipping
+the decoded per-file limit, decoding before checking the fingerprint, reporting
+analysis errors early, looking up the cache before cancellation, and caching
+an unsuccessful build.
+
+The model takes bounded file discovery as a premise and compares the sequential
+loader stages. Metadata races, concurrent cache publication, and cancellation
+inside parsing are outside these fixtures.
+
+All 134 attempts matched on macOS, including 42 successful builds, two
+cache hits, and 90 errors. The largest generated input was 646 bytes. Rust
+passed 25 project unit tests and 41 analyzer and public-plan integration tests.
+The CI workflow suite passed 222. Guarded Lean checks peaked at 1,318,544 KiB
+under a 2 GiB limit and 20-second timeout. Single-job Rust checks peaked at
+2,307,328 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl)
+(cd formal/HoiminOracle && lake exe generate_exception_hierarchy -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib analyzer::exception_project -- --test-threads=1
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test analyzer_handler --test lean_exception_hierarchy_oracle -- --test-threads=1
+```
