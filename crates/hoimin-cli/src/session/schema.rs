@@ -9,6 +9,8 @@ use thiserror::Error;
 #[cfg(test)]
 mod admission_oracle_tests;
 #[cfg(test)]
+mod uri_oracle_tests;
+#[cfg(test)]
 mod wal_retry_oracle_tests;
 
 pub(crate) const SCHEMA_VERSION: i64 = 5;

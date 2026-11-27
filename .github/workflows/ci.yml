@@ -756,6 +756,9 @@ jobs:
             HoiminOracle.SessionWalRetryModel
             HoiminOracle.SessionWalRetryCases
             SessionWalRetryAuditMain
+            HoiminOracle.SessionUriModel
+            HoiminOracle.SessionUriCases
+            SessionUriAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -857,6 +860,7 @@ jobs:
             'generate_session_admission|corpus/session-admission.jsonl|sensitivity'
             'generate_session_wal_admission|corpus/session-wal-admission.jsonl|sensitivity'
             'generate_session_wal_retry|corpus/session-wal-retry.jsonl|sensitivity'
+            'generate_session_uri|corpus/session-uri.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

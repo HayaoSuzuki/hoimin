@@ -154,6 +154,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_session_admission": "corpus/session-admission.jsonl",
     "generate_session_wal_admission": "corpus/session-wal-admission.jsonl",
     "generate_session_wal_retry": "corpus/session-wal-retry.jsonl",
+    "generate_session_uri": "corpus/session-uri.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

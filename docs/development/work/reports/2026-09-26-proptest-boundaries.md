@@ -1973,3 +1973,43 @@ a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_session_wal_retry -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session::schema:: -- --test-threads=1
 ```
+
+## Lean model of immutable SQLite URI construction
+
+The session opener constructs a `file:` URI by encoding each native
+pathname byte as an uppercase percent triplet and appending the fixed
+`?immutable=1` option. Lean proves that parsing the generated text
+recovers the original bytes for arbitrary input length and that equal
+URIs imply equal input bytes. The encoded pathname contains ASCII
+characters and no raw question mark, fragment marker, or slash.
+The modeled parser covers the generated URI form.
+
+The 22 cases compare the Rust encoding with the generated text. The
+codec cases include all 256 byte values, embedded NUL, malformed UTF-8,
+and lexical Unix, drive, UNC, and verbatim path spellings. Valid
+pathname fixtures additionally check the bundled SQLite reader. Each
+fixture creates a database at the intended location and two neighbors
+with different rows, opens the production URI read-only, and reads the
+intended row. It also calls `SessionHandler::open` on the same path and
+checks that rejecting a foreign schema preserves the directory's names
+and file contents. The adapter probes the environment's ability to
+create a non-UTF-8 pathname before attempting the URI read.
+
+Seven sensitivity checks cover raw URI delimiters, percent handling,
+slash handling, nibble order, replacement of high bytes, and loss of
+the fixed option. The Windows-only native fixture checks that a
+pathname with an unpaired UTF-16 surrogate returns `InvalidPath`.
+
+On macOS, all 22 codec cases and 10 SQLite file cases matched in
+both the default and `contracts` configurations. Direct SQLite
+open could not create the non-UTF-8 fixture pathname in this
+environment. The encoding of that pathname was checked. The 88-test
+schema suite, 23 active-session CLI tests, and 222 workflow tests
+passed. Native Windows runtime cases require a Windows host. Lean
+used a 2 GiB limit and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_uri -- --check corpus/session-uri.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_uri -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_immutable_uri -- --test-threads=1 --nocapture
+```
