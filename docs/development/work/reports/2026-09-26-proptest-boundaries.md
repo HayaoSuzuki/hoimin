@@ -2054,3 +2054,46 @@ with a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_session_header -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_header_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of session schema catalog identity
+
+For the current schema version, admission compares SQLite's object
+type, name, owning table name, and optional SQL text. The query orders
+rows by type and name. The comparison normalizes ASCII whitespace
+between existing SQL words and trims it at the ends. It preserves
+SQL case and non-ASCII characters. The selected columns omit the
+physical root page.
+
+Lean proves that normalization preserves the object key and table name,
+that equal word sequences normalize identically, and that NULL SQL
+differs from an empty SQL string. Equality of the normalized catalogs
+requires equal object counts, so adding an object changes admission.
+The catalog model uses representative rows and the exact SQL
+fragments used by the edits.
+
+The Rust fixture obtains full definitions from the production
+initializer. It applies each edit to those definitions and creates a
+real version-five database. The fixture checks that SQLite stored
+each changed fragment and that the creation-order and root-page
+fixtures have the intended physical differences. It then calls the
+normal session opener. On rejection it compares names and bytes in
+the containing directory.
+
+The 46 cases pair each edit with rollback and closed WAL journal modes.
+They include spacing at an existing token boundary, quoted names,
+non-ASCII spacing, missing constraints and foreign keys, altered
+index definitions, and extra tables, indexes, views, and triggers.
+Six sensitivity variants check SQL text, case, Unicode spacing,
+indexes, creation order, and rejection of extra objects.
+
+All 46 cases matched on macOS in both the default and `contracts`
+configurations, with 12 admitted and 34 rejected. Each schema suite
+passed 90 tests. The session handler target passed 102 tests with
+one existing ignored test, and the workflow suite passed 222.
+Lean ran under a 2 GiB limit and single-job Rust under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_catalog -- --check corpus/session-catalog.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_catalog -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_catalog_matches_lean_oracle -- --test-threads=1
+```

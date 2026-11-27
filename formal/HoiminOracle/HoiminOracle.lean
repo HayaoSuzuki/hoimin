@@ -175,6 +175,7 @@ import HoiminOracle.SessionWalAdmissionModel
 import HoiminOracle.SessionWalRetryModel
 import HoiminOracle.SessionUriModel
 import HoiminOracle.SessionHeaderModel
+import HoiminOracle.SessionCatalogModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

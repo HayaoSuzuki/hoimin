@@ -9,6 +9,8 @@ use thiserror::Error;
 #[cfg(test)]
 mod admission_oracle_tests;
 #[cfg(test)]
+mod catalog_oracle_tests;
+#[cfg(test)]
 mod header_oracle_tests;
 #[cfg(test)]
 mod uri_oracle_tests;
