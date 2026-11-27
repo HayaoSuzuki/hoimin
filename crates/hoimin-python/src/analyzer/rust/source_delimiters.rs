@@ -4,6 +4,10 @@ use super::AnalysisCancelled;
 use ruff_python_ast::token::{TokenKind, Tokens};
 use ruff_text_size::{Ranged, TextRange, TextSize};
 
+#[cfg(test)]
+#[path = "source_delimiters/oracle_tests.rs"]
+mod oracle_tests;
+
 // CPython caps delimiters at 200, including redundant parentheses absent
 // from the AST. Record only the intervals that exclude up to eight additional
 // delimiters, so shallow files need no per-token storage.

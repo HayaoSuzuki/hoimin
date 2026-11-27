@@ -73,6 +73,7 @@ import HoiminOracle.OutputRetentionProofs
 import HoiminOracle.CandidateSpanModel
 import HoiminOracle.SourceCoordinatesModel
 import HoiminOracle.SourceDeclarationModel
+import HoiminOracle.DelimiterDepthModel
 import HoiminOracle.CandidateSpanProofs
 import HoiminOracle.CandidateSpanCases
 import HoiminOracle.ChangedTargetModel

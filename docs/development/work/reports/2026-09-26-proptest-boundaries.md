@@ -148,3 +148,47 @@ tests. The CI workflow suite passed 222 tests. Guarded Lean checks peaked at
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test source_encoding --test source_encoding_properties --test candidate_policy
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test analyzer_handler
 ```
+
+## Lean model of delimiter depth admission
+
+Hoimin checks whether a mutation can add one through eight delimiters while
+keeping the original source at or below depth 200. Lean counts the enclosing
+pairs at each byte of a proposed range and counts the pairs strictly enclosing
+an insertion point. A delimiter contributes to a range starting at its opening
+byte and ceases to contribute at the end of its closing token. An insertion
+exactly at an opening or closing end lies outside that pair. The Rust adapter
+parses the source with the production parser and uses its ordinary
+`DelimiterDepth` constructor and query methods.
+
+Lean proves that an addition with fewer delimiters also fits when a larger
+addition fits, that depth 200 is allowed, and that an empty range has the
+insertion result. For a nonempty range, it proves that checking every byte is
+equivalent to checking disjointness from a set of intervals, given that those
+intervals cover exactly the bytes above the depth budget. The Rust comparison
+also checks the number of retained intervals at each depth and observes that
+shallow source retains none.
+
+The 15 cases include pure parentheses at depths 190 through 200, mixed
+delimiter kinds, two separate deep expressions, UTF-8 and CRLF preceding a
+deep expression, and delimiter characters in comments or literals. The
+adapter evaluates both admission methods for 4,312 combinations of byte range
+and addition size. These are `internal-fixture` cases because the index and its
+queries are private to the analyzer. The fixtures use balanced source within
+the depth limit. The audit covers index admission independently of individual
+mutation operators and cancellation.
+
+The sensitivity check catches rejecting depth 200, counting an opener before
+it occurs, including an exclusive range end, checking only the range start,
+ignoring a later depth peak, and counting only round delimiters.
+
+On macOS, Rust matched all 4,312 paired observations and all 120 interval
+counts. The library suite passed 5,212 tests with 5 ignored, and the CI
+workflow suite passed 222 tests. The largest source is 817 bytes. The Lean
+checks used a 20-second timeout and 2 GiB limit. The single-job Rust run took
+81 seconds and peaked at 3,048,992 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-delimiter-depth corpus/delimiter-depth.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-python --lib
+```
