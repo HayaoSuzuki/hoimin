@@ -157,6 +157,7 @@ import HoiminOracle.EnvironmentFingerprintModel
 import HoiminOracle.RelativePathModel
 import HoiminOracle.PlanRecordsModel
 import HoiminOracle.PlanVerifyModel
+import HoiminOracle.PlanDiscoveryBudgetModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

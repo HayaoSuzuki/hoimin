@@ -21,6 +21,9 @@ use crate::shell;
 use crate::target::TargetHandler;
 use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[cfg(test)]
+#[path = "plan/discovery_budget_oracle_tests.rs"]
+mod discovery_budget_oracle_tests;
 mod preview;
 pub use preview::VerifyPreview;
 

@@ -138,6 +138,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_run_fingerprint": "corpus/run-fingerprint.jsonl",
     "generate_plan_records": "corpus/plan-records.jsonl",
     "generate_plan_verify": "corpus/plan-verify.jsonl",
+    "generate_plan_discovery_budget": "corpus/plan-discovery-budget.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

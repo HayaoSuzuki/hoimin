@@ -1253,3 +1253,45 @@ at 2,059,120 KiB under its 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 plan::
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan -- --test-threads=2
 ```
+
+## Lean model of bounded plan rediscovery
+
+The bounded candidate discovery model retains a prefix of the complete
+ordered candidate stream. Verification projects the original target
+slices onto requested files, preserving their order, and gives those
+slices the saved candidate limit. Lean proves that the kept part of
+the original prefix remains a prefix of rediscovery when each
+retained file supplies the same ordered candidates. Every saved
+candidate in a retained file therefore remains visible. Removing
+files cannot introduce truncation, and an untruncated original has
+exactly its kept projection after rediscovery.
+
+The 143 cases use six file layouts and candidate limits from one through
+one above the complete candidate count. They cover empty files at the
+limit, overflow first observed in a later file, and requests for
+individual candidates and groups of files. The Python fixtures put a
+binary addition mutation outside the saved line range in each file.
+The adapter runs the public planner, then uses the production target
+projection and discovery functions. It compares candidate positions,
+operators, sequence numbers, truncation, the diagnostic file and plan
+exit status. The 142 nonempty requests also exercise the public verify
+preview and compare returned stable IDs in discovery order.
+
+The corpus has 68 truncated plans. In ten cases, the restricted discovery
+admits more candidates than the kept portion of the original prefix
+because earlier files release capacity. The preview retains the requested
+IDs. Five deliberate variants exercise target projection, capacity reuse,
+rediscovery after projection, target order, and the exact limit.
+
+All 143 cases matched on macOS. The Rust plan suites passed 529 unit
+tests and 292 integration tests, with four existing ignored tests.
+The workflow suite passed 222 tests. Lean peaked at 1,261,120 KiB
+under a 2 GiB cap. Single-job Rust peaked at 2,203,536 KiB under a
+3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_plan_discovery_budget -- --check corpus/plan-discovery-budget.jsonl)
+(cd formal/HoiminOracle && lake exe generate_plan_discovery_budget -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 plan::
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan -- --test-threads=2
+```

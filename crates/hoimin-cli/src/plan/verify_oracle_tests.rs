@@ -207,7 +207,7 @@ fn target_slices(targets: &[Target], candidates: [&RankedPlanCandidate; 3]) -> V
         .collect()
 }
 
-async fn public_result(
+pub(super) async fn preview_candidate_ids(
     manifest: &PlanManifest,
     requested: Vec<String>,
     artifact: &tempfile::NamedTempFile,
@@ -264,7 +264,7 @@ async fn planned_candidate_verification_matches_lean() {
 
         let actual = if case.live {
             public += 1;
-            public_result(&manifest, requested.collect(), &artifact).await
+            preview_candidate_ids(&manifest, requested.collect(), &artifact).await
         } else {
             let mut stats = ValidationStats::default();
             let actual = validate_requested_candidates(
