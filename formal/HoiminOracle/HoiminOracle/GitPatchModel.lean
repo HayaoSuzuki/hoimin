@@ -104,7 +104,7 @@ private def findHeader (test : Line → Option Header) : List Line → Option (H
     | some header => some (header, suffix)
     | none => findHeader test suffix
 
-private def isPython (path : String) : Bool :=
+def isPython (path : String) : Bool :=
   let name := (path.splitOn "/").getLast?.getD ""
   name.length > 3 && name.toLower.endsWith ".py"
 

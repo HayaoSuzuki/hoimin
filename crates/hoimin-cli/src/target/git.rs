@@ -8,6 +8,8 @@ use hoimin_core::{
 use tokio::process::Command;
 
 mod lines;
+#[cfg(test)]
+mod numstat_oracle_tests;
 mod paths;
 mod runner;
 mod tracked;
@@ -545,6 +547,14 @@ fn read_current_source(
 struct GitChangedRanges(BTreeMap<Utf8PathBuf, Vec<LineRange>>);
 
 impl GitChangedRanges {
+    fn from_patch(
+        mut changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
+        excluded: &BTreeSet<Utf8PathBuf>,
+    ) -> Self {
+        changed.retain(|path, _| !excluded.contains(path));
+        Self(normalize_changed(changed))
+    }
+
     /// Convert LF rows against current bytes before joining unborn or untracked ranges.
     async fn into_physical(
         self,

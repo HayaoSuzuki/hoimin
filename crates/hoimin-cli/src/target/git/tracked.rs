@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::{GitError, GitRunner};
 use crate::process::ProcessCancellation;
 use camino::Utf8Path;
-use hoimin_core::{TargetError, normalize_changed};
+use hoimin_core::TargetError;
 
 use super::{GitChangedRanges, GitPathScope, parse_binary_numstat, parse_diff, run_git};
 
@@ -70,8 +70,7 @@ pub(super) async fn collect(
             }
         }
     }
-    changed.retain(|path, _| !excluded.contains(path));
-    Ok(GitChangedRanges(normalize_changed(changed)))
+    Ok(GitChangedRanges::from_patch(changed, &excluded))
 }
 
 fn scoped_args<'a>(args: &[&'a str], paths: &'a [String]) -> Vec<&'a str> {

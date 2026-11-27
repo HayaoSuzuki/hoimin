@@ -295,3 +295,47 @@ ceiling, peaking at 1,281,920 KiB. The single-job Rust checks peaked at
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
 ```
+
+## Binary numstat exclusions
+
+A numstat record is binary when both count fields are dashes. A regular binary
+record contributes its one path. A binary rename contributes both paths, each
+checked independently for Python extension and scope membership. For any rename,
+the parser consumes both NUL-delimited paths even when the counts describe
+text. Binary paths are decoded as UTF-8 before scope filtering. Literal
+backslashes are rejected in unscoped reads and ignored in scoped reads.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Count fields and framing | Count status and typed regular, rename, padding, or malformed record | Corpus renderer delivers exact `--numstat -z` bytes, including invalid UTF-8 |
+| Scope and preexisting exclusions | Canonical optional path scope and seed paths | Real `GitPathScope` and the set passed to `parse_binary_numstat` |
+| Final tracked ranges | Membership difference over already normalized patch ranges | `GitChangedRanges::from_patch`, called by tracked collection |
+| Rejection | First structural or path diagnostic | Exact `TargetError::GitFailed` message |
+
+The 419 `internal-fixture` cases include 400 combinations of count fields,
+regular and rename path forms, and five scopes. Nineteen additional cases
+exercise NUL framing, padding, duplicates, unusual path spellings, ignored text
+path encodings, seeded exclusions, and competing errors. A failed parse has no
+final tracked range result. Git's binary classification, platform case aliases,
+and the subsequent conversion into Python physical rows stay outside this
+numstat model. Real Git integration tests exercise the call through public
+target resolution.
+
+Lean proves that a binary rename contributes exactly the selected Python
+endpoints, that replay of a successful stream preserves exclusion membership,
+and that an excluded path cannot survive the final filter. The six sensitivity
+witnesses detect using the new name alone, treating one dash as binary,
+ignoring malformed text-rename framing, bypassing scope, forgetting exclusions
+already recorded by the patch, and skipping the final filter.
+
+Rust matched all 402 success cases and 17 error cases. On macOS, 112 Git
+unit tests and 30 integration tests passed. Lean ran serially with a 20-second
+timeout and a 2 GiB process-tree RSS limit, peaking at 1,333,424 KiB. The
+single-job Rust checks peaked at 2,296,320 KiB under a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-git-numstat corpus/git-numstat.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
+```
