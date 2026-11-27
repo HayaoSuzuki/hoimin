@@ -904,3 +904,48 @@ Rust peaked at 2,129,040 KiB under a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests artifacts::tests
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of review listing and operator counts
+
+The listing joins planned candidates to saved reviews and optional
+execution results by stable ID. It keeps the plan order and preserves
+history for candidates whose source is stale or unavailable. The
+latest review is applicable only when the source is current. A report
+that was never loaded and a loaded report missing the candidate have
+different execution states.
+
+With `--stale`, saved candidates absent from the plan appear after the
+main list in snapshot order. They retain history and compatible
+execution results, use display sequence zero, and leave the latest
+review empty. Operator totals use only plan rows and count each as
+reviewed, unreviewed, stale, or source unavailable. The assessment
+breakdown uses the latest review of each reviewed row.
+
+Lean proves the stale membership rule, preservation of retired history
+and the empty review field, and the two accounting identities for row
+counts and assessed reviews. The corpus crosses four source layouts,
+three stored histories, four report layouts, and both `--stale` values.
+Six additional cases exercise stored-identity and retired-report
+descriptor conflicts, including conflicts absent from the displayed
+rows. Eight broken variants cover these joins and the accounting rules.
+
+The Rust adapter generates a plan with three current candidates from
+two operators and two candidates whose reviews outlive the plan. It
+seeds real SQLite stores through the normal append method, supplies
+current-schema JSONL reports, and invokes the public list entry point.
+It compares both ordered lists, descriptor preservation, history and
+applicable review, execution status, operator counts, and error
+diagnostics. The internal-fixture mode allows seeding a key with
+different original text and the same stable identity.
+
+On macOS all 102 cases matched. The targeted Rust runs passed 118 unit
+tests and 44 CLI integration tests, and the CI workflow suite passed 222.
+Lean used 2 GiB and 20-second limits per command. Single-job Rust
+peaked at 2,096,608 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-listing corpus/review-listing.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```

@@ -1,5 +1,7 @@
 use crate::artifacts::run_report::test_support::{current_report_view, jsonl_bytes, report_view};
 
+#[path = "listing_oracle_tests.rs"]
+mod listing_oracle_tests;
 #[path = "report_admission_oracle_tests.rs"]
 mod report_admission_oracle_tests;
 #[path = "store_destination_oracle_tests.rs"]
