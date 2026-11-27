@@ -250,22 +250,11 @@ fn check_resume_interleaving(case: &LoadRecheckCase) {
 
     let actual = loader.load(&load_request());
     assert!(loader.resume_after_candidate.is_none(), "{case:?}");
-    let status = match &actual {
-        Ok(SessionLoaded {
-            outcome: SessionLoadOutcome::Resumed(resume),
-            ..
-        }) => {
-            assert_eq!(resume.run_id, run_id, "{case:?}");
-            "resumed"
-        }
-        Ok(SessionLoaded {
-            outcome: SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::CandidateChanged),
-            ..
-        }) => "candidate_changed",
-        Ok(unexpected) => panic!("unexpected load outcome {unexpected:?}: {case:?}"),
-        Err(error) => error.failure.code(),
-    };
-    assert_eq!(status, case.expected_status, "{case:?}");
+    assert_eq!(
+        load_outcome_name(&actual, &run_id),
+        case.expected_status,
+        "{case:?}"
+    );
     assert_eq!(
         loader.ownerships.contains_key(&run_id),
         case.expected_loader_owns,
@@ -295,6 +284,139 @@ fn check_resume_interleaving(case: &LoadRecheckCase) {
         .unwrap();
     assert_eq!(row.map(|row| row.0), case.expected_run_finished, "{case:?}");
     assert_eq!(row.map(|row| row.1), case.expected_run_complete, "{case:?}");
+}
+
+fn load_outcome_name<'a>(actual: &'a Result<SessionLoaded, EffectFailed>, run_id: &str) -> &'a str {
+    match actual {
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Resumed(resume),
+            ..
+        }) => {
+            assert_eq!(resume.run_id, run_id);
+            "resumed"
+        }
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Fresh(reason),
+            ..
+        }) => reason.code(),
+        Err(error) => error.failure.code(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResumeBudgetRecheckCase {
+    schema: u8,
+    mode: String,
+    observed_budget: NonZeroUsize,
+    intervening_budget: NonZeroUsize,
+    requested_budget: NonZeroUsize,
+    expected_first: String,
+    expected_after_first: u64,
+    expected_retry: String,
+    expected_after_retry: u64,
+}
+
+#[test]
+fn resume_budget_recheck_and_retry_match_lean() {
+    let cases: Vec<ResumeBudgetRecheckCase> =
+        include_str!("../../../../formal/HoiminOracle/corpus/resume-budget-recheck.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+    assert_eq!(cases.len(), 12);
+    let mut seen = std::collections::BTreeSet::new();
+    for case in &cases {
+        assert_eq!(case.schema, 1);
+        assert_eq!(case.mode, "internal-fixture");
+        assert!(seen.insert((
+            case.observed_budget,
+            case.intervening_budget,
+            case.requested_budget
+        )));
+        check_resume_budget_recheck(case);
+    }
+}
+
+fn saved_mutant_budget(handler: &SessionHandler, run_id: &str) -> u64 {
+    let bytes: Vec<u8> = handler
+        .connection
+        .query_row(
+            "SELECT max_mutants FROM runs WHERE run_id=?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    u64::from_be_bytes(bytes.try_into().unwrap())
+}
+
+fn check_resume_budget_recheck(case: &ResumeBudgetRecheckCase) {
+    let (directory, mut owner) = fixture();
+    let mut begin = begin_request();
+    begin.max_mutants = case.observed_budget;
+    let run_id = begin.run_id.clone();
+    owner.begin(begin).unwrap();
+    assert_eq!(
+        saved_mutant_budget(&owner, &run_id),
+        case.observed_budget.get() as u64
+    );
+    let path = directory.path().join("session.sqlite3");
+    let mut loader = SessionHandler::open(&path).unwrap();
+    let mut intervening = load_request();
+    intervening.max_mutants = case.intervening_budget;
+    let selected_run = run_id.clone();
+    loader.resume_after_candidate = Some(Box::new(move |candidate| {
+        assert_eq!(candidate, selected_run);
+        assert_eq!(
+            load_outcome_name(&owner.load(&intervening), candidate),
+            "resumed"
+        );
+        assert_eq!(
+            saved_mutant_budget(&owner, candidate),
+            intervening.max_mutants.get() as u64
+        );
+        owner
+            .finish(FinishSession {
+                id: EffectId(5),
+                run_id: selected_run,
+                complete: false,
+            })
+            .unwrap();
+    }));
+
+    let mut request = load_request();
+    request.max_mutants = case.requested_budget;
+    let first = loader.load(&request);
+    assert!(loader.resume_after_candidate.is_none(), "{case:?}");
+    assert_eq!(
+        load_outcome_name(&first, &run_id),
+        case.expected_first,
+        "{case:?}"
+    );
+    assert_eq!(
+        saved_mutant_budget(&loader, &run_id),
+        case.expected_after_first,
+        "{case:?}"
+    );
+    let mut retry = SessionHandler::open(path).unwrap();
+    if case.expected_first == "candidate_changed" {
+        drop(
+            retry
+                .acquire_ownership(EffectId(6), &run_id, "inspect stale budget lock")
+                .unwrap(),
+        );
+    }
+    drop(loader);
+    assert_eq!(
+        load_outcome_name(&retry.load(&request), &run_id),
+        case.expected_retry,
+        "{case:?}"
+    );
+    assert_eq!(
+        saved_mutant_budget(&retry, &run_id),
+        case.expected_after_retry,
+        "{case:?}"
+    );
 }
 
 #[rstest::rstest]

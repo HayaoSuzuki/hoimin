@@ -233,3 +233,25 @@ lake exe generate_session -- --sensitivity
 cd ../..
 cargo test --locked -p hoimin-cli --lib resume_candidate_interleaving_matches_lean
 ```
+
+## Budget changes between candidate read and ownership acquisition
+
+The Lean model covers an incomplete, compatible run after ownership has been
+acquired. A stale observed budget prevents the write. In every modeled
+transition the saved budget can only stay the same or increase. The negative
+control omits the equality check and permits a stale request to write.
+
+Twelve `internal-fixture` cases use the same callback to let the existing
+owner apply a budget through the public `load` operation before releasing
+ownership. They include an unchanged budget and a change from 255 to 256.
+The Rust replay compares the first outcome and stored bytes, checks that a
+stale request releases the provisional lock, then retries on a new connection.
+The retry can resume with the requested budget or report `BudgetDecreased`.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
+lake exe generate_resume_budget -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --lib resume_budget_recheck_and_retry_match_lean
+```
