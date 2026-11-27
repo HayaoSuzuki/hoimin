@@ -76,7 +76,7 @@ MODELS = (
         "janitor_eligibility.qnt",
         "JanitorEligibility",
         "janitor_eligibility",
-        scenarios=("priorityStep", "fallbackStep"),
+        scenarios=("priorityStep", "fallbackStep", "leaseEvidenceStep"),
         simulation_only=True,
         simulation_mutant_step="retentionIgnoredStep",
     ),

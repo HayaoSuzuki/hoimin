@@ -1,12 +1,12 @@
-// One active root with a well-formed lease marker, evaluated per observation.
+// One active root evaluated per observation.
 // The root lease and marker contents stand for stable evidence during a scan.
 module JanitorEligibility {
-  type Lease = Locked | Available
+  type Lease = NoLease | NonFileLease | Locked | LeaseLockError | BrokenLease | Available
   type Retention = NoRetain | Retained | RetainReadError
   type Ready = NoReady | ReadyMatches | ReadyMismatch | ReadyIdentityError
   type Heartbeat = BeforeStale | AtStale | AfterStale | HeartbeatMismatch
   type Observation = { lease: Lease, retention: Retention, ready: Ready, heartbeat: Heartbeat }
-  type Reason = ActiveLease | RetainMarker | CandidateInspectionFailed |
+  type Reason = LeaseInvalid | ActiveLease | LeaseLockFailed | RetainMarker | CandidateInspectionFailed |
     MarkerInvalid | IdentityInspectionFailed | HeartbeatInvalid | Young
   type Outcome = Reclaimed | Held(Reason)
   type Report = { outcome: Outcome, details: List[Reason] }
@@ -33,12 +33,20 @@ module JanitorEligibility {
     | _ => { outcome: Reclaimed, details: earlier }
   }
 
-  pure def decide(input: Observation, bypassRetention: bool): Report =
-    if (input.lease == Locked) held(ActiveLease, [])
-    else if (input.retention == Retained and not(bypassRetention)) held(RetainMarker, [])
+  pure def decideAfterLease(input: Observation, bypassRetention: bool): Report =
+    if (input.retention == Retained and not(bypassRetention)) held(RetainMarker, [])
     else if (input.retention == RetainReadError) held(CandidateInspectionFailed, [])
     else if (input.ready == ReadyMatches) { outcome: Reclaimed, details: [] }
     else byHeartbeat(input.heartbeat, readyDiagnostics(input.ready))
+
+  pure def decide(input: Observation, bypassRetention: bool): Report = match input.lease {
+    | NoLease => held(LeaseInvalid, [])
+    | NonFileLease => held(LeaseInvalid, [])
+    | Locked => held(ActiveLease, [])
+    | LeaseLockError => held(LeaseLockFailed, [])
+    | BrokenLease => held(MarkerInvalid, [])
+    | Available => decideAfterLease(input, bypassRetention)
+  }
 
   action evaluate(input: Observation, bypassRetention: bool): bool = all {
     s.checked < maxChecks,
@@ -64,6 +72,12 @@ module JanitorEligibility {
     else if (s.checked == 2) evaluate({ ...retainedReady, retention: RetainReadError }, false)
     else evaluate({ ...retainedReady, retention: NoRetain, heartbeat: HeartbeatMismatch }, false)
 
+  action leaseEvidenceStep =
+    if (s.checked == 0) evaluate({ ...retainedReady, lease: NoLease }, false)
+    else if (s.checked == 1) evaluate({ ...retainedReady, lease: NonFileLease }, false)
+    else if (s.checked == 2) evaluate({ ...retainedReady, lease: LeaseLockError }, false)
+    else evaluate({ ...retainedReady, lease: BrokenLease }, false)
+
   pure val invalidReady = {
     lease: Available, retention: NoRetain, ready: ReadyMismatch, heartbeat: BeforeStale
   }
@@ -81,8 +95,14 @@ module JanitorEligibility {
     input.lease == Available and input.retention == NoRetain and input.ready != ReadyMatches
 
   pure def safe(input: Observation, report: Report): bool = all {
+    Set(NoLease, NonFileLease).contains(input.lease) implies
+      report.outcome == Held(LeaseInvalid) and report.details == [LeaseInvalid],
     input.lease == Locked implies
       report.outcome == Held(ActiveLease) and report.details == [ActiveLease],
+    input.lease == LeaseLockError implies
+      report.outcome == Held(LeaseLockFailed) and report.details == [LeaseLockFailed],
+    input.lease == BrokenLease implies
+      report.outcome == Held(MarkerInvalid) and report.details == [MarkerInvalid],
     (input.lease == Available and input.retention == Retained) implies
       report.outcome == Held(RetainMarker) and report.details == [RetainMarker],
     (input.lease == Available and input.retention == RetainReadError) implies

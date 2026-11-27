@@ -1,7 +1,7 @@
 //! Compare eligibility and typed diagnostics against real workspace markers.
 use super::super::{
-    CLEANUP_READY_FILE, CleanupReadyMarker, HEARTBEAT_FILE, ManagedRootCoordinator, ManagedRunRoot,
-    OwnerKind, STALE_AFTER,
+    CLEANUP_READY_FILE, CleanupReadyMarker, HEARTBEAT_FILE, LEASE_FILE, ManagedRootCoordinator,
+    ManagedRunRoot, OwnerKind, STALE_AFTER,
 };
 use crate::io_faults;
 use crate::quint_itf::states;
@@ -16,7 +16,9 @@ fn tag(value: &Value) -> &str {
 
 fn reason(value: &Value) -> JanitorReason {
     match tag(value) {
+        "LeaseInvalid" => JanitorReason::LeaseInvalid,
         "ActiveLease" => JanitorReason::ActiveLease,
+        "LeaseLockFailed" => JanitorReason::LeaseLockFailed,
         "RetainMarker" => JanitorReason::RetainMarker,
         "CandidateInspectionFailed" => JanitorReason::CandidateInspectionFailed,
         "MarkerInvalid" => JanitorReason::MarkerInvalid,
@@ -24,6 +26,20 @@ fn reason(value: &Value) -> JanitorReason {
         "HeartbeatInvalid" => JanitorReason::HeartbeatInvalid,
         "Young" => JanitorReason::Young,
         other => panic!("unexpected eligibility reason {other}"),
+    }
+}
+
+fn configure_lease(path: &Utf8Path, evidence: &str) {
+    let marker = path.join(LEASE_FILE);
+    match evidence {
+        "Available" | "LeaseLockError" => {}
+        "NoLease" => std::fs::remove_file(marker).unwrap(),
+        "NonFileLease" => {
+            std::fs::remove_file(&marker).unwrap();
+            std::fs::create_dir(marker).unwrap();
+        }
+        "BrokenLease" => std::fs::write(marker, b"invalid lease").unwrap(),
+        other => panic!("unexpected lease evidence {other}"),
     }
 }
 
@@ -109,15 +125,17 @@ fn replay(value: &Value) {
     let expected = &value["report"];
     let now = configure(&root, input);
     root.dir.write("payload", b"keep until admitted").unwrap();
-    let owner = match tag(&input["lease"]) {
-        "Locked" => Some(root),
-        "Available" => {
-            drop(root);
-            None
-        }
-        other => panic!("unexpected lease evidence {other}"),
+    let lease = tag(&input["lease"]);
+    let owner = if lease == "Locked" {
+        Some(root)
+    } else {
+        drop(root);
+        configure_lease(&path, lease);
+        None
     };
-    let injection = if tag(&input["retention"]) == "RetainReadError" {
+    let injection = if lease == "LeaseLockError" {
+        Some(("janitor.lease_lock", JanitorReason::LeaseLockFailed))
+    } else if tag(&input["retention"]) == "RetainReadError" {
         Some((
             "janitor.retain_stat",
             JanitorReason::CandidateInspectionFailed,
@@ -167,6 +185,7 @@ fn replay(value: &Value) {
 #[case::trace_3(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_3.itf.json"))]
 #[case::priority(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_priorityStep_0.itf.json"))]
 #[case::fallback(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_fallbackStep_0.itf.json"))]
+#[case::lease(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_leaseEvidenceStep_0.itf.json"))]
 fn quint_history_matches_janitor_eligibility(#[case] trace: &str) {
     let history = states(trace);
     assert_eq!(history.len(), 5);
