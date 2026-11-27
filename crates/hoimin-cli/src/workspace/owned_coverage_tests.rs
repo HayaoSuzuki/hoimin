@@ -2956,39 +2956,77 @@ fn child_admission_rejects_a_real_namespace_at_the_entry_limit() {
 }
 
 #[test]
-fn janitor_selection_rejects_a_real_oversized_namespace_without_advancing_the_cursor() {
+fn janitor_selection_matches_the_quint_namespace_limit() {
+    use crate::quint_itf::{number, states};
+
+    let history = states(include_str!(
+        "../../../../formal/quint/traces/janitor_selection_namespaceLimitStep_0.itf.json"
+    ));
+    let [exact, excess] = &history[1..] else {
+        panic!("expected two namespace limit observations");
+    };
     let parent = tempfile::tempdir().unwrap();
     let coordinator = coordinator_in(&parent);
-    let _files = FilledNamespace::new(&coordinator.dir, MAX_MANAGED_CHILDREN);
+    let control_entries = coordinator.dir.entries().unwrap().count();
+    let exact_count = usize::try_from(number(&exact["scan"]["rawEntries"])).unwrap();
+    let _files = FilledNamespace::new(&coordinator.dir, exact_count - control_entries);
     let original = read_fixture_bytes(&coordinator.dir, COORDINATOR_FILE, &coordinator.file);
     let _guard = CoordinatorLockGuard::acquire(&coordinator).unwrap();
     let now = std::time::Instant::now();
-    let mut scan = JanitorScan::default();
 
-    let error = select_reclaim_candidates_locked_until_with_hooks(
-        &coordinator,
-        &mut scan,
-        now + Duration::from_secs(1),
-        &|| now,
-        &<() as Default>::default,
-        &<() as Default>::default,
-    )
-    .unwrap_err();
-
-    assert!(matches!(
-        &error,
-        WorkspaceError::Io {
-            operation: "select abandoned workspaces",
-            ..
+    for expected in [exact, excess] {
+        let scan_state = &expected["scan"];
+        let phase = scan_state["phase"]["tag"].as_str().unwrap();
+        if phase == "NamespaceLimited" {
+            coordinator.dir.write("one-extra-entry", b"").unwrap();
         }
-    ));
-    assert!(error.to_string().contains("managed child limit exceeded"));
-    assert_eq!(scan.stop_reason, Some(JanitorReason::SelectionChildLimit));
-    assert!(!scan.directory_scan_complete);
-    assert_eq!(
-        read_fixture_bytes(&coordinator.dir, COORDINATOR_FILE, &coordinator.file),
-        original
-    );
+        let mut scan = JanitorScan::default();
+        let observed = std::cell::Cell::new(0);
+        let result = select_reclaim_candidates_locked_until_with_hooks(
+            &coordinator,
+            &mut scan,
+            now + Duration::from_secs(1),
+            &|| now,
+            &|| {},
+            &|| observed.set(observed.get() + 1),
+        );
+        assert_eq!(observed.get(), number(&scan_state["rawEntries"]));
+        assert_eq!(
+            scan.directory_scan_complete,
+            scan_state["complete"].as_bool().unwrap()
+        );
+        assert_eq!(scan.observed_matching_entries, 0);
+        assert_eq!(
+            scan.selection_limited,
+            scan_state["limited"].as_bool().unwrap()
+        );
+        match phase {
+            "Published" => {
+                let (page, error) = result.unwrap();
+                assert_eq!(page, Vec::<String>::new());
+                assert!(error.is_none());
+                assert_eq!(scan.stop_reason, None);
+            }
+            "NamespaceLimited" => {
+                let error = result.unwrap_err();
+                assert!(matches!(
+                    error,
+                    WorkspaceError::Io {
+                        operation: "select abandoned workspaces",
+                        ..
+                    }
+                ));
+                assert!(error.to_string().contains("managed child limit exceeded"));
+                assert_eq!(scan.stop_reason, Some(JanitorReason::SelectionChildLimit));
+            }
+            other => panic!("unexpected namespace limit phase {other}"),
+        }
+        assert_eq!(expected["saved"], expected["startCursor"]);
+        assert_eq!(
+            read_fixture_bytes(&coordinator.dir, COORDINATOR_FILE, &coordinator.file),
+            original
+        );
+    }
 }
 
 #[test]

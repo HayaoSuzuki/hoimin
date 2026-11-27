@@ -191,7 +191,7 @@ each boundary.
 | Boundary | Existing model and implementation correspondence | Model work remaining |
 | --- | --- | --- |
 | Startup invocation, shared deadline, and report handoff | Rust shell and controlled-startup fixtures | Stop before selection, after observation, and before reporting |
-| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays normal pages and deadline checkpoints against directory entries | Bounded selection, scan errors, coordinator contention, and uninspected selected roots at the handoff |
+| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadline checkpoints, and both enumeration and page quotas against directory entries | Scan errors, coordinator contention, and uninspected selected roots at the handoff |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow. `janitor_selection.qnt` follows a write failure through the cleanup report | Recovery after reported partial writes and sync errors is verified at the slot boundary |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers a valid lease marker, retention, readiness, and heartbeat evidence | Invalid or absent observations before eligibility, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
@@ -292,12 +292,12 @@ cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_retry
 
 ## Startup janitor candidate selection and cursor
 
-`janitor_selection.qnt` gives each of four managed names a lexical rank.
-Up to three scans see a stable set of names per scan. A scan returns the sorted
-names strictly after the stored cursor when that page is nonempty. It wraps to
-the full set only after exhausting names beyond the cursor. Each published
-nonempty page stores its last name and increases the generation. The model
-distinguishes enumeration EOF, page selection, and cursor persistence.
+`janitor_selection.qnt` assigns a lexical rank to each managed name and runs up
+to three scans of stable listings. The small histories use four names. A scan
+returns up to 256 sorted names strictly after the cursor, wrapping when there
+are no names beyond it. Each published nonempty page stores its last name and
+increases the generation. The model distinguishes enumeration EOF, page
+selection, and cursor persistence.
 
 `wrapStep` covers the exclusive cursor and wraparound. `emptyPageStep` checks
 that an empty scan preserves an existing cursor and generation.
@@ -308,13 +308,17 @@ cursor. Both preserve the prior cursor and generation. The negative control
 `persistFailureStep` injects an error before writing the inactive slot.
 The selected page still reaches cleanup, the report records
 `CursorPersistenceFailed`, and the following scan uses the previous cursor.
+`capacityStep` checks a full page, one excess name, and an excess in the
+wrapped bucket when the selected page contains only a single name.
+`namespaceLimitStep` distinguishes 100,000 raw directory entries from
+100,001 with no matching names. Its Rust replay reuses the existing native
+namespace fixture for both observations.
 
 The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
 in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.
 It compares returned pages and scan evidence, then reads the actual coordinator
 slot and generation. It also checks that a deadline leaves the coordinator
-file byte-for-byte intact. Directory capacity and storage faults are exercised
-by the separate janitor tests. Update the model and its ITF fixtures when
+file byte-for-byte intact. Update the model and its ITF fixtures when
 candidate ordering or the cursor publication boundary changes.
 
 ```sh

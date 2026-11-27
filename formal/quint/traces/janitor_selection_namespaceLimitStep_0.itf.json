@@ -1,0 +1,148 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": []
+        },
+        "phase": {
+          "tag": "Idle",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "0"
+        },
+        "scans": {
+          "#bigint": "0"
+        },
+        "seen": {
+          "#set": []
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": true,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": []
+        },
+        "phase": {
+          "tag": "Published",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "100000"
+        },
+        "scans": {
+          "#bigint": "1"
+        },
+        "seen": {
+          "#set": []
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "saved": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      },
+      "scan": {
+        "chosen": [],
+        "complete": false,
+        "cursorDeferred": false,
+        "limited": false,
+        "listing": {
+          "#set": []
+        },
+        "phase": {
+          "tag": "NamespaceLimited",
+          "value": {
+            "#tup": []
+          }
+        },
+        "rawEntries": {
+          "#bigint": "100001"
+        },
+        "scans": {
+          "#bigint": "2"
+        },
+        "seen": {
+          "#set": []
+        }
+      },
+      "startCursor": {
+        "generation": {
+          "#bigint": "0"
+        },
+        "name": {
+          "#bigint": "0"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "scan",
+    "saved",
+    "startCursor"
+  ]
+}

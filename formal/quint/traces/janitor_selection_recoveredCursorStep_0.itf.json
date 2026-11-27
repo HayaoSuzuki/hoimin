@@ -20,6 +20,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": []
         },
@@ -28,6 +29,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "0"
         },
         "scans": {
           "#bigint": "0"
@@ -61,6 +65,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -73,6 +78,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "0"
         },
         "scans": {
           "#bigint": "1"
@@ -106,6 +114,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -118,6 +127,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "1"
         },
         "scans": {
           "#bigint": "1"
@@ -155,6 +167,7 @@
         "chosen": [],
         "complete": true,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -167,6 +180,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "1"
         },
         "scans": {
           "#bigint": "1"
@@ -208,6 +224,7 @@
         ],
         "complete": true,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -220,6 +237,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "1"
         },
         "scans": {
           "#bigint": "1"
@@ -261,6 +281,7 @@
         ],
         "complete": true,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -273,6 +294,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "1"
         },
         "scans": {
           "#bigint": "1"
@@ -310,6 +334,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -328,6 +353,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "0"
         },
         "scans": {
           "#bigint": "2"
@@ -361,6 +389,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -379,6 +408,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "1"
         },
         "scans": {
           "#bigint": "2"
@@ -416,6 +448,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -434,6 +467,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "2"
         },
         "scans": {
           "#bigint": "2"
@@ -474,6 +510,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -492,6 +529,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "2"
@@ -535,6 +575,7 @@
         "chosen": [],
         "complete": true,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -553,6 +594,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "2"
@@ -603,6 +647,7 @@
         ],
         "complete": true,
         "cursorDeferred": true,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -621,6 +666,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "2"
@@ -671,6 +719,7 @@
         ],
         "complete": true,
         "cursorDeferred": true,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -689,6 +738,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "2"
@@ -732,6 +784,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -750,6 +803,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "0"
         },
         "scans": {
           "#bigint": "3"
@@ -783,6 +839,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -801,6 +858,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "1"
         },
         "scans": {
           "#bigint": "3"
@@ -838,6 +898,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -856,6 +917,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "2"
         },
         "scans": {
           "#bigint": "3"
@@ -896,6 +960,7 @@
         "chosen": [],
         "complete": false,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -914,6 +979,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "3"
@@ -957,6 +1025,7 @@
         "chosen": [],
         "complete": true,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -975,6 +1044,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "3"
@@ -1028,6 +1100,7 @@
         ],
         "complete": true,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -1046,6 +1119,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "3"
@@ -1099,6 +1175,7 @@
         ],
         "complete": true,
         "cursorDeferred": false,
+        "limited": false,
         "listing": {
           "#set": [
             {
@@ -1117,6 +1194,9 @@
           "value": {
             "#tup": []
           }
+        },
+        "rawEntries": {
+          "#bigint": "3"
         },
         "scans": {
           "#bigint": "3"

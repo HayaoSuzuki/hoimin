@@ -95,7 +95,10 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
         usize::try_from(scan.observed_matching_entries).unwrap(),
         set(&expected["seen"]).len(),
     );
-    assert!(!scan.selection_limited);
+    assert_eq!(
+        scan.selection_limited,
+        expected["limited"].as_bool().unwrap()
+    );
     if let Some(checkpoint) = expire_on {
         let error = result.expect_err("deadline should prevent cursor persistence");
         assert!(
@@ -126,6 +129,7 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
 #[case::empty_page(include_str!("../../../../../../formal/quint/traces/janitor_selection_emptyPageStep_0.itf.json"))]
 #[case::eof_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_eofDeadlineStep_0.itf.json"))]
 #[case::persist_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_persistDeadlineStep_0.itf.json"))]
+#[case::capacity(include_str!("../../../../../../formal/quint/traces/janitor_selection_capacityStep_0.itf.json"))]
 fn quint_history_matches_candidate_selection(#[case] trace: &str) {
     replay_selection(trace);
 }
@@ -188,6 +192,10 @@ fn check_cursor_failure_handoff(coordinator: &ManagedRootCoordinator, expected: 
         expected["cursorDeferred"].as_bool().unwrap()
     );
     assert_eq!(report.scan.stop_reason, None);
+    assert_eq!(
+        report.scan.selection_limited,
+        expected["limited"].as_bool().unwrap(),
+    );
     assert_eq!(report.scan.observed_matching_entries, observed);
     assert_eq!(
         report.scan.selection_omitted_observed_entries,

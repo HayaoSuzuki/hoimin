@@ -128,6 +128,8 @@ MODELS = (
             "persistDeadlineStep",
             "persistFailureStep",
             "recoveredCursorStep",
+            "capacityStep",
+            "namespaceLimitStep",
         ),
         scenario_steps=24,
         simulation_only=True,

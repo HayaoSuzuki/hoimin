@@ -2,16 +2,18 @@
 // The coordinator serializes scans. The available names can change between scans.
 module JanitorSelection {
   type Phase = Idle | Scanning | Eof | BeforePersist | Published | PersistFailed |
-    ExpiredScan | ExpiredEof | ExpiredPersist
+    ExpiredScan | ExpiredEof | ExpiredPersist | NamespaceLimited
   type Scan = { phase: Phase, listing: Set[int], seen: Set[int], chosen: List[int],
-    complete: bool, cursorDeferred: bool, scans: int }
+    rawEntries: int, complete: bool, limited: bool, cursorDeferred: bool, scans: int }
   type Cursor = { name: int, generation: int }
 
-  pure val names = [1, 2, 3, 4]
+  pure val pageLimit = 256
+  pure val namespaceLimit = 100000
+  pure val names = range(1, 2 * pageLimit + 2)
   pure val maxScans = 3
   pure val emptyCursor = { name: 0, generation: 0 }
   pure val emptyScan = { phase: Idle, listing: Set(), seen: Set(), chosen: [],
-    complete: false, cursorDeferred: false, scans: 0 }
+    rawEntries: 0, complete: false, limited: false, cursorDeferred: false, scans: 0 }
 
   var scan: Scan
   var saved: Cursor
@@ -24,7 +26,8 @@ module JanitorSelection {
   }
 
   pure def terminal(phase: Phase): bool =
-    Set(Published, PersistFailed, ExpiredScan, ExpiredEof, ExpiredPersist).contains(phase)
+    Set(Published, PersistFailed, ExpiredScan, ExpiredEof, ExpiredPersist, NamespaceLimited)
+      .contains(phase)
 
   action begin(listing: Set[int]): bool = all {
     scan.scans < maxScans and (scan.phase == Idle or terminal(scan.phase)),
@@ -39,9 +42,18 @@ module JanitorSelection {
     startCursor' = startCursor,
   }
 
+  pure def bucketOverflow(observed: Set[int], cursor: Cursor): bool = {
+    val after = observed.filter(name => name > cursor.name).size()
+    after > pageLimit or observed.size() - after > pageLimit
+  }
+
+  pure def observed(current: Scan, namesSeen: Set[int], cursor: Cursor): Scan =
+    { ...current, seen: namesSeen, rawEntries: namesSeen.size(),
+      limited: bucketOverflow(namesSeen, cursor) }
+
   action observe = {
     nondet name = scan.listing.exclude(scan.seen).oneOf()
-    publish({ ...scan, seen: scan.seen.union(Set(name)) }, saved)
+    publish(observed(scan, scan.seen.union(Set(name)), saved), saved)
   }
 
   action finishEnumeration = all {
@@ -54,16 +66,23 @@ module JanitorSelection {
     if (scan.seen == scan.listing) finishEnumeration else observe,
   }
 
+  pure def afterCursor(listing: Set[int], cursor: Cursor): Set[int] =
+    listing.filter(name => name > cursor.name)
+
   pure def page(listing: Set[int], cursor: Cursor): List[int] = {
-    val ordered = names.select(name => listing.contains(name))
-    val after = ordered.select(name => name > cursor.name)
-    if (after.length() > 0) after else ordered
+    val after = afterCursor(listing, cursor)
+    val eligible = if (after.size() > 0) after else listing
+    val ordered = names.select(name => eligible.contains(name))
+    ordered.slice(0, if (ordered.length() > pageLimit) pageLimit else ordered.length())
   }
 
   pure def afterSelection(current: Scan, cursor: Cursor): Scan = {
     val chosen = page(current.seen, cursor)
     { ...current, phase: BeforePersist, chosen: chosen,
-      cursorDeferred: chosen.length() < current.seen.size() }
+      cursorDeferred: {
+        val after = afterCursor(current.seen, cursor).size()
+        after > 0 and after < current.seen.size()
+      } }
   }
 
   action choosePage = all {
@@ -142,6 +161,31 @@ module JanitorSelection {
     if (scan.scans == 2 and scan.phase == BeforePersist) failPersist
     else advanceScenario
 
+  // Record the final scan evidence once for each large listing.
+  action boundaryScan(listing: Set[int], rawCount: int): bool = {
+    val current = observed({ ...emptyScan, listing: listing, scans: scan.scans + 1 },
+      listing, saved)
+    val prepared = { ...current, rawEntries: rawCount, complete: rawCount <= namespaceLimit }
+    val finalScan = if (prepared.complete) { ...afterSelection(prepared, saved), phase: Published }
+      else { ...prepared, phase: NamespaceLimited }
+    all {
+      scan.scans < maxScans,
+      scan' = finalScan,
+      saved' = advance(saved, finalScan.chosen),
+      startCursor' = saved,
+    }
+  }
+
+  action capacityStep =
+    if (scan.scans == 0) boundaryScan(1.to(pageLimit), pageLimit)
+    else if (scan.scans == 1) boundaryScan((pageLimit + 1).to(2 * pageLimit + 1), pageLimit + 1)
+    else boundaryScan(1.to(pageLimit + 1).union(Set(2 * pageLimit + 1)), pageLimit + 2)
+
+  action namespaceLimitStep = all {
+    scan.scans < 2,
+    boundaryScan(Set(), namespaceLimit + scan.scans),
+  }
+
   val publishedAfterCursor = scan.phase == Published and scan.cursorDeferred
   val wrapped = scan.phase == Published and scan.chosen.length() > 0 and
     scan.chosen.select(name => name <= startCursor.name).length() > 0
@@ -154,18 +198,27 @@ module JanitorSelection {
     val hasSelection = Set(BeforePersist, Published, PersistFailed, ExpiredPersist).contains(scan.phase)
     val after = scan.seen.filter(name => name > startCursor.name)
     val eligible = if (after.size() == 0) scan.seen else after
+    val count = scan.chosen.length()
     if (hasSelection) all {
-      scan.chosen.length() == eligible.size(),
+      count <= pageLimit,
+      count <= eligible.size(),
+      count == pageLimit or count == eligible.size(),
       scan.chosen.select(name => eligible.contains(name)) == scan.chosen,
-      0.to(scan.chosen.length() - 2).forall(i => scan.chosen.nth(i) < scan.chosen.nth(i + 1)),
-      scan.cursorDeferred == (eligible.size() < scan.seen.size()),
+      0.to(count - 2).forall(i => scan.chosen.nth(i) < scan.chosen.nth(i + 1)),
+      if (count == 0) eligible.size() == 0 else
+        eligible.filter(name => name <= scan.chosen.nth(count - 1)).size() == count,
+      scan.cursorDeferred == (after.size() > 0 and after.size() < scan.seen.size()),
     } else scan.chosen == [] and not(scan.cursorDeferred)
   }
 
   val Safety = all {
     scan.seen.subseteq(scan.listing),
+    scan.rawEntries >= scan.seen.size(),
+    (scan.phase == NamespaceLimited) == (scan.rawEntries > namespaceLimit),
+    scan.rawEntries <= namespaceLimit + 1,
     scan.complete == Set(Eof, BeforePersist, Published, PersistFailed, ExpiredEof, ExpiredPersist).contains(scan.phase),
     scan.complete implies scan.seen == scan.listing,
+    scan.limited == bucketOverflow(scan.seen, startCursor),
     selectionIsExact,
     if (scan.phase == Published and scan.chosen.length() > 0)
       saved.name == scan.chosen.nth(scan.chosen.length() - 1) and
