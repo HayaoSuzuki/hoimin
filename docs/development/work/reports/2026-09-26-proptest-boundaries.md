@@ -1467,3 +1467,51 @@ tests. Lean ran under a 2 GiB limit and single-job Rust ran under a
 (cd formal/HoiminOracle && lake exe generate_worker_recovery -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::task_tests -- --test-threads=2
 ```
+
+## Lean model of workspace capacity admission
+
+Preflight admits equality at the worker-copy allowance. The owned
+workspace limit also includes the shared snapshot and rejects equality.
+Worker multiplication and the copy allowance are checked before the
+owned calculation. The owned calculation must fit in a `u64` even when
+the configured owned limit is absent. The arithmetic model proves the
+accepted bounds, copy-limit precedence and both equality rules.
+
+The snapshot checks the metadata inventory before allocation when a
+capacity limit is configured. Before opening a snapshot output for a
+file, it checks the new cumulative size using that file's metadata.
+Each subsequent chunk passes the guard before reaching the output.
+Lean proves the written bytes are a prefix of the input chunks and that
+any nonempty written prefix passed admission. A finite reader observes
+its opened descriptor's length and reports growth or shrinkage after
+that observation. Validation is followed by comparison with the original
+before publication. Repeated visits to a stable included path count once.
+
+| Premise or observation | Lean | Rust fixture and evidence |
+| --- | --- | --- |
+| Integer bounds and limits | 72 arithmetic cases with zero, equality and checked multiplication boundaries | Call `PreflightLimits::check` and compare typed errors, amounts and accepted aggregates |
+| Source size changes | 30 filesystem cases with an edit at one of four checkpoints | Use existing hooks around snapshot allocation and descriptor length, plus the validation callback |
+| Progress and cleanup | Snapshot start, write count, bytes written, validation and final admission | Observe the existing snapshot write counters, snapshot bytes, returned plan and managed child inventory |
+
+The corpus cases use `internal-fixture` correspondence. Live files
+range from zero bytes to 65,538 bytes. The two-file cases use equal
+file lengths so directory enumeration order cannot change the expected
+prefix. The large integer cases run directly against the arithmetic
+check without allocating large files. Nine deliberately incorrect
+variants cover admission boundaries, skipped checks, duplicate charging,
+unbounded reads and publication after original changes.
+
+All 102 cases matched on macOS. The successful managed snapshot remains
+owned by its run root after the plan is dropped. The fixture checks
+failed preflight cleanup before run cleanup and verifies that run
+cleanup also removes the successful snapshot. The copy suite passed
+96 tests in the default build and 97 with contracts enabled, with ten
+existing ignored cases in each configuration. The workspace handler,
+preflight heap and recovery suites passed 100 tests, and the workflow
+suite passed 222. Lean used a 2 GiB limit and single-job Rust used 3 GiB.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_workspace_capacity -- --check corpus/workspace-capacity.jsonl)
+(cd formal/HoiminOracle && lake exe generate_workspace_capacity -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::copy -- --test-threads=2
+```

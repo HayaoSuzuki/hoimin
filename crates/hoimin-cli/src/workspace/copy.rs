@@ -992,6 +992,8 @@ fn create_pending_disk_snapshot(
 #[cfg(test)]
 mod admission_tests;
 #[cfg(test)]
+mod capacity_oracle_tests;
+#[cfg(test)]
 mod finite_read_tests;
 #[cfg(test)]
 mod grant_tests;

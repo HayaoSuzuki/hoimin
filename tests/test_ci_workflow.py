@@ -143,6 +143,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_workspace_integrity": "corpus/workspace-integrity.jsonl",
     "generate_workspace_restore": "corpus/workspace-restore.jsonl",
     "generate_worker_recovery": "corpus/worker-recovery.jsonl",
+    "generate_workspace_capacity": "corpus/workspace-capacity.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",
