@@ -1,5 +1,6 @@
 import HoiminOracle.WorkerMetricsProofs
 import HoiminOracle.StageMetricsCases
+import HoiminOracle.MetricsValidationCases
 import Lean.Data.Json
 
 namespace HoiminOracle.WorkerMetrics
@@ -194,15 +195,23 @@ def execute (args : List String) : IO UInt32 := do
       if (← IO.FS.readFile path) == StageMetrics.publicCorpus then return 0
       IO.eprintln s!"stale public stage metrics corpus: {path}"
       return 1
+  | ["--output-validation", path] => IO.FS.writeFile path MetricsValidation.corpus; return 0
+  | ["--check-validation", path] =>
+      if (← IO.FS.readFile path) == MetricsValidation.corpus then return 0
+      IO.eprintln s!"stale metrics validation corpus: {path}"
+      return 1
   | ["--sensitivity"] =>
       let status ← sensitivity
-      if status == 0 then StageMetrics.sensitivity else return status
+      if status != 0 then return status
+      let status ← StageMetrics.sensitivity
+      if status != 0 then return status
+      MetricsValidation.sensitivity
   | ["--stats"] =>
       let steps := fixtures.foldl (fun count item => count + item.events.length) 0
       IO.println s!"alphabet={alphabet.length} exhaustive_depth=3 cases={fixtures.length} steps={steps}"
       return 0
   | _ =>
-      IO.eprintln "usage: generate_worker_metrics (--output PATH | --check PATH | --output-stages PATH | --check-stages PATH | --output-stages-cli PATH | --check-stages-cli PATH | --sensitivity | --stats)"
+      IO.eprintln "usage: generate_worker_metrics (--output PATH | --check PATH | --output-stages PATH | --check-stages PATH | --output-stages-cli PATH | --check-stages-cli PATH | --output-validation PATH | --check-validation PATH | --sensitivity | --stats)"
       return 2
 
 end HoiminOracle.WorkerMetrics

@@ -127,3 +127,31 @@ provide the exact duration comparison.
 (cd formal/HoiminOracle && lake exe generate_worker_metrics -- --check-stages-cli corpus/stage-metrics-cli.jsonl)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test run_e2e stage_metrics_public_cli_matches_lean
 ```
+
+## Validation of saved metrics
+
+The validator model checks headers, stage rows in input order, worker rows
+in input order, worker ordering, and process counts. The first violation
+determines the diagnostic. In particular, a duplicate in a row takes
+precedence over a duration violation in that row, while an invalid duration
+in an earlier row takes precedence over a later duplicate.
+
+Lean proves that accepted metrics bound each worker's combined wait and busy
+time, and that the worker process total equals the executed count. The
+executed count cannot exceed discoveries. With a representable elapsed
+counter, checked-add overflow for a worker's times gives the same rejection
+as a mathematical sum above elapsed.
+
+The corpus contains 420 combinations of schema version, run ID, stage rows,
+worker rows, and counts, plus 10 boundary cases. It compares exact messages
+and the payloads of typed errors with the public Rust validator. The corpus
+supplies typed metrics input through JSON. Malformed JSON and JSON Schema
+validation are outside the comparison. The sensitivity check detects
+checking workers before stages, checking worker ordering before row
+validation, wrapping process counts, and clamping combined worker time.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_worker_metrics -- --check-validation corpus/metrics-validation.jsonl)
+(cd formal/HoiminOracle && lake exe generate_worker_metrics -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test telemetry
+```
