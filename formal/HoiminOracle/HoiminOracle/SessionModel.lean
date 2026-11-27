@@ -426,6 +426,28 @@ def stopHandler (state : State) (handler : Handler) : Verdict :=
   let next := clearPendingFor (releaseHandler state handler) handler
   accept (setHandler next handler .closed)
 
+structure PendingFinishWait where
+  session : State
+  waiterAlive : Bool := true
+  driverAlive : Bool := true
+
+def cancelFinishWait (pending : PendingFinishWait) : PendingFinishWait :=
+  { pending with waiterAlive := false }
+
+def dropFinishDriver (pending : PendingFinishWait) : PendingFinishWait :=
+  { cancelFinishWait pending with driverAlive := false }
+
+structure SettledFinishWait where
+  session : State
+  reply : Option Bool
+
+def settleFinishWait (pending : PendingFinishWait) (handler : Handler) (runId : Run)
+    (complete commit : Bool) : SettledFinishWait :=
+  let committed := if commit then (finishRun pending.session handler runId complete).state
+    else pending.session
+  { session := if pending.driverAlive then committed else (stopHandler committed handler).state
+    reply := if pending.waiterAlive then some commit else none }
+
 def readLoadCandidate (state : State) (handler : Handler)
     (fingerprint : Fingerprint) : Verdict :=
   if !handlerLive state handler then

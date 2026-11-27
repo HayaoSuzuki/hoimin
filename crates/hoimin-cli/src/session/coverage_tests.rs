@@ -754,6 +754,228 @@ fn finish_rejects_an_externally_completed_owned_run_and_keeps_ownership_for_retr
     assert!(released_after_retry);
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FinishWaiter {
+    Awaited,
+    Cancelled,
+    DriverDropped,
+}
+
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FinishResumeProbe {
+    #[serde(rename = "session.resume.active")]
+    Active,
+    Resumed,
+    MatchingRunComplete,
+}
+
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishWaitSnapshot {
+    finished: bool,
+    complete: bool,
+    resume: FinishResumeProbe,
+    result_count: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishWaitCase {
+    schema: u8,
+    mode: String,
+    id: String,
+    waiter: FinishWaiter,
+    prior_finished: bool,
+    complete: bool,
+    commit: bool,
+    pending: FinishWaitSnapshot,
+    settled: FinishWaitSnapshot,
+    reply: Option<bool>,
+}
+
+fn observe_finish_wait(probe: &mut SessionHandler, run_id: &str) -> FinishWaitSnapshot {
+    let (finished, complete) = probe
+        .connection
+        .query_row(
+            "SELECT finished, complete FROM runs WHERE run_id=?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let result_count = probe
+        .connection
+        .query_row(
+            "SELECT count(*) FROM results WHERE run_id=?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let resume = match probe.load(&load_request()) {
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Resumed(result),
+            ..
+        }) => {
+            assert_eq!(result.run_id, run_id);
+            FinishResumeProbe::Resumed
+        }
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::MatchingRunComplete),
+            ..
+        }) => FinishResumeProbe::MatchingRunComplete,
+        Err(EffectFailed {
+            failure: EffectFailure::SessionDatabase { code, .. },
+            ..
+        }) if code == "session.resume.active" => FinishResumeProbe::Active,
+        result => panic!("unexpected resume probe: {result:?}"),
+    };
+    FinishWaitSnapshot {
+        finished,
+        complete,
+        resume,
+        result_count,
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn finish_commit_and_ownership_after_waiter_cancellation_match_lean() {
+    let mut ids = std::collections::BTreeSet::new();
+    for line in
+        include_str!("../../../../formal/HoiminOracle/corpus/session-finish-wait.jsonl").lines()
+    {
+        let case: FinishWaitCase = serde_json::from_str(line).unwrap();
+        assert_eq!(case.schema, 1, "{}", case.id);
+        assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+        assert!(ids.insert(case.id.clone()));
+        replay_finish_wait(case).await;
+    }
+    assert_eq!(ids.len(), 24);
+}
+
+fn seed_finish_wait(
+    owner: &mut SessionHandler,
+    case: &FinishWaitCase,
+) -> (FinishSession, MutantResult) {
+    let begin = begin_request();
+    let request = FinishSession {
+        id: EffectId(30),
+        run_id: begin.run_id.clone(),
+        complete: case.complete,
+    };
+    owner.begin(begin).unwrap();
+    let persisted = persist_request();
+    owner.persist(&persisted).unwrap();
+    let saved = owner
+        .read_result(&request.run_id, &persisted.result.candidate.id)
+        .unwrap();
+    if case.prior_finished {
+        owner
+            .finish(FinishSession {
+                complete: false,
+                ..request.clone()
+            })
+            .unwrap();
+        assert!(matches!(
+            owner.load(&load_request()).unwrap().outcome,
+            SessionLoadOutcome::Resumed(_)
+        ));
+    }
+    if !case.commit {
+        reject_commit(owner, "UPDATE", "runs");
+    }
+    (request, saved)
+}
+
+async fn replay_finish_wait(case: FinishWaitCase) {
+    let id = &case.id;
+    let (directory, mut owner) = fixture();
+    let (request, saved) = seed_finish_wait(&mut owner, &case);
+    let run = &request.run_id;
+    let mutant = &saved.candidate.id;
+    let mut probe = SessionHandler::open(directory.path().join("session.sqlite3")).unwrap();
+    let (entered, ready) = tokio::sync::oneshot::channel();
+    let (release, hold) = std::sync::mpsc::channel();
+    owner.finish_before_commit = Some(Box::new(move || {
+        entered.send(()).unwrap();
+        hold.recv_timeout(Duration::from_secs(3)).unwrap();
+    }));
+    let dispatcher = SessionDispatcher {
+        handler: Arc::new(Mutex::new(owner)),
+    };
+    let handler = Arc::downgrade(&dispatcher.handler);
+    let mut finish = Box::pin(dispatcher.finish(request.clone()));
+    tokio::select! {
+        result = &mut finish => panic!("{id}: finish returned before the commit gate: {result:?}"),
+        before_commit = ready => before_commit.unwrap(),
+    }
+
+    let mut check_pending = || {
+        assert!(handler.upgrade().is_some(), "{id}: worker lost its handler");
+        assert_eq!(
+            observe_finish_wait(&mut probe, run),
+            case.pending,
+            "{id}: pending"
+        );
+        assert_eq!(
+            probe.read_result(run, mutant).unwrap(),
+            saved,
+            "{id}: pending result"
+        );
+        release.send(()).unwrap();
+    };
+    let reply = match case.waiter {
+        FinishWaiter::Awaited => {
+            check_pending();
+            match finish.await {
+                Ok(reply) => {
+                    assert_eq!(
+                        (reply.id, reply.run_id.as_str(), reply.complete),
+                        (request.id, request.run_id.as_str(), request.complete)
+                    );
+                    Some(true)
+                }
+                Err(error) => {
+                    assert_eq!(error.id, request.id);
+                    assert_database_error(error, "commit run finish");
+                    Some(false)
+                }
+            }
+        }
+        FinishWaiter::Cancelled => {
+            drop(finish);
+            check_pending();
+            // The serialized dispatcher lock is held until the finish operation returns.
+            dispatcher.call(EffectId(31), |_| Ok(())).await.unwrap();
+            None
+        }
+        FinishWaiter::DriverDropped => {
+            drop(finish);
+            drop(dispatcher);
+            check_pending();
+            tokio::time::timeout(Duration::from_secs(2), async {
+                while handler.upgrade().is_some() {
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+            })
+            .await
+            .expect("finished worker must release its handler");
+            None
+        }
+    };
+    assert_eq!(reply, case.reply, "{id}");
+    assert_eq!(
+        observe_finish_wait(&mut probe, run),
+        case.settled,
+        "{id}: settled"
+    );
+    assert_eq!(
+        probe.read_result(run, mutant).unwrap(),
+        saved,
+        "{id}: settled result"
+    );
+}
+
 #[cfg(feature = "contracts")]
 unsafe extern "C" fn restrict_diagnostic_bindings(
     database: *mut std::ffi::c_void,

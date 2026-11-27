@@ -202,4 +202,44 @@ theorem run_preserves_invariant (state : State) (trace : List Event)
 theorem initial_invariant : Invariant State.initial := by
   rfl
 
+theorem dropping_finish_driver_preserves_pending_owner (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) :
+    owns (dropFinishDriver pending).session runId handler = owns pending.session runId handler :=
+  rfl
+
+theorem cancelled_finish_has_no_reply (pending : PendingFinishWait) (handler : Handler)
+    (runId : Run) (complete commit : Bool) :
+    (settleFinishWait (cancelFinishWait pending) handler runId complete commit).reply = none :=
+  rfl
+
+theorem cancelled_finish_can_commit (pending : PendingFinishWait) (handler : Handler)
+    (runId : Run) (complete : Bool) (live : pending.driverAlive = true) :
+    (settleFinishWait (cancelFinishWait pending) handler runId complete true).session =
+      (finishRun pending.session handler runId complete).state := by
+  simp [settleFinishWait, cancelFinishWait, live]
+
+theorem detached_finish_releases_handler_when_settled (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete commit : Bool) :
+    ownerRuns (settleFinishWait (dropFinishDriver pending) handler runId complete commit).session
+      handler = [] := by
+  let settled := if commit then (finishRun pending.session handler runId complete).state
+    else pending.session
+  change ownerRuns (step settled (.drop handler)).state handler = []
+  exact drop_releases_exactly_handler settled handler
+
+theorem rolled_back_finish_preserves_runs_and_results (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete : Bool) :
+    let settled := settleFinishWait pending handler runId complete false
+    settled.session.runs = pending.session.runs ∧ settled.session.results = pending.session.results := by
+  by_cases alive : pending.driverAlive = true
+  · simp [settleFinishWait, alive]
+  · cases operation : pending.session.pending with
+    | none =>
+        simp [settleFinishWait, alive, stopHandler, accept, setHandler, clearPendingFor,
+          releaseHandler, operation]
+    | some current =>
+        by_cases owner : pendingHandler current = handler <;>
+          simp [settleFinishWait, alive, stopHandler, accept, setHandler, clearPendingFor,
+            releaseHandler, operation, owner]
+
 end HoiminOracle.SessionAudit

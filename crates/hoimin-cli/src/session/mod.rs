@@ -126,6 +126,8 @@ pub struct SessionHandler {
     persist_after_reads: Option<Arc<Barrier>>,
     #[cfg(test)]
     resume_after_candidate: Option<ResumeCandidateHook>,
+    #[cfg(test)]
+    finish_before_commit: Option<Box<dyn FnOnce() + Send>>,
 }
 
 fn validate_resume_budget(
@@ -175,6 +177,8 @@ impl SessionHandler {
             persist_after_reads: None,
             #[cfg(test)]
             resume_after_candidate: None,
+            #[cfg(test)]
+            finish_before_commit: None,
         })
     }
 
@@ -580,6 +584,10 @@ impl SessionHandler {
                     message: "run is missing or already finished".to_owned(),
                 },
             });
+        }
+        #[cfg(test)]
+        if let Some(before_commit) = self.finish_before_commit.take() {
+            before_commit();
         }
         transaction
             .commit()

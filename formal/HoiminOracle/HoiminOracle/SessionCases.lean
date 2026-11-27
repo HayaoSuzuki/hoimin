@@ -335,4 +335,53 @@ def renderLoadRecheckCorpus : String :=
   String.join ([none, some false, some true].map fun action =>
     (loadRecheckCase action).compress ++ "\n")
 
+private def finishWaitSeed (priorFinished : Bool) : State :=
+  let seed := run State.initial [
+    .open .h0, .open .h1, .begin .h0 .r0 .f0, .persist .h0 .r0 .m0 .notRun .p0 .valid]
+  if priorFinished then run seed [.finish .h0 .r0 false, .load .h0 .f0] else seed
+
+private def finishWaitSnapshot (state : State) : Lean.Json :=
+  let row := findRun state .r0
+  let observer := loadRun state .h1 .f0
+  let resume := match observer.rejection, observer.selectedRun with
+    | some error, _ => rejectionCode (.load .h1 .f0) error
+    | none, some _ => "resumed"
+    | none, none => "matching_run_complete"
+  Lean.Json.mkObj [
+    ("finished", Lean.toJson (row.any RunRow.finished)),
+    ("complete", Lean.toJson (row.any RunRow.complete)),
+    ("resume", .str resume),
+    ("result_count", Lean.toJson state.results.length)]
+
+private def finishWaitCase (waiter : String) (arrange : PendingFinishWait → PendingFinishWait)
+    (priorFinished complete commit : Bool) : Lean.Json :=
+  let pending := arrange { session := finishWaitSeed priorFinished }
+  let settled := settleFinishWait pending .h0 .r0 complete commit
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"{waiter}_prior_{priorFinished}_complete_{complete}_commit_{commit}"),
+    ("waiter", .str waiter), ("prior_finished", Lean.toJson priorFinished),
+    ("complete", Lean.toJson complete), ("commit", Lean.toJson commit),
+    ("pending", finishWaitSnapshot pending.session), ("settled", finishWaitSnapshot settled.session),
+    ("reply", optionalJson Lean.toJson settled.reply)]
+
+def renderFinishWaitCorpus : String :=
+  let switches := [false, true]
+  let waiters : List (String × (PendingFinishWait → PendingFinishWait)) :=
+    [("awaited", id), ("cancelled", cancelFinishWait), ("driver_dropped", dropFinishDriver)]
+  let cases := waiters.flatMap fun (waiter, arrange) =>
+    switches.flatMap fun priorFinished => switches.flatMap fun complete =>
+      switches.map fun commit => finishWaitCase waiter arrange priorFinished complete commit
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+def finishWaitSensitivity : Bool :=
+  let seed := finishWaitSeed false
+  let detached := dropFinishDriver { session := seed }
+  let committed := settleFinishWait detached .h0 .r0 true true
+  let rolledBack := settleFinishWait detached .h0 .r0 true false
+  (loadRun detached.session .h1 .f0).rejection == some .active &&
+    committed.reply.isNone && runComplete committed.session .r0 &&
+    rolledBack.session.runs == seed.runs &&
+    (loadRun rolledBack.session .h1 .f0).selectedRun == some .r0
+
 end HoiminOracle.SessionAudit

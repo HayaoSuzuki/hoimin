@@ -698,6 +698,8 @@ jobs:
             lake exe generate_process_output -- --check-resume corpus/process-output-resume.jsonl
           run_guard check-session-load-recheck \
             lake exe generate_session -- --depth 4 --check-load-recheck corpus/session-load-recheck.jsonl
+          run_guard check-session-finish-wait \
+            lake exe generate_session -- --depth 4 --check-finish-wait corpus/session-finish-wait.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \

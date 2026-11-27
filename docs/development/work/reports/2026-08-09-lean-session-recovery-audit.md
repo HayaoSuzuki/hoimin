@@ -255,3 +255,29 @@ lake exe generate_resume_budget -- --sensitivity
 cd ../..
 cargo test --locked -p hoimin-cli --lib resume_budget_recheck_and_retry_match_lean
 ```
+
+## Finish commits after the async waiter is dropped
+
+The model starts with an owned run whose finish transaction has updated the
+row and is waiting to commit. Dropping the waiter leaves that operation with
+the blocking worker. Dropping the dispatcher as well releases its remaining
+ownership only after the worker settles. Lean proves that a cancelled
+waiter receives no reply, the operation can still commit, and rollback
+preserves the committed run and result rows.
+
+Twenty-four fixtures use the real dispatcher and a one-shot gate immediately
+before SQLite commit. They vary the run's previous finished flag, the requested
+completion flag, the commit outcome, and whether the waiter or dispatcher is
+dropped. A separate handler reads the durable flags and attempts a real
+resume before and after settlement. An injected deferred foreign-key
+violation causes commit failure on the writer connection. The replay also
+compares the previously committed mutant result before and after settlement.
+The fixtures control the interleaving within one process.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-finish-wait corpus/session-finish-wait.jsonl
+lake exe generate_session -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --lib finish_commit_and_ownership_after_waiter_cancellation_match_lean
+```

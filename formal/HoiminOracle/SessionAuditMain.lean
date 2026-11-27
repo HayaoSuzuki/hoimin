@@ -155,7 +155,7 @@ def traceName (trace : List Event) : String :=
   String.intercalate " -> " (trace.map eventName)
 
 private def ensureAudit (depth : Nat) : IO (Except UInt32 Unit) := do
-  unless sensitivityPasses do
+  unless sensitivityPasses && finishWaitSensitivity do
     IO.eprintln "session audit did not detect every broken family"
     return .error 2
   unless boundedAuditPasses depth do
@@ -200,7 +200,8 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"boundary detected={boundaryWitnessDetected} trace={traceName boundaryWitness}"
   IO.println s!"result_ownership detected={resultOwnershipWitnessDetected} trace={traceName resultOwnershipWitness}"
   IO.println s!"lookup_ownership detected={lookupOwnershipWitnessDetected}"
-  return if sensitivityPasses then 0 else 2
+  IO.println s!"finish_wait detected={finishWaitSensitivity}"
+  return if sensitivityPasses && finishWaitSensitivity then 0 else 2
 
 def main (args : List String) : IO UInt32 := do
   let args := match args with
@@ -223,10 +224,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check", path] => checkCorpus path depth renderCorpus
   | ["--output-load-recheck", path] => writeCorpus path depth renderLoadRecheckCorpus
   | ["--check-load-recheck", path] => checkCorpus path depth renderLoadRecheckCorpus
+  | ["--output-finish-wait", path] => writeCorpus path depth renderFinishWaitCorpus
+  | ["--check-finish-wait", path] => checkCorpus path depth renderFinishWaitCorpus
   | ["--stats"] => printStats depth
   | ["--sensitivity"] => printSensitivity
   | _ =>
-      IO.eprintln "usage: generate_session [--depth 1..8] ((--output | --check | --output-load-recheck | --check-load-recheck) PATH | --stats | --sensitivity)"
+      IO.eprintln "usage: generate_session [--depth 1..8] ((--output | --check | --output-load-recheck | --check-load-recheck | --output-finish-wait | --check-finish-wait) PATH | --stats | --sensitivity)"
       return 2
 
 end HoiminOracle.SessionAudit.Executable
