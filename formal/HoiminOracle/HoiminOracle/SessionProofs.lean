@@ -43,6 +43,13 @@ theorem failed_replacement_restores_old
       | split
       | simp_all [reject]
 
+theorem rollback_replacement_preserves_durable (state : State) (handler : Handler) :
+    durable (step state (.replacementRollback handler)).state = durable state := by
+  simp only [step, rollbackReplacement]
+  split
+  · split <;> simp [reject, accept, durable]
+  · simp [reject]
+
 theorem successful_replacement_is_exact
     (state : State) (handler : Handler) (old replacement : ResultRow)
     (present : findResult state old.run old.mutant = some old)

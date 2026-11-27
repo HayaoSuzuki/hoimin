@@ -175,6 +175,15 @@ diagnostics before and after the replacement attempt. The session is finished
 as incomplete in every case so a determinate result can exercise reuse and
 replacement rejection as part of a resumable run.
 
+Before attempting a successful replacement, the replay installs a temporary
+SQLite trigger on result insertion. Its deferred foreign-key violation fails the
+commit after the new result is written in the transaction. Lean proves that
+rolling back a staged replacement preserves the durable rows. The replay
+checks that the trigger's row was rolled back, then reopens the database and
+compares the complete old result and its diagnostics. The temporary trigger
+ends with the connection, so the new connection can retry. The two determinate
+cases reject replacement before the injected commit failure can occur.
+
 ```sh
 cd formal/HoiminOracle
 lake exe generate_process_output -- --check-resume corpus/process-output-resume.jsonl

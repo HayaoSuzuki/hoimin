@@ -56,11 +56,13 @@ private def resumeJson (item : ResumeCase) : Lean.Json :=
   let status (value : Option HoiminOracle.SessionAudit.Status) :=
     optionJson (value.map HoiminOracle.SessionAudit.statusName)
   Lean.Json.mkObj [
-    ("schema", Lean.toJson (1 : Nat)), ("id", .str item.id),
+    ("schema", Lean.toJson (2 : Nat)), ("id", .str item.id),
     ("termination", .str (terminationName item.termination)),
     ("close_timed_out", Lean.toJson item.closeTimedOut),
     ("expected_stored", status item.expected.stored),
     ("expected_reused", status item.expected.reused),
+    ("expected_fault_error", .str item.expected.faultError),
+    ("expected_stored_after_fault", status item.expected.storedAfterFault),
     ("expected_replacement_error", optionJson item.expected.replacementError),
     ("expected_stored_after_replacement", status item.expected.storedAfterReplacement) ]
 

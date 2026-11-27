@@ -79,9 +79,9 @@ fn reject_write(handler: &SessionHandler, event: &str, table: &str) {
 
 fn reject_commit(handler: &SessionHandler, event: &str, table: &str) {
     handler.connection.execute_batch(&format!(
-        "CREATE TABLE fault_parent(id INTEGER PRIMARY KEY);
-         CREATE TABLE deferred_fault(parent INTEGER REFERENCES fault_parent(id) DEFERRABLE INITIALLY DEFERRED);
-         CREATE TRIGGER reject_commit AFTER {event} ON {table} BEGIN INSERT INTO deferred_fault VALUES(42); END;"
+        "CREATE TEMP TABLE fault_parent(id INTEGER PRIMARY KEY);
+         CREATE TEMP TABLE deferred_fault(parent INTEGER REFERENCES fault_parent(id) DEFERRABLE INITIALLY DEFERRED);
+         CREATE TEMP TRIGGER reject_commit AFTER {event} ON main.{table} BEGIN INSERT INTO deferred_fault VALUES(42); END;"
     )).unwrap();
 }
 
@@ -662,6 +662,8 @@ struct ProcessResumeCase {
     close_timed_out: bool,
     expected_stored: Option<String>,
     expected_reused: Option<String>,
+    expected_fault_error: String,
+    expected_stored_after_fault: Option<String>,
     expected_replacement_error: Option<String>,
     expected_stored_after_replacement: Option<String>,
 }
@@ -698,7 +700,7 @@ fn reopened_process_results_and_replacement_match_lean() {
     assert_eq!(cases.len(), 12);
     let mut seen = std::collections::BTreeSet::new();
     for case in &cases {
-        assert_eq!(case.schema, 1);
+        assert_eq!(case.schema, 2);
         assert!(seen.insert((&case.termination, case.close_timed_out)));
         check_process_resume(case);
     }
@@ -744,12 +746,8 @@ fn check_process_resume(case: &ProcessResumeCase) {
         .unwrap();
     drop(handler);
 
-    let mut handler = SessionHandler::open(directory.path().join("session.sqlite3")).unwrap();
-    let loaded = handler.load(&load_request()).unwrap();
-    let SessionLoadOutcome::Resumed(resume) = loaded.outcome else {
-        panic!("{}: expected the stored run to resume", case.id);
-    };
-    assert_eq!(resume.run_id, lookup.run_id, "{}", case.id);
+    let path = directory.path().join("session.sqlite3");
+    let mut handler = reopen_process_session(&path, &lookup.run_id, &case.id);
     let stored = handler.lookup(&lookup).unwrap().result.unwrap();
     assert_eq!(stored.mutant_id, lookup.mutant_id, "{}", case.id);
     assert_eq!(
@@ -773,10 +771,68 @@ fn check_process_resume(case: &ProcessResumeCase) {
         case.id
     );
 
+    check_process_replacement(case, &path, handler, &request, &lookup);
+}
+
+fn reopen_process_session(path: &Path, run_id: &str, case: &str) -> SessionHandler {
+    let mut handler = SessionHandler::open(path).unwrap();
+    let loaded = handler.load(&load_request()).unwrap();
+    let SessionLoadOutcome::Resumed(resume) = loaded.outcome else {
+        panic!("{case}: expected the stored run to resume");
+    };
+    assert_eq!(resume.run_id, run_id, "{case}");
+    handler
+}
+
+fn check_process_replacement(
+    case: &ProcessResumeCase,
+    path: &Path,
+    mut handler: SessionHandler,
+    request: &PersistResult,
+    lookup: &LookupStoredResult,
+) {
     let mut replacement = request.clone();
     replacement.id = EffectId(6);
     replacement.result.outcome = executed_outcome(ProcessTermination::Exit(0), false, "rerun");
     replacement.result.diagnostics.clear();
+    reject_commit(&handler, "INSERT", "results");
+    let failed = handler.persist(&replacement).unwrap_err();
+    assert_eq!(
+        failed.failure.code(),
+        case.expected_fault_error,
+        "{}",
+        case.id
+    );
+    if case.expected_fault_error == "session.commit" {
+        assert_database_error(failed, "commit mutant result");
+    }
+    assert!(handler.connection.is_autocommit());
+    let fault_rows: i64 = handler
+        .connection
+        .query_row("SELECT count(*) FROM temp.deferred_fault", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(fault_rows, 0, "{}", case.id);
+    drop(handler);
+
+    let mut handler = reopen_process_session(path, &lookup.run_id, &case.id);
+    let stored = handler.lookup(lookup).unwrap().result.unwrap();
+    assert_eq!(
+        Some(stored.status.as_str()),
+        case.expected_stored_after_fault.as_deref(),
+        "{}",
+        case.id
+    );
+    assert_eq!(
+        handler
+            .read_result(&lookup.run_id, &lookup.mutant_id)
+            .unwrap(),
+        request.result,
+        "{}",
+        case.id
+    );
+    replacement.id = EffectId(7);
     let error = handler.persist(&replacement).err();
     assert_eq!(
         error.as_ref().map(|error| error.failure.code()),
@@ -784,7 +840,7 @@ fn check_process_resume(case: &ProcessResumeCase) {
         "{}",
         case.id
     );
-    let stored = handler.lookup(&lookup).unwrap().result.unwrap();
+    let stored = handler.lookup(lookup).unwrap().result.unwrap();
     assert_eq!(
         Some(stored.status.as_str()),
         case.expected_stored_after_replacement.as_deref(),

@@ -75,6 +75,8 @@ private def sessionStatus : Status → SessionAudit.Status
 structure ResumeObservation where
   stored : Option SessionAudit.Status
   reused : Option SessionAudit.Status
+  faultError : String
+  storedAfterFault : Option SessionAudit.Status
   replacementError : Option String
   storedAfterReplacement : Option SessionAudit.Status
   deriving DecidableEq, BEq
@@ -85,10 +87,20 @@ private def observeResume (status : Status) : ResumeObservation :=
     .finish .h0 .r0 false, .drop .h0, .open .h1, .load .h1 .f0 ]
   let lookup : SessionAudit.Event := .lookup .h1 .r0 .m0
   let stored := (SessionAudit.step resumed lookup).storedResult.map SessionAudit.ResultRow.status
-  let replacement : SessionAudit.Event := .persist .h1 .r0 .m0 .survived .p1 .valid
-  let attempted := SessionAudit.step resumed replacement
+  let stage : SessionAudit.Event := .replacementDelete .h1 .r0 .m0 .survived .p1
+  let staged := SessionAudit.step resumed stage
+  let (faultError, rolledBack) := match staged.rejection with
+    | some error => (SessionAudit.rejectionCode stage error, staged.state)
+    | none => ("session.commit", (SessionAudit.step staged.state (.replacementRollback .h1)).state)
+  let reopened := SessionAudit.run rolledBack [.drop .h1, .open .h0, .load .h0 .f0]
+  let lookup : SessionAudit.Event := .lookup .h0 .r0 .m0
+  let replacement : SessionAudit.Event := .persist .h0 .r0 .m0 .survived .p1 .valid
+  let attempted := SessionAudit.step reopened replacement
   { stored
     reused := stored.filter SessionAudit.Status.isDeterminate
+    faultError
+    storedAfterFault :=
+      (SessionAudit.step reopened lookup).storedResult.map SessionAudit.ResultRow.status
     replacementError := attempted.rejection.map (SessionAudit.rejectionCode replacement)
     storedAfterReplacement :=
       (SessionAudit.step attempted.state lookup).storedResult.map SessionAudit.ResultRow.status }
@@ -112,13 +124,16 @@ def resumeCases : List ResumeCase := cases.filterMap fun item => do
 
 def resumeSensitivity : Bool :=
   observeResume .error != observeResume (classify .exitSuccess) &&
-    observeResume .notRun != observeResume .survived
+    observeResume .notRun != observeResume .survived &&
+    (observeResume .error).storedAfterFault != (observeResume .error).storedAfterReplacement
 
 theorem timeout_result_reruns_after_reopen (termination : Termination) :
     ((decideOutcome .mutant (.known termination) .closeTimedOut).status.map observeResume) =
       some {
         stored := some .error
         reused := none
+        faultError := "session.commit"
+        storedAfterFault := some .error
         replacementError := none
         storedAfterReplacement := some .survived
       } := by
