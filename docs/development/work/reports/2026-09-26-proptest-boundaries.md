@@ -949,3 +949,47 @@ peaked at 2,096,608 KiB under a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of review record retries
+
+A fresh source reaches the store. A matching expected revision appends
+one event for the selected candidate. A rollback or write-lock conflict
+leaves existing histories intact. Creating the database can precede
+rejection of the first write. A source that has become stale or
+unavailable is rejected before creating a database.
+
+The record command commits before rendering its response. If writing the
+response fails, it reports the saved revision. Failure on the first
+write leaves empty output. Failure on the final newline leaves a
+complete JSON document. In both cases the event remains visible after
+reopening, and a retry with the old expected revision conflicts.
+
+Lean proves that rollback preserves both candidate histories, that
+output failure preserves exactly the same committed state as successful
+output, and that repeating the same expected revision after a lost
+response is rejected. A commit on one candidate preserves the other
+candidate's history. The model treats storage operations at the observed
+commit and rollback boundaries and uses revisions below the store cap.
+
+The 108 internal-fixture traces cover all ordered pairs of ten record
+actions and eight longer or boundary traces, for 232 operations. The
+adapter uses the public record command and invokes show after a saved
+output error. The store fixture uses the existing pre-commit failure
+hook and a real write lock from a separate SQLite connection. A fresh
+read-only connection checks both histories and database presence after
+each operation, including the revision and draft that survived. Eight
+broken variants exercise rollback, output loss, the saved revision,
+revision scope and conflicts, busy writes, the source check, and the
+newline boundary.
+
+On macOS all 232 operations matched. The targeted Rust runs passed 121
+unit tests and 44 CLI integration tests, and the CI workflow suite passed
+222. Lean used a 2 GiB cap with a 20-second timeout per command. Rust ran
+with one build job under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-record corpus/review-record.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests review::store_tests::store_rolls_back_failed_append review::store_tests::store_busy_rejection_leaves_no_history
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```

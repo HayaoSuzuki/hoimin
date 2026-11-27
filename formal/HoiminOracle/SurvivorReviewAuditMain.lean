@@ -3,6 +3,7 @@ import HoiminOracle.ReviewSourceCases
 import HoiminOracle.ReviewReportAdmissionCases
 import HoiminOracle.ReviewStoreDestinationCases
 import HoiminOracle.ReviewListingCases
+import HoiminOracle.ReviewRecordCases
 
 open HoiminOracle.SurvivorReview
 
@@ -42,6 +43,13 @@ def main (args : List String) : IO UInt32 := do
     if (← IO.FS.readFile path) = HoiminOracle.ReviewListing.corpus then return 0
     IO.eprintln s!"stale review listing corpus: {path}"
     return 1
+  | ["--output-review-record", path] =>
+    IO.FS.writeFile path HoiminOracle.ReviewRecord.corpus
+    return 0
+  | ["--check-review-record", path] =>
+    if (← IO.FS.readFile path) = HoiminOracle.ReviewRecord.corpus then return 0
+    IO.eprintln s!"stale review record corpus: {path}"
+    return 1
   | ["--sensitivity"] =>
     IO.println s!"identity_and_revision_guards_detected={sensitivityPasses}"
     if !sensitivityPasses then return 2
@@ -51,7 +59,9 @@ def main (args : List String) : IO UInt32 := do
     if status != 0 then return status
     let status ← HoiminOracle.ReviewStoreDestination.sensitivity
     if status != 0 then return status
-    HoiminOracle.ReviewListing.sensitivity
+    let status ← HoiminOracle.ReviewListing.sensitivity
+    if status != 0 then return status
+    HoiminOracle.ReviewRecord.sensitivity
   | _ =>
-    IO.eprintln "usage: generate_survivor_review --output PATH | --check PATH | --output-review-sources PATH | --check-review-sources PATH | --output-review-report-admission PATH | --check-review-report-admission PATH | --output-review-store-destination PATH | --check-review-store-destination PATH | --output-review-listing PATH | --check-review-listing PATH | --sensitivity"
+    IO.eprintln "usage: generate_survivor_review --output PATH | --check PATH | --output-review-sources PATH | --check-review-sources PATH | --output-review-report-admission PATH | --check-review-report-admission PATH | --output-review-store-destination PATH | --check-review-store-destination PATH | --output-review-listing PATH | --check-review-listing PATH | --output-review-record PATH | --check-review-record PATH | --sensitivity"
     return 2

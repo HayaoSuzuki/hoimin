@@ -5,6 +5,7 @@ import HoiminOracle.ReviewSourceModel
 import HoiminOracle.ReviewReportAdmissionModel
 import HoiminOracle.ReviewStoreDestinationModel
 import HoiminOracle.ReviewListingModel
+import HoiminOracle.ReviewRecordModel
 import HoiminOracle.Proofs
 import HoiminOracle.ShutdownModel
 import HoiminOracle.ShutdownProofs
