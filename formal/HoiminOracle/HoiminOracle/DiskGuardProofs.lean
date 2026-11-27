@@ -426,6 +426,30 @@ theorem delivery_acknowledgement_requires_all_stages (evidence : DeliveryEvidenc
   cases capacity <;> cases write <;> cases flush <;> cases cleanup <;>
     simp [deliveryEvents, deliveryErrors, deliveryErrorOrder]
 
+theorem delivered_session_completion_requires_finish_and_complete_report
+    (evidence : DeliveryEvidence) (runComplete commit : Bool)
+    (complete : (deliverSession evidence runComplete commit).complete = true) :
+    (deliverSession evidence runComplete commit).finished = true ∧
+      (deliverSession evidence runComplete commit).reportComplete = some true := by
+  rcases evidence with ⟨capacity, write, flush, cleanup⟩
+  cases capacity <;> cases write <;> cases flush <;> cases cleanup <;>
+    cases runComplete <;> cases commit <;>
+    simp_all [deliverSession, deliveryErrors, deliveryErrorOrder]
+
+theorem failed_session_commit_preserves_unfinished_state
+    (evidence : DeliveryEvidence) (runComplete : Bool) :
+    (deliverSession evidence runComplete false).finished = false ∧
+      (deliverSession evidence runComplete false).complete = false := by
+  simp [deliverSession]
+
+theorem delivery_failure_leaves_session_unfinished
+    (evidence : DeliveryEvidence) (runComplete commit : Bool)
+    (failed : (deliveryErrors evidence).isEmpty = false) :
+    (deliverSession evidence runComplete commit).finishRequested = false ∧
+      (deliverSession evidence runComplete commit).finished = false ∧
+      (deliverSession evidence runComplete commit).complete = false := by
+  simp [deliverSession, failed]
+
 theorem report_deadline_cannot_be_extended (state : ReportAdmissionState)
     (prior newDeadline : Nat) (limited : state.deadline = some prior) :
     (reportAdmissionStep state (.restrict newDeadline)).deadline =

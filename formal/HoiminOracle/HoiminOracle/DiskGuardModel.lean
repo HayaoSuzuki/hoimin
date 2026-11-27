@@ -289,6 +289,22 @@ def deliveryEvents (evidence : DeliveryEvidence) : List DeliveryEvent :=
     (if evidence.cleanup then [.rootAbsent] else []) ++
     if (deliveryErrors evidence).isEmpty then [.acknowledged] else []
 
+structure SessionDelivery where
+  reportComplete : Option Bool
+  finishRequested : Bool
+  finished : Bool
+  complete : Bool
+  exitCode : Option Nat
+
+def deliverSession (evidence : DeliveryEvidence) (runComplete commit : Bool) : SessionDelivery :=
+  let delivered := (deliveryErrors evidence).isEmpty
+  let runExit := if runComplete then 0 else 4
+  { reportComplete := if evidence.write then some (runComplete && evidence.capacity) else none
+    finishRequested := delivered
+    finished := delivered && commit
+    complete := delivered && commit && runComplete
+    exitCode := if delivered then some (if commit then runExit else 2) else none }
+
 inductive ReportTask where
   | queued | active | refused | returned
   deriving BEq, DecidableEq

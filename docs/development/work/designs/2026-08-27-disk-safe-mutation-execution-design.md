@@ -1181,21 +1181,30 @@ the delivery root. Lean proves that the terminal errors preserve this order,
 cleanup is requested exactly once even if reporting fails, and acknowledgement
 requires success at all four stages.
 
-Sixteen fixtures exercise all combinations through the Rust shell with a
-controlled capacity query and a writer that injects errors only during the
-final record or its explicit flush. A real same-name directory replacement
-causes delivery cleanup to fail. The test compares the ordered error stages,
-delivery events, and root presence. It also checks that both directory
-identities survive the replacement case. The observer counts requests from
-both the main delivery path and outer shutdown. An early writer failure
-exercises the outer shutdown request directly. Paused operations that outlive
-the shutdown deadline are exercised by the interrupted-delivery tests.
+The Rust shell exercises all sixteen delivery outcomes for a complete run
+and for a run that reached its mutant limit. The capacity query and writer
+inject errors at their respective stages. A same-name directory replacement
+causes delivery cleanup to fail, and the test checks that both directory
+identities survive. The observer counts cleanup requests from the main
+delivery path and outer shutdown. The early writer failure and
+interrupted-delivery tests exercise the latter path directly.
+
+The replay reads SQLite after the shell returns. Delivery failure leaves
+the run unfinished and retains the previously committed mutant outcomes.
+Successful delivery issues the finish request. A committed finish stores
+the run's completion flag, including false for runs that reached the mutant
+limit. Two further fixtures install a deferred foreign-key violation during
+final output to make SQLite reject the finish commit. They check that the
+report acknowledgement preceded the finish request and the commit error.
+The finish flags and trigger insert roll back, and earlier mutant results
+survive. Each fixture reads the JSONL and compares the reported mutant
+outcomes with the stored outcomes.
 
 ```sh
 cd formal/HoiminOracle
 lake exe generate_disk_guard -- --check-delivery corpus/disk-delivery.jsonl
 cd ../..
-cargo test --locked -p hoimin-cli --lib final_delivery_acknowledgement_and_errors_match_lean
+cargo test --locked -p hoimin-cli --lib final_delivery_and_durable_session_match_lean
 ```
 
 ## Report admission and ownership at the shutdown deadline

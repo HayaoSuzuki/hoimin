@@ -395,29 +395,51 @@ private def deliveryEventName : DeliveryEvent → String
   | .rootAbsent => "delivery_root_absent"
   | .acknowledged => "output_acknowledged"
 
-private def deliveryCase (evidence : DeliveryEvidence) : Lean.Json :=
+private def deliveryCase (evidence : DeliveryEvidence) (runComplete commit : Bool) : Lean.Json :=
   let id := String.intercalate "_" ((deliveryErrors evidence).map deliveryErrorName)
+  let run := if runComplete then "complete" else "limited"
+  let delivery := if id.isEmpty then "all_succeeded" else id
+  let transaction := if commit then "" else "_commit_failed"
+  let session := deliverSession evidence runComplete commit
+  let events := (deliveryEvents evidence).map deliveryEventName ++
+    (if session.finishRequested then ["session_finish_requested"] else []) ++
+    (if session.finished then ["session_finished"] else []) ++
+    (if session.finishRequested && !commit then ["session_finish_commit_failed"] else [])
   Lean.Json.mkObj [
     ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
-    ("id", .str (if id.isEmpty then "all_succeeded" else id)),
+    ("id", .str s!"{run}_{delivery}{transaction}"),
+    ("run_complete", Lean.toJson runComplete), ("commit_ok", Lean.toJson commit),
     ("capacity_ok", Lean.toJson evidence.capacity), ("write_ok", Lean.toJson evidence.write),
     ("flush_ok", Lean.toJson evidence.flush), ("cleanup_ok", Lean.toJson evidence.cleanup),
     ("expected_errors", Lean.toJson ((deliveryErrors evidence).map deliveryErrorName)),
-    ("expected_events", Lean.toJson ((deliveryEvents evidence).map deliveryEventName))]
+    ("expected_events", Lean.toJson events),
+    ("expected_session", Lean.Json.mkObj [
+      ("report_complete", (session.reportComplete.map Lean.toJson).getD .null),
+      ("finish_requested", Lean.toJson session.finishRequested),
+      ("finished", Lean.toJson session.finished), ("complete", Lean.toJson session.complete),
+      ("exit_code", optionNatJson session.exitCode)])]
 
 def renderDeliveryCorpus : String :=
   let switches := [true, false]
-  let cases := switches.flatMap fun capacity => switches.flatMap fun write =>
-    switches.flatMap fun flush => switches.map fun cleanup =>
-      deliveryCase ⟨capacity, write, flush, cleanup⟩
-  String.join (cases.map fun item => item.compress ++ "\n")
+  let cases := switches.flatMap fun runComplete =>
+    switches.flatMap fun capacity => switches.flatMap fun write =>
+      switches.flatMap fun flush => switches.map fun cleanup =>
+        deliveryCase ⟨capacity, write, flush, cleanup⟩ runComplete true
+  let commitFailures := switches.map fun runComplete =>
+    deliveryCase ⟨true, true, true, true⟩ runComplete false
+  String.join ((cases ++ commitFailures).map fun item => item.compress ++ "\n")
 
 private def deliverySensitivity : Bool :=
   let allFailed : DeliveryEvidence := ⟨false, false, false, false⟩
   let flushFailed : DeliveryEvidence := ⟨true, true, false, true⟩
+  let allSucceeded : DeliveryEvidence := ⟨true, true, true, true⟩
+  let failedCommit := deliverSession allSucceeded true false
+  let limited := deliverSession allSucceeded false true
   deliveryErrors allFailed != (deliveryErrors allFailed).reverse &&
     !(deliveryEvents flushFailed).contains .acknowledged &&
-    (deliveryEvents allFailed).contains .cleanupRequested
+    (deliveryEvents allFailed).contains .cleanupRequested &&
+    !(deliverSession flushFailed true true).finished && failedCommit.finishRequested &&
+    !failedCommit.finished && limited.finished && !limited.complete
 
 private def admissionEventJson : ReportAdmissionEvent → Lean.Json
   | .restrict atDeadline =>
