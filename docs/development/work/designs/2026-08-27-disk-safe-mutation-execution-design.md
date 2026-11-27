@@ -1095,3 +1095,25 @@ The change is complete when:
     output.
 12. Report failure and failed delivery cleanup remain settled errors but cannot produce
     output acknowledgement or a completed session.
+
+## Final report evidence correspondence
+
+The report projects the primary numeric stop to a reason and two byte counts.
+Finalization retains its full typed evidence until it merges later measurements.
+Equal reason and byte counts with a different measurement duration remain
+distinct evidence. An exact repeat is omitted, and the order of distinct
+entries is preserved.
+
+Lean proves the append and exact replay rules and generates five merge cases.
+The negative comparison drops a later measurement with the same byte counts
+and a different duration. The Rust replay checks the full result twice for each
+case. A shell test also drives the monitor through shutdown and checks that the
+serialized final report includes the distinct measurement duration.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-report-evidence corpus/disk-report-evidence.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib disk_report_secondary_merge_matches_lean
+cargo test --locked -p hoimin-cli --lib pre_dispatch_sample_stops_before_analyzer_dispatch
+```

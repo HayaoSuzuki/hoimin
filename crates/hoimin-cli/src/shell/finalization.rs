@@ -8,7 +8,7 @@ use std::io;
 
 use camino::Utf8PathBuf;
 use hoimin_core::disk::{DiskCleanupOutcome, DiskComponentState, DiskLifecycleEvent, DiskRootId};
-use hoimin_core::{DiskLifecycleError, RunSummary};
+use hoimin_core::{DiskFailureReason, DiskLifecycleError, RunSummary};
 
 use super::{
     CLEANUP_QUIESCENCE_UNPROVEN, CleanupThreadFailure, ShellDiskLifecycle,
@@ -49,6 +49,7 @@ pub(super) struct DrainEvidence {
 /// Lifecycle success is never inferred from a cleanup attempt or a joined task.
 pub(super) struct ExecutionFinalization {
     lifecycle: ShellDiskLifecycle,
+    disk_primary: Option<DiskFailureReason>,
     measurement: FinalMeasurement,
     cleanup: ExecutionCleanup,
     end_available: EndAvailable,
@@ -59,6 +60,7 @@ impl ExecutionFinalization {
         ShellDiskLifecycle::new([DiskRootId::Execution, DiskRootId::Delivery]).map(|lifecycle| {
             Self {
                 lifecycle,
+                disk_primary: None,
                 measurement: FinalMeasurement::Quiescent(None),
                 cleanup: ExecutionCleanup::NotAttempted(None),
                 end_available: EndAvailable::NotObserved,
@@ -68,6 +70,15 @@ impl ExecutionFinalization {
 
     pub(super) fn apply(&mut self, event: DiskLifecycleEvent) -> bool {
         self.lifecycle.apply(event)
+    }
+
+    /// Keep the typed primary evidence for merging with the compact report projection.
+    pub(super) fn record_disk_primary(&mut self, reason: &DiskFailureReason) {
+        self.disk_primary.get_or_insert_with(|| reason.clone());
+    }
+
+    pub(super) fn disk_primary(&self) -> Option<&DiskFailureReason> {
+        self.disk_primary.as_ref()
     }
 
     pub(super) fn snapshot(&self) -> hoimin_core::DiskLifecycleSnapshot {
@@ -291,7 +302,7 @@ impl ExecutionFinalization {
             apply_execution_cleanup_evidence(report, record);
         }
         if let Some(failure) = self.snapshot().stop {
-            merge_lifecycle_stop(summary, failure);
+            merge_lifecycle_stop(summary, self.disk_primary(), failure);
         }
     }
 }

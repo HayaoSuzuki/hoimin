@@ -131,6 +131,65 @@ private def caseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
 def renderCorpus : String :=
   String.join (fixedCases.map fun item => (caseJson item).compress ++ "\n")
 
+private def stopCode : StopReason → String
+  | .sizeExceeded => "workspace.size.exceeded"
+  | .reserveReached => "filesystem.reserve.reached"
+  | .measurementFailed => "disk.measurement.failed"
+  | .processFailed => "process.failed"
+
+private def measurementJson (owned available nanos : Nat) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("owned_bytes", Lean.toJson owned), ("available_bytes", Lean.toJson available),
+    ("measured_in", Lean.Json.mkObj [
+      ("secs", Lean.toJson (nanos / 1000000000)), ("nanos", Lean.toJson (nanos % 1000000000)) ]) ]
+
+private def primaryJson : ReportEvidence → Lean.Json
+  | .observation reason owned available nanos =>
+      Lean.Json.mkObj [(stopName reason, measurementJson owned available nanos)]
+  | .error reason message => Lean.Json.mkObj [(stopName reason, .str message)]
+
+private def evidenceJson : ReportEvidence → Lean.Json
+  | .observation reason owned available nanos => Lean.Json.mkObj [("Observation",
+      Lean.Json.mkObj [("reason", .str (stopName reason)),
+        ("value", measurementJson owned available nanos)])]
+  | .error reason message => Lean.Json.mkObj [("Error",
+      Lean.Json.mkObj [("code", .str (stopCode reason)), ("message", .str message)])]
+
+private def reportEvidenceCase (id : String) (primary : ReportEvidence)
+    (existing : List ReportEvidence) (incoming : ReportEvidence)
+    (other : List ReportEvidence) : Lean.Json :=
+  let items values := Lean.Json.arr (values.map evidenceJson).toArray
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("id", .str id),
+    ("primary", primaryJson primary), ("existing", items existing),
+    ("incoming", Lean.Json.mkObj [("reason", primaryJson incoming), ("secondary", items other)]),
+    ("expected", items ((incoming :: other).foldl (appendReportEvidence primary) existing)) ]
+
+private def firstSample : ReportEvidence := .observation .sizeExceeded 10 20 1000000
+private def laterSample : ReportEvidence := .observation .sizeExceeded 10 20 2000000
+
+def renderReportEvidenceCorpus : String :=
+  let reserve := ReportEvidence.observation .reserveReached 10 20 1000000
+  let firstError := ReportEvidence.error .measurementFailed "first error"
+  let laterError := ReportEvidence.error .measurementFailed "second error"
+  let cases := [
+    reportEvidenceCase "duration_only_differs" firstSample [] firstSample [laterSample, laterSample],
+    reportEvidenceCase "incoming_primary_duration_differs" firstSample [] laterSample [firstSample],
+    reportEvidenceCase "different_threshold_reason" firstSample [laterSample] reserve [laterSample],
+    reportEvidenceCase "error_message_identity" firstError [] firstError [laterError, laterError],
+    reportEvidenceCase "secondary_order" firstSample [firstError] laterSample
+      [firstError, reserve, laterError, laterSample] ]
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+private def projectedPrimaryMatches : ReportEvidence → ReportEvidence → Bool
+  | .observation reason owned available _, .observation reason' owned' available' _ =>
+      reason == reason' && owned == owned' && available == available'
+  | first, later => decide (first = later)
+
+private def reportEvidenceSensitivity : Bool :=
+  let broken := if projectedPrimaryMatches firstSample laterSample then [] else [laterSample]
+  decide (appendReportEvidence firstSample [] laterSample ≠ broken)
+
 private def familyEvents : List Event := [
   .dispatch, .observe 9 10 11 10, .processDrainSucceeded, .outputDrained,
   .monitorJoined, .requestCleanup executionRoot, .reportSucceeded, .finish]
@@ -209,28 +268,28 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
   unless rootRenamingCasesPass && payloadSymmetryCasesPass do
     IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
-  unless sensitivityPasses do
+  unless sensitivityPasses && reportEvidenceSensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
   return .ok ()
 
-private def writeCorpus (path : System.FilePath) : IO UInt32 := do
+private def writeCorpus (path : System.FilePath) (content : String) : IO UInt32 := do
   match ← ensureAudit with
   | .error code => return code
   | .ok () =>
       if let some parent := path.parent then IO.FS.createDirAll parent
       let temporary := path.withExtension "jsonl.tmp"
-      IO.FS.writeFile temporary renderCorpus
+      IO.FS.writeFile temporary content
       IO.FS.rename temporary path
       return 0
 
-private def checkCorpus (path : System.FilePath) : IO UInt32 := do
+private def checkCorpus (path : System.FilePath) (content : String) : IO UInt32 := do
   match ← ensureAudit with
   | .error code => return code
   | .ok () =>
       try
         let actual ← IO.FS.readFile path
-        if actual == renderCorpus then return 0
+        if actual == content then return 0
         IO.eprintln s!"stale Lean disk-guard corpus: {path}"
         return 1
       catch error =>
@@ -278,12 +337,14 @@ private def printStats (resourceStats : System.FilePath) : IO UInt32 := do
 def main (args : List String) : IO UInt32 := do
   let args := match args with | "--" :: rest => rest | _ => args
   match args with
-  | ["--output", path] => writeCorpus path
-  | ["--check", path] => checkCorpus path
+  | ["--output", path] => writeCorpus path renderCorpus
+  | ["--check", path] => checkCorpus path renderCorpus
+  | ["--output-report-evidence", path] => writeCorpus path renderReportEvidenceCorpus
+  | ["--check-report-evidence", path] => checkCorpus path renderReportEvidenceCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard (--output PATH | --check PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

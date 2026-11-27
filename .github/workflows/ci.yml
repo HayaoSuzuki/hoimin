@@ -700,6 +700,8 @@ jobs:
             lake exe generate_session -- --depth 4 --check-load-recheck corpus/session-load-recheck.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
+          run_guard check-disk-report-evidence \
+            lake exe generate_disk_guard -- --check-report-evidence corpus/disk-report-evidence.jsonl
       - name: Verify release SBOM model and corpus
         working-directory: formal/HoiminOracle
         run: |

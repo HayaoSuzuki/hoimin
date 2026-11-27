@@ -252,4 +252,16 @@ theorem fixed_case_contract_is_closed : corpusContractValid = true := by native_
 
 theorem every_broken_family_has_a_witness : sensitivityPasses = true := by native_decide
 
+theorem distinct_report_evidence_is_appended (primary item : ReportEvidence)
+    (existing : List ReportEvidence) (different : item ≠ primary) (fresh : item ∉ existing) :
+    appendReportEvidence primary existing item = existing ++ [item] := by
+  simp [appendReportEvidence, different, fresh]
+
+theorem replayed_report_evidence_does_not_duplicate (primary item : ReportEvidence)
+    (existing : List ReportEvidence) :
+    appendReportEvidence primary (appendReportEvidence primary existing item) item =
+      appendReportEvidence primary existing item := by
+  by_cases duplicate : item = primary ∨ item ∈ existing <;>
+    simp [appendReportEvidence, duplicate]
+
 end HoiminOracle.DiskGuard

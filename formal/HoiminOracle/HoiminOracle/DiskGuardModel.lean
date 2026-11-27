@@ -133,6 +133,15 @@ def TransitionInvariant (start candidate : State) : Bool :=
 def addUnique [BEq α] (value : α) (values : List α) : List α :=
   if values.contains value then values else values ++ [value]
 
+inductive ReportEvidence where
+  | observation (reason : StopReason) (owned available nanos : Nat)
+  | error (reason : StopReason) (message : String)
+  deriving DecidableEq, Repr
+
+def appendReportEvidence (primary : ReportEvidence) (existing : List ReportEvidence)
+    (item : ReportEvidence) : List ReportEvidence :=
+  if item = primary ∨ item ∈ existing then existing else existing ++ [item]
+
 def removeRoot (root : RootId) (roots : List RootId) : List RootId :=
   roots.filter (· != root)
 

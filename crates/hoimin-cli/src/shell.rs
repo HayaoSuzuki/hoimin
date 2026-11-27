@@ -2118,7 +2118,7 @@ fn apply_finalization_errors_to_summary(summary: &mut hoimin_core::RunSummary, e
         );
         if let Some(stop) = &mut summary.disk.stop {
             let secondary = hoimin_core::DiskSecondary::Error { code, message };
-            if disk_secondary_matches_primary(stop, &secondary)
+            if disk_secondary_matches_primary_error(stop, &secondary)
                 || stop.secondary.contains(&secondary)
             {
                 continue;
@@ -2136,20 +2136,12 @@ fn apply_finalization_errors_to_summary(summary: &mut hoimin_core::RunSummary, e
     }
 }
 
-fn disk_secondary_matches_primary(
+fn disk_secondary_matches_primary_error(
     report: &hoimin_core::DiskStopReport,
     secondary: &hoimin_core::DiskSecondary,
 ) -> bool {
-    match secondary {
-        hoimin_core::DiskSecondary::Observation { reason, value } => {
-            report.code == reason.code()
-                && report.owned_bytes == Some(value.owned_bytes)
-                && report.available_bytes == Some(value.available_bytes)
-        }
-        hoimin_core::DiskSecondary::Error { code, message } => {
-            report.code == *code && report.message.as_deref() == Some(message)
-        }
-    }
+    matches!(secondary, hoimin_core::DiskSecondary::Error { code, message }
+        if report.code == *code && report.message.as_deref() == Some(message))
 }
 
 fn apply_execution_cleanup_evidence(
@@ -2176,22 +2168,33 @@ fn apply_execution_cleanup_evidence(
     report.remaining_root = evidence.remaining_root.as_ref().map(ToString::to_string);
 }
 
-fn merge_monitor_stop(report: &mut hoimin_core::DiskStopReport, latest: hoimin_core::DiskFailure) {
+fn merge_monitor_stop(
+    report: &mut hoimin_core::DiskStopReport,
+    primary: Option<&hoimin_core::DiskFailureReason>,
+    latest: hoimin_core::DiskFailure,
+) {
+    let primary = primary.map(hoimin_core::DiskFailureReason::to_secondary);
     let mut incoming = vec![latest.reason.to_secondary()];
     incoming.extend(latest.secondary);
     for secondary in incoming {
-        if disk_secondary_matches_primary(report, &secondary)
-            || report.secondary.contains(&secondary)
-        {
+        let matches_primary = primary.as_ref().map_or_else(
+            || disk_secondary_matches_primary_error(report, &secondary),
+            |evidence| *evidence == secondary,
+        );
+        if matches_primary || report.secondary.contains(&secondary) {
             continue;
         }
         report.secondary.push(secondary);
     }
 }
 
-fn merge_lifecycle_stop(summary: &mut hoimin_core::RunSummary, failure: hoimin_core::DiskFailure) {
+fn merge_lifecycle_stop(
+    summary: &mut hoimin_core::RunSummary,
+    primary: Option<&hoimin_core::DiskFailureReason>,
+    failure: hoimin_core::DiskFailure,
+) {
     if let Some(report) = &mut summary.disk.stop {
-        merge_monitor_stop(report, failure);
+        merge_monitor_stop(report, primary, failure);
         return;
     }
     summary.disk.stop = Some(failure.into());
@@ -3668,7 +3671,7 @@ async fn run_loop_context(
                             if let (Some(report), Some(latest)) =
                                 (&mut summary.disk.stop, latest_stop)
                             {
-                                merge_monitor_stop(report, latest);
+                                merge_monitor_stop(report, finalization.disk_primary(), latest);
                             }
                             finalization.project_summary(summary);
                             apply_finalization_errors_to_summary(summary, &finalization_errors);
@@ -4541,7 +4544,8 @@ async fn run_loop_context(
                     | RunEvent::DiskStopRequested(_)
             );
             let deadline_stop = matches!(event, RunEvent::DeadlineReached);
-            if matches!(event, RunEvent::DiskStopRequested(_)) {
+            if let RunEvent::DiskStopRequested(stop) = &event {
+                finalization.record_disk_primary(&stop.failure.reason);
                 disk_stop_drain_pending = true;
             }
             let failed = matches!(event, RunEvent::EffectFailed(_));
@@ -6435,29 +6439,50 @@ mod tests {
     async fn pre_dispatch_sample_stops_before_analyzer_dispatch() {
         let project = tempfile::tempdir().unwrap();
         let config = shell_setup_test_config(&project);
-        let reading = |available_bytes| MeterReading {
+        let reading = |available_bytes, milliseconds| MeterReading {
             owned_bytes: 0,
             available_by_filesystem: BTreeMap::from([(FilesystemKey(7), available_bytes)]),
             conservative_entries: false,
-            elapsed: Duration::from_millis(1),
+            elapsed: Duration::from_millis(milliseconds),
         };
         let control = RunControl::with_disk_meter_and_interval(
             ScriptedDiskMeter(std::sync::Mutex::new(VecDeque::from([
-                reading(u64::MAX),
-                reading(1),
-                reading(1),
+                reading(u64::MAX, 1),
+                reading(1, 1),
+                reading(1, 2),
             ]))),
             Duration::from_secs(60),
         );
         let observed = control.clone();
+        let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect("a pre-dispatch disk stop must finish through the run state machine");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
         assert_eq!(observed.max_process_tasks(), 0);
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
+        let primary = &report["summary"]["disk"]["stop"];
+        assert_eq!(primary["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
+        let secondaries: Vec<hoimin_core::DiskSecondary> =
+            serde_json::from_value(primary["secondary"].clone()).unwrap();
+        let measurements: Vec<_> = secondaries
+            .into_iter()
+            .filter(|evidence| matches!(evidence, hoimin_core::DiskSecondary::Observation { .. }))
+            .collect();
+        assert_eq!(
+            measurements,
+            [hoimin_core::DiskSecondary::Observation {
+                reason: hoimin_core::DiskStopReason::FilesystemReserveReached,
+                value: DiskObservation {
+                    owned_bytes: 0,
+                    available_bytes: 1,
+                    measured_in: Duration::from_millis(2)
+                },
+            }]
+        );
     }
 
     async fn wait_for_live_process<F>(run: &mut F, ready: impl Fn() -> bool) -> Result<(), String>

@@ -397,6 +397,72 @@ mod coverage_tests {
         assert!(incomplete);
     }
 
+    #[test]
+    fn final_report_retains_distinct_measurement_time_for_the_same_bytes() {
+        let first = DiskObservation {
+            owned_bytes: 10,
+            available_bytes: 20,
+            measured_in: Duration::from_millis(1),
+        };
+        let primary = hoimin_core::DiskFailureReason::WorkspaceSizeExceeded(first);
+        let later = hoimin_core::DiskFailureReason::WorkspaceSizeExceeded(DiskObservation {
+            measured_in: Duration::from_millis(2),
+            ..first
+        })
+        .to_secondary();
+        let mut report = hoimin_core::DiskFailure {
+            reason: primary.clone(),
+            secondary: Vec::new(),
+        }
+        .into();
+        merge_monitor_stop(
+            &mut report,
+            Some(&primary),
+            hoimin_core::DiskFailure {
+                reason: primary.clone(),
+                secondary: vec![later.clone(), later.clone()],
+            },
+        );
+
+        assert_eq!(report.secondary, [later]);
+    }
+
+    #[test]
+    fn disk_report_secondary_merge_matches_lean() {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct EvidenceCase {
+            schema: u8,
+            id: String,
+            primary: hoimin_core::DiskFailureReason,
+            existing: Vec<hoimin_core::DiskSecondary>,
+            incoming: hoimin_core::DiskFailure,
+            expected: Vec<hoimin_core::DiskSecondary>,
+        }
+        let cases = include_str!("../../../formal/HoiminOracle/corpus/disk-report-evidence.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str::<EvidenceCase>(line).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(cases.len(), 5);
+        let mut seen = BTreeSet::new();
+        for case in cases {
+            assert_eq!(case.schema, 1);
+            assert!(seen.insert(case.id.clone()));
+            let mut report: hoimin_core::DiskStopReport = hoimin_core::DiskFailure {
+                reason: case.primary.clone(),
+                secondary: case.existing,
+            }.into();
+            let expected = hoimin_core::DiskStopReport {
+                secondary: case.expected,
+                ..report.clone()
+            };
+            for _ in 0..2 {
+                merge_monitor_stop(&mut report, Some(&case.primary), case.incoming.clone());
+                assert_eq!(report, expected, "{}", case.id);
+            }
+        }
+    }
+
     #[cfg(target_os = "linux")]
     #[rstest::rstest]
     #[case::artifact(0, "artifact path")]
