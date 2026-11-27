@@ -548,6 +548,8 @@ jobs:
             HoiminOracle.ChangedConfigCases
             HoiminOracle.SelectorSyntaxModel
             HoiminOracle.SelectorSyntaxCases
+            HoiminOracle.LineCoverageModel
+            HoiminOracle.LineCoverageCases
             ChangedContextAuditMain
             ChangedLinesAuditMain
             GlobSelectionAuditMain
@@ -740,6 +742,8 @@ jobs:
             lake exe generate_changed_context -- --check-config corpus/changed-config.jsonl
           run_guard check-selector-syntax \
             lake exe generate_changed_context -- --check-selector-syntax corpus/selector-syntax.jsonl
+          run_guard check-line-coverage \
+            lake exe generate_changed_context -- --check-line-coverage corpus/line-coverage.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \

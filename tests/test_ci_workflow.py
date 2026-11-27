@@ -1625,6 +1625,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/selector-syntax.jsonl",
         ),
         (
+            "generate_changed_context",
+            "--check-line-coverage",
+            "corpus/line-coverage.jsonl",
+        ),
+        (
             "generate_resume_budget",
             "--check-recheck",
             "corpus/resume-budget-recheck.jsonl",

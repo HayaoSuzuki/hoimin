@@ -11,6 +11,9 @@ use hoimin_core::{
 };
 use hoimin_core::{MutationOperator, MutationProfile};
 
+#[path = "support/line_coverage_oracle.rs"]
+mod line_coverage_oracle;
+
 fn raw_config() -> RawRunConfig {
     RawRunConfig {
         root: Utf8PathBuf::from("project"),

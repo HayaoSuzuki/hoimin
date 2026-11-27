@@ -167,3 +167,33 @@ revisions or computes changed lines.
 (cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test cli_config changed_selection_configuration_matches_lean
 ```
+
+## Line selection coverage
+
+The Lean model treats each selection as an inclusive interval. It proves
+that a query is covered exactly when its start and every in-query line
+immediately after an input interval are covered. This check uses the same
+number of boundary probes for a narrow interval and one ending at
+`u32::MAX`. A separate theorem shows that merging overlapping or adjacent
+intervals preserves the selected lines.
+
+The corpus checks all 256 ordered pairs of intervals with endpoints in
+0 through 3 against all 16 queries in that domain. Twelve additional cases
+cover long intervals, file isolation, unsorted input, duplicates, and files
+with multiple target slices. An empty or uncovered slice disqualifies its
+file even when another slice is covered. The corpus also checks the core
+boundary where typed explicit selections can contain 0 and changed-line
+normalization discards ranges starting at 0.
+
+The Rust adapter calls `LineSelectionIndex` and `normalize_changed` with
+canonical relative paths. It compares range coverage, membership of the
+query start, normalized changed intervals, and the covered path set.
+Sensitivity witnesses detect checking only endpoints, requiring a single
+input interval to cover the query, and accepting a file with any one covered
+slice. Path normalization and Git diff parsing are outside this comparison.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-line-coverage corpus/line-coverage.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-core --test target_policy line_selection_coverage_matches_lean
+```
