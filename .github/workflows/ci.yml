@@ -565,6 +565,8 @@ jobs:
             HoiminOracle.LineCoverageModel
             HoiminOracle.CandidateSelectionModel
             HoiminOracle.CandidateSelectionCases
+            HoiminOracle.SourceLocationModel
+            HoiminOracle.SourceLocationCases
             CandidateSpanAuditMain
             ChangedTargetAuditMain
             HoiminOracle.ChangedConfigModel
@@ -809,6 +811,10 @@ jobs:
             lake exe generate_candidate_span -- --check-symbol-catalog corpus/symbol-catalog.jsonl
           run_guard check-candidate-selection \
             lake exe generate_candidate_span -- --check-candidate-selection corpus/candidate-selection.jsonl
+          run_guard check-source-locations \
+            lake exe generate_candidate_span -- --check-source-locations corpus/source-locations.jsonl
+          run_guard check-candidate-locations \
+            lake exe generate_candidate_span -- --check-candidate-locations corpus/candidate-locations.jsonl
           run_guard check-exception-acquisition \
             lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl
           run_guard check-import-roots \

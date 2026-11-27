@@ -509,3 +509,49 @@ The CI workflow suite passed 222 tests. Guarded Lean checks peaked at
 (cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-python --lib
 ```
+
+## Lean model of source lines and candidate columns
+
+The model walks Unicode scalars and records the byte offset, one-based
+physical line, and zero-based column at each boundary. LF and lone CR
+start a new line. CRLF starts just one new line, after LF. The intermediate
+boundary after CR remains on the earlier line. A leading file BOM consumes
+three UTF-8 bytes and contributes zero columns. Subsequent BOM scalars
+contribute one column. Other Unicode separators stay on the same physical
+line. A query inside a scalar or past the end has no location.
+
+Lean proves that a row's byte length minus its accumulated UTF-8 excess
+gives the number of scalars. Subtracting the global excess at the line
+start from the global excess at the query gives exactly the excess for
+that row prefix. The proof also accounts for subtracting the initial BOM.
+The core Rust test compares physical line starts and all byte offsets for
+230 strings, including combinations of CR and LF, interior BOMs, combining
+marks, and multibyte scalars. Queries include EOF and out-of-range offsets
+and revisit earlier offsets after later ones.
+
+The CLI fixtures render 18 files across UTF-8, UTF-8 with BOM, and declared
+Latin-1, with LF, CRLF, or CR and with or without a final newline. The
+ordinary analyzer handler reads each file and records two Boolean mutations
+in its candidate spool. The test replays those records and compares the raw
+byte span, decoded start, line, column, symbol, and replacement. The real
+candidate validator accepts the correct location and rejects an adjacent
+incorrect column for each candidate.
+
+Seven sensitivity checks detect byte columns, splitting CRLF, counting the
+initial BOM, ignoring interior BOMs, forgetting to reset columns, snapping
+offsets inside a scalar to a boundary, and storing decoded offsets as raw
+offsets for Latin-1.
+
+On macOS, all 2,958 queries and 36 recorded candidates matched. The core
+candidate-policy suite passed 93 tests, the CLI analyzer-handler suite
+passed 32, and the CI workflow suite passed 222. Lean checks used a 2 GiB
+cap and 20-second timeout per command. The single-job Rust runs peaked at
+483,152 KiB for core and 794,512 KiB for the CLI under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-source-locations corpus/source-locations.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --check-candidate-locations corpus/candidate-locations.jsonl)
+(cd formal/HoiminOracle && lake exe generate_candidate_span -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-core --test candidate_policy
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test analyzer_handler
+```

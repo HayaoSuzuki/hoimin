@@ -9,6 +9,9 @@ use hoimin_core::{
 use proptest::prelude::*;
 use std::collections::BTreeSet;
 
+#[path = "support/source_location_oracle.rs"]
+mod source_location_oracle;
+
 fn descriptor(source: &[u8]) -> CandidateDescriptor {
     CandidateDescriptor {
         schema_version: CANDIDATE_SCHEMA_VERSION,
