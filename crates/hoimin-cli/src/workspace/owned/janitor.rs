@@ -9,6 +9,9 @@ mod quint_cursor_recovery;
 #[path = "janitor/quint_diagnostics.rs"]
 mod quint_diagnostics;
 #[cfg(test)]
+#[path = "janitor/quint_eligibility.rs"]
+mod quint_eligibility;
+#[cfg(test)]
 #[path = "janitor/quint_reclaim.rs"]
 mod quint_reclaim;
 #[cfg(test)]

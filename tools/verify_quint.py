@@ -53,6 +53,14 @@ MODELS = (
         simulation_mutant_step="truncationLostStep",
     ),
     Model(
+        "janitor_eligibility.qnt",
+        "JanitorEligibility",
+        "janitor_eligibility",
+        scenarios=("priorityStep", "fallbackStep"),
+        simulation_only=True,
+        simulation_mutant_step="retentionIgnoredStep",
+    ),
+    Model(
         "janitor_reclaim.qnt",
         "JanitorReclaim",
         "janitor_reclaim",

@@ -324,6 +324,30 @@ its fixtures when cursor write ordering or recovery semantics change.
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_cursor_recovery
 ```
 
+## Startup janitor reclaim eligibility
+
+`janitor_eligibility.qnt` covers one active-name root with a valid lease marker.
+An active lease, a retain marker, and a retain-inspection failure each stop
+admission before cleanup readiness or heartbeat age is considered. Valid
+cleanup-ready evidence permits reclamation. A mismatch or identity inspection
+failure adds a diagnostic and falls back to heartbeat evidence. A matching
+heartbeat is stale at the threshold, including equality.
+
+The scheduled histories exercise the precedence rules, the exact stale
+boundary, and the ordered diagnostics on fallback. `retentionIgnoredStep`
+permits reclamation despite a retain marker and must violate `Safety`.
+The Rust replay drives `ManagedRunRoot::reclaim_abandoned_with_clock_and_selection`
+in `crates/hoimin-cli/src/workspace/owned.rs`. Each observation uses one
+temporary root with real markers and lease handles, a supplied clock reading,
+and at most one injected I/O failure. The replay compares the root disposition,
+the typed diagnostics, and whether the payload survives. Staging roots and
+already-claimed roots have separate cleanup rules. Update the model and
+regenerate its fixtures when reclaim eligibility or diagnostic precedence changes.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_eligibility
+```
+
 ## SQLite persistence, resume selection and ownership
 
 The SQLite extension adds three domains to the earlier configurations:
