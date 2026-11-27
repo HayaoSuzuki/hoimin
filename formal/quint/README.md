@@ -188,21 +188,24 @@ The janitor ledger converts observed outcomes to the report contract in
 `crates/hoimin-core/src/report/janitor.rs`. The table records the coverage of
 each boundary.
 
-| Boundary | Existing model and implementation correspondence | Model work remaining |
-| --- | --- | --- |
-| Startup invocation, shared deadline, and report handoff | `janitor_startup.qnt` composes selection, cleanup, retry, report freeze, and shell publication. Rust replays deadline and cancellation boundaries | Native Windows replay |
-| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Input listings remain stable within each modelled scan |
-| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
-| Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy | Windows mutation barrier needs native Rust verification |
-| Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` covers individual roots and interrupted cleanup. A joined Rust replay checks mixed namespaces across two scans and a coordinator reopen | Native replay on Windows |
-| Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion | Windows lease reacquisition needs native Rust verification |
-| Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, partial deletion, and replacement after Windows handle consumption. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Native Windows replay of the pinned-handle histories |
-| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline. `janitor_reclaim.qnt` compares the real janitor's finished report after two deferred roots are retried | Windows pinned-handle verification |
-| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` check ledger results and retained diagnostics. `janitor_startup.qnt` checks that the shell publishes the frozen startup report | Native Windows replay |
+| Boundary | Model and implementation correspondence |
+| --- | --- |
+| Startup invocation, shared deadline, and report handoff | `janitor_startup.qnt` composes selection, cleanup, retry, report freeze, and shell publication. Rust replays deadline and cancellation boundaries |
+| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors with a fixed input listing per scan. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff |
+| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins injected write and sync failures to cleanup reporting and the next page |
+| Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy |
+| Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` covers individual roots and interrupted cleanup. A joined Rust replay checks mixed namespaces across two scans and a coordinator reopen |
+| Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion |
+| Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, partial deletion, and replacement after Windows handle consumption. Lean's `CleanupCapabilityModel` checks retained authority across replacement |
+| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline. `janitor_reclaim.qnt` compares the real janitor's finished report after two deferred roots are retried |
+| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` check ledger results and retained diagnostics. `janitor_startup.qnt` checks that the shell publishes the frozen startup report |
 
 Existing host-specific tests remain part of the implementation evidence. Quint
 models use small representative directories and explicit filesystem outcomes
 so that the checks can run on each change.
+The Windows runners exercised the mutation barrier, lease reacquisition,
+pinned deletion handles, and startup report publication through those Rust replays.
+[Windows CI run](https://github.com/HayaoSuzuki/hoimin/actions/runs/45932135570)
 
 ## Startup janitor lifecycle and publication
 
