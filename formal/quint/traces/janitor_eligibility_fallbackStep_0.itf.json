@@ -32,6 +32,12 @@
           "tag": "Evaluated",
           "value": {
             "observation": {
+              "candidate": {
+                "tag": "Inspected",
+                "value": {
+                  "#tup": []
+                }
+              },
               "heartbeat": {
                 "tag": "BeforeStale",
                 "value": {
@@ -98,6 +104,12 @@
           "tag": "Evaluated",
           "value": {
             "observation": {
+              "candidate": {
+                "tag": "Inspected",
+                "value": {
+                  "#tup": []
+                }
+              },
               "heartbeat": {
                 "tag": "AtStale",
                 "value": {
@@ -155,6 +167,12 @@
           "tag": "Evaluated",
           "value": {
             "observation": {
+              "candidate": {
+                "tag": "Inspected",
+                "value": {
+                  "#tup": []
+                }
+              },
               "heartbeat": {
                 "tag": "HeartbeatMismatch",
                 "value": {
@@ -221,6 +239,12 @@
           "tag": "Evaluated",
           "value": {
             "observation": {
+              "candidate": {
+                "tag": "Inspected",
+                "value": {
+                  "#tup": []
+                }
+              },
               "heartbeat": {
                 "tag": "AfterStale",
                 "value": {

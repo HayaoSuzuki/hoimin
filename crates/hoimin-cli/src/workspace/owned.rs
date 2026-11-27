@@ -6186,7 +6186,10 @@ impl ManagedRunRoot {
                 continue;
             }
             #[cfg(windows)]
-            match windows::root_mutation_barrier_exists(run_id) {
+            match owned_io!(
+                "janitor.mutation_barrier",
+                windows::root_mutation_barrier_exists(run_id)
+            ) {
                 Ok(true) => {
                     report.hold(
                         index,
@@ -6226,9 +6229,15 @@ impl ManagedRunRoot {
                 }
             };
             #[cfg(unix)]
-            let candidate = open_owned_directory(&coordinator.dir, name);
+            let candidate = owned_io!(
+                "janitor.candidate_open",
+                open_owned_directory(&coordinator.dir, name)
+            );
             #[cfg(windows)]
-            let candidate = open_owned_directory_for_rename(&coordinator.dir, name);
+            let candidate = owned_io!(
+                "janitor.candidate_open",
+                open_owned_directory_for_rename(&coordinator.dir, name)
+            );
             let candidate = match candidate {
                 Ok(candidate) => candidate,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

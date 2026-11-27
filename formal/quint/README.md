@@ -193,7 +193,7 @@ each boundary.
 | Startup invocation, shared deadline, and report handoff | `janitor_selection.qnt` covers stop before selection and while enumerating. `janitor_reclaim.qnt` covers the inspected boundary and the actual shell report | Stop between janitor completion and shell report handoff |
 | Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff | Input listings remain stable within each modelled scan |
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
-| Observed candidate identity and admission | `janitor_eligibility.qnt` covers lease absence, type, lock errors, malformed markers, retention, readiness, and heartbeat evidence | Candidate directory open and identity errors, coordinator holds, and the Windows mutation barrier |
+| Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy | Windows mutation barrier needs native Rust verification |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, diagnostics, surviving entries, and acknowledged deletions across claim and slice interruptions | Startup selection and reporting across multiple roots |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion | Windows lease reacquisition needs native Rust verification |
 | Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, and partial deletion with a small tree. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Integration of the Windows pinned handle, pending rounds, and report accounting |
@@ -403,6 +403,12 @@ admission before cleanup readiness or heartbeat age is considered. Valid
 cleanup-ready evidence permits reclamation. A mismatch or identity inspection
 failure adds a diagnostic and falls back to heartbeat evidence. A matching
 heartbeat is stale at the threshold, including equality.
+
+`candidateStep` checks invalid names, failed directory open and identity
+inspection, and coordinator contention using an otherwise reclaimable root.
+`windowsCandidateStep` checks a named mutation event and an event-inspection
+error. The Windows replay uses a separately held lease and event to distinguish
+their precedence.
 
 The scheduled histories exercise the precedence rules, the exact stale
 boundary, and the ordered diagnostics on fallback. `retentionIgnoredStep`

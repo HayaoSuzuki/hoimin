@@ -1,7 +1,8 @@
 //! Compare eligibility and typed diagnostics against real workspace markers.
 use super::super::{
-    CLEANUP_READY_FILE, CleanupReadyMarker, HEARTBEAT_FILE, LEASE_FILE, ManagedRootCoordinator,
-    ManagedRunRoot, OwnerKind, STALE_AFTER,
+    ACTIVE_PREFIX, CLEANUP_READY_FILE, CleanupReadyMarker, CoordinatorLockGuard, HEARTBEAT_FILE,
+    LEASE_FILE, ManagedRootCoordinator, ManagedRunRoot, OwnerKind, STALE_AFTER,
+    open_owned_directory, open_regular_file_nofollow,
 };
 use crate::io_faults;
 use crate::quint_itf::states;
@@ -25,6 +26,10 @@ fn reason(value: &Value) -> JanitorReason {
         "IdentityInspectionFailed" => JanitorReason::IdentityInspectionFailed,
         "HeartbeatInvalid" => JanitorReason::HeartbeatInvalid,
         "Young" => JanitorReason::Young,
+        "InvalidCandidate" => JanitorReason::InvalidCandidate,
+        "CoordinatorBusy" => JanitorReason::CoordinatorBusy,
+        "MutationBarrierActive" => JanitorReason::MutationBarrierActive,
+        "MutationBarrierFailed" => JanitorReason::MutationBarrierFailed,
         other => panic!("unexpected eligibility reason {other}"),
     }
 }
@@ -32,7 +37,7 @@ fn reason(value: &Value) -> JanitorReason {
 fn configure_lease(path: &Utf8Path, evidence: &str) {
     let marker = path.join(LEASE_FILE);
     match evidence {
-        "Available" | "LeaseLockError" => {}
+        "Available" | "Locked" | "LeaseLockError" => {}
         "NoLease" => std::fs::remove_file(marker).unwrap(),
         "NonFileLease" => {
             std::fs::remove_file(&marker).unwrap();
@@ -97,6 +102,7 @@ fn assert_decision(report: &JanitorSummary, expected: &Value, path: &Utf8Path) {
             assert!(!path.exists());
         }
         "Held" => {
+            assert_eq!(report.removed_entries, 0);
             let cause = reason(&outcome["value"]);
             if cause.is_normal_hold() {
                 assert_eq!(counts, (0, 1, 0));
@@ -114,6 +120,35 @@ fn assert_decision(report: &JanitorSummary, expected: &Value, path: &Utf8Path) {
     }
 }
 
+fn fault_site(input: &Value) -> Option<(&'static str, JanitorReason)> {
+    match tag(&input["candidate"]) {
+        "OpenError" => Some((
+            "janitor.candidate_open",
+            JanitorReason::CandidateInspectionFailed,
+        )),
+        "IdentityError" => Some((
+            "janitor.candidate_identity",
+            JanitorReason::IdentityInspectionFailed,
+        )),
+        "BarrierError" => Some((
+            "janitor.mutation_barrier",
+            JanitorReason::MutationBarrierFailed,
+        )),
+        _ if tag(&input["lease"]) == "LeaseLockError" => {
+            Some(("janitor.lease_lock", JanitorReason::LeaseLockFailed))
+        }
+        _ if tag(&input["retention"]) == "RetainReadError" => Some((
+            "janitor.retain_stat",
+            JanitorReason::CandidateInspectionFailed,
+        )),
+        _ if tag(&input["ready"]) == "ReadyIdentityError" => Some((
+            "janitor.ready_identity",
+            JanitorReason::IdentityInspectionFailed,
+        )),
+        _ => None,
+    }
+}
+
 fn replay(value: &Value) {
     let directory = tempfile::tempdir().unwrap();
     let parent = Utf8Path::from_path(directory.path()).unwrap();
@@ -126,37 +161,43 @@ fn replay(value: &Value) {
     let now = configure(&root, input);
     root.dir.write("payload", b"keep until admitted").unwrap();
     let lease = tag(&input["lease"]);
-    let owner = if lease == "Locked" {
-        Some(root)
+    drop(root);
+    configure_lease(&path, lease);
+    // Acquire the file lock independently of a live root's Windows mutation event.
+    let lease_holder = (lease == "Locked").then(|| {
+        let dir = open_owned_directory(&coordinator.dir, &name).unwrap();
+        let file = open_regular_file_nofollow(&dir, LEASE_FILE).unwrap();
+        file.try_lock().unwrap();
+        file
+    });
+    let candidate = tag(&input["candidate"]);
+    let chosen = if candidate == "InvalidName" {
+        format!("{ACTIVE_PREFIX}invalid-uuid")
     } else {
-        drop(root);
-        configure_lease(&path, lease);
-        None
+        name.clone()
     };
-    let injection = if lease == "LeaseLockError" {
-        Some(("janitor.lease_lock", JanitorReason::LeaseLockFailed))
-    } else if tag(&input["retention"]) == "RetainReadError" {
-        Some((
-            "janitor.retain_stat",
-            JanitorReason::CandidateInspectionFailed,
-        ))
-    } else if tag(&input["ready"]) == "ReadyIdentityError" {
-        Some((
-            "janitor.ready_identity",
-            JanitorReason::IdentityInspectionFailed,
-        ))
-    } else {
-        None
-    };
+    let coordinator_guard = (candidate == "CoordinatorLocked")
+        .then(|| CoordinatorLockGuard::acquire(&coordinator).unwrap());
+    #[cfg(windows)]
+    let barrier = (candidate == "BarrierPresent").then(|| {
+        let run_id = name.strip_prefix(ACTIVE_PREFIX).unwrap();
+        super::super::windows::RootMutationBarrier::create(run_id).unwrap()
+    });
+    let injection = fault_site(input);
     let fault = injection.map(|(point, _)| io_faults::arm(point));
     let report = ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
         &coordinator,
         now,
         Instant::now(),
         &|_| Duration::ZERO,
-        &|_| Ok((vec![name.clone()], None)),
+        &|_| Ok((vec![chosen.clone()], None)),
     );
-    drop(owner);
+    if let Some(guard) = coordinator_guard {
+        guard.unlock(&coordinator.path).unwrap();
+    }
+    #[cfg(windows)]
+    drop(barrier);
+    drop(lease_holder);
 
     let details: Vec<_> = expected["details"]
         .as_array()
@@ -186,7 +227,12 @@ fn replay(value: &Value) {
 #[case::priority(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_priorityStep_0.itf.json"))]
 #[case::fallback(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_fallbackStep_0.itf.json"))]
 #[case::lease(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_leaseEvidenceStep_0.itf.json"))]
+#[case::candidate(include_str!("../../../../../../formal/quint/traces/janitor_eligibility_candidateStep_0.itf.json"))]
 fn quint_history_matches_janitor_eligibility(#[case] trace: &str) {
+    replay_history(trace);
+}
+
+fn replay_history(trace: &str) {
     let history = states(trace);
     assert_eq!(history.len(), 5);
     for row in history.iter().skip(1) {
@@ -194,4 +240,12 @@ fn quint_history_matches_janitor_eligibility(#[case] trace: &str) {
         assert_eq!(tag(last), "Evaluated");
         replay(&last["value"]);
     }
+}
+
+#[cfg(windows)]
+#[test]
+fn quint_windows_mutation_barrier_precedes_candidate_inspection() {
+    replay_history(include_str!(
+        "../../../../../../formal/quint/traces/janitor_eligibility_windowsCandidateStep_0.itf.json"
+    ));
 }

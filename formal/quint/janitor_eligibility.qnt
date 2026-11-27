@@ -1,13 +1,17 @@
 // One active root evaluated per observation.
 // The root lease and marker contents stand for stable evidence during a scan.
 module JanitorEligibility {
+  type Candidate = Inspected | InvalidName | OpenError | IdentityError | CoordinatorLocked |
+    BarrierPresent | BarrierError
   type Lease = NoLease | NonFileLease | Locked | LeaseLockError | BrokenLease | Available
   type Retention = NoRetain | Retained | RetainReadError
   type Ready = NoReady | ReadyMatches | ReadyMismatch | ReadyIdentityError
   type Heartbeat = BeforeStale | AtStale | AfterStale | HeartbeatMismatch
-  type Observation = { lease: Lease, retention: Retention, ready: Ready, heartbeat: Heartbeat }
+  type Observation = { candidate: Candidate, lease: Lease, retention: Retention,
+    ready: Ready, heartbeat: Heartbeat }
   type Reason = LeaseInvalid | ActiveLease | LeaseLockFailed | RetainMarker | CandidateInspectionFailed |
-    MarkerInvalid | IdentityInspectionFailed | HeartbeatInvalid | Young
+    MarkerInvalid | IdentityInspectionFailed | HeartbeatInvalid | Young | InvalidCandidate |
+    CoordinatorBusy | MutationBarrierActive | MutationBarrierFailed
   type Outcome = Reclaimed | Held(Reason)
   type Report = { outcome: Outcome, details: List[Reason] }
   type Evaluation = Pending | Evaluated({ observation: Observation, report: Report })
@@ -39,13 +43,23 @@ module JanitorEligibility {
     else if (input.ready == ReadyMatches) { outcome: Reclaimed, details: [] }
     else byHeartbeat(input.heartbeat, readyDiagnostics(input.ready))
 
-  pure def decide(input: Observation, bypassRetention: bool): Report = match input.lease {
+  pure def decideLease(input: Observation, bypassRetention: bool): Report = match input.lease {
     | NoLease => held(LeaseInvalid, [])
     | NonFileLease => held(LeaseInvalid, [])
     | Locked => held(ActiveLease, [])
     | LeaseLockError => held(LeaseLockFailed, [])
     | BrokenLease => held(MarkerInvalid, [])
     | Available => decideAfterLease(input, bypassRetention)
+  }
+
+  pure def decide(input: Observation, bypassRetention: bool): Report = match input.candidate {
+    | Inspected => decideLease(input, bypassRetention)
+    | InvalidName => held(InvalidCandidate, [])
+    | OpenError => held(CandidateInspectionFailed, [])
+    | IdentityError => held(IdentityInspectionFailed, [])
+    | CoordinatorLocked => held(CoordinatorBusy, [])
+    | BarrierPresent => held(MutationBarrierActive, [])
+    | BarrierError => held(MutationBarrierFailed, [])
   }
 
   action evaluate(input: Observation, bypassRetention: bool): bool = all {
@@ -59,11 +73,12 @@ module JanitorEligibility {
     nondet retention = Set(NoRetain, Retained, RetainReadError).oneOf()
     nondet ready = Set(NoReady, ReadyMatches, ReadyMismatch, ReadyIdentityError).oneOf()
     nondet heartbeat = Set(BeforeStale, AtStale, AfterStale, HeartbeatMismatch).oneOf()
-    evaluate({ lease: lease, retention: retention, ready: ready, heartbeat: heartbeat }, false)
+    evaluate({ candidate: Inspected, lease: lease, retention: retention,
+      ready: ready, heartbeat: heartbeat }, false)
   }
 
   pure val retainedReady = {
-    lease: Available, retention: Retained, ready: ReadyMatches, heartbeat: AfterStale
+    candidate: Inspected, lease: Available, retention: Retained, ready: ReadyMatches, heartbeat: AfterStale
   }
 
   action priorityStep =
@@ -78,8 +93,24 @@ module JanitorEligibility {
     else if (s.checked == 2) evaluate({ ...retainedReady, lease: LeaseLockError }, false)
     else evaluate({ ...retainedReady, lease: BrokenLease }, false)
 
+  pure val readyCandidate = { ...retainedReady, retention: NoRetain }
+
+  action candidateStep =
+    if (s.checked == 0) evaluate({ ...readyCandidate, candidate: InvalidName }, false)
+    else if (s.checked == 1) evaluate({ ...readyCandidate, candidate: OpenError }, false)
+    else if (s.checked == 2) evaluate({ ...readyCandidate, candidate: IdentityError }, false)
+    else evaluate({ ...readyCandidate, candidate: CoordinatorLocked }, false)
+
+  action windowsCandidateStep =
+    if (s.checked == 0) evaluate({ ...readyCandidate, candidate: BarrierPresent }, false)
+    else if (s.checked == 1) evaluate({ ...readyCandidate, candidate: BarrierError }, false)
+    else if (s.checked == 2)
+      evaluate({ ...readyCandidate, candidate: BarrierPresent, lease: Locked }, false)
+    else evaluate(readyCandidate, false)
+
   pure val invalidReady = {
-    lease: Available, retention: NoRetain, ready: ReadyMismatch, heartbeat: BeforeStale
+    candidate: Inspected, lease: Available, retention: NoRetain,
+    ready: ReadyMismatch, heartbeat: BeforeStale
   }
 
   action fallbackStep =
@@ -92,9 +123,10 @@ module JanitorEligibility {
   action retentionIgnoredStep = evaluate(retainedReady, true)
 
   pure def usesHeartbeat(input: Observation): bool =
-    input.lease == Available and input.retention == NoRetain and input.ready != ReadyMatches
+    input.candidate == Inspected and input.lease == Available and
+      input.retention == NoRetain and input.ready != ReadyMatches
 
-  pure def safe(input: Observation, report: Report): bool = all {
+  pure def safeLease(input: Observation, report: Report): bool = all {
     Set(NoLease, NonFileLease).contains(input.lease) implies
       report.outcome == Held(LeaseInvalid) and report.details == [LeaseInvalid],
     input.lease == Locked implies
@@ -118,7 +150,12 @@ module JanitorEligibility {
 
   val Safety = match s.last {
     | Pending => true
-    | Evaluated(value) => safe(value.observation, value.report)
+    | Evaluated(value) =>
+      if (value.observation.candidate == Inspected) safeLease(value.observation, value.report)
+      else match value.report.outcome {
+        | Reclaimed => false
+        | Held(reason) => value.report.details == [reason]
+      }
   }
 
   val activeLeaseWins = match s.last {
