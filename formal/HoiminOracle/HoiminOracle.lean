@@ -171,6 +171,7 @@ import HoiminOracle.WorkspaceSelectionModel
 import HoiminOracle.FingerprintPreflightModel
 import HoiminOracle.SessionArtifactsModel
 import HoiminOracle.SessionAdmissionModel
+import HoiminOracle.SessionWalAdmissionModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

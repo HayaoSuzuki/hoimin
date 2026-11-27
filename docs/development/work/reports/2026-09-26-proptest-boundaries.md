@@ -1873,3 +1873,58 @@ Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_session_admission -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_admission_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean audit of session admission with uncheckpointed WAL
+
+The model tracks the checkpointed database image and the latest
+committed image independently. A commit can advance the latter while
+leaving the former unchanged. The opener's advisory check uses the
+checkpointed image. If that check passes, admission on the writable
+connection uses the committed image. Lean proves that successful open
+requires an admissible committed image, and that checkpointing aligns
+the opener's decision with admission on that same committed image.
+
+The fixture runs 12 schema, version, and application-ID transitions
+twice, with the writer kept open and automatic checkpoints disabled.
+One replay leaves the commit in WAL. The other checkpoints it before
+admission. It compares the images read by ordinary read-only and
+immutable connections and calls the production opener. On rejection it
+compares the main database and WAL bytes. SHM may reflect reader locks
+and is outside the byte comparison. The fixture holds the committed
+image stable during each open.
+
+### Counterexample ledger
+
+| Stable committed transition, left in WAL | Decision on the latest committed view | Production opener |
+| --- | --- | --- |
+| Canonical schema version 99 to current version 5 | Admit | Reject with unsupported version 99 |
+| Canonical schema version 99 to unsupported version -1 | Reject with unsupported version -1 | Reject with unsupported version 99 |
+| Canonical schema tagged as version 99 to version 0 | Reject with invalid identity | Reject with unsupported version 99 |
+| Current schema application ID 173 to 0 | Admit | Reject with invalid identity |
+| Empty version-zero schema application ID 173 to 0 | Admit and initialize | Reject with invalid identity |
+| Drop the sole foreign table from a version-zero database | Admit and initialize | Reject with invalid identity |
+
+Each discrepancy disappears after checkpointing without a further
+commit. The shortest version witness changes only `user_version` on a
+canonical schema. The WAL-aware reader sees 5, while the advisory
+`immutable` reader sees 99 in the main file. The opener rejects before
+its writable admission check. The reverse witness, from version 5 to
+99, shows that writable admission rejects a committed unsupported
+version even when the advisory check passes. These are observed
+admission and diagnostic discrepancies relative to the latest
+committed image. The audit preserves the production behavior and
+records the expected committed-view decision for each witness.
+
+All 24 cases matched the modeled opener behavior on macOS in both
+the default and `contracts` configurations. Each discrepant case and
+its checkpointed counterpart was also replayed individually. The
+85-test schema suite, the three Lean sensitivity checks, and 222 CI
+workflow tests passed. Lean used a 2 GiB limit and single-job Rust
+used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_wal_admission -- --check corpus/session-wal-admission.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_wal_admission -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_wal_admission_matches_lean_oracle -- --test-threads=1
+HOIMIN_SESSION_WAL_ORACLE_CASE=upgrade-committed-version-in-wal CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib session_wal_admission_matches_lean_oracle -- --nocapture
+```

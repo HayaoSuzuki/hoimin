@@ -12,6 +12,9 @@ use super::{
 use crate::artifacts::SqliteCompanions;
 use crate::file_links::file_link_count;
 
+#[path = "wal_oracle_tests.rs"]
+mod wal_oracle_tests;
+
 const CORPUS: &str =
     include_str!("../../../../../formal/HoiminOracle/corpus/session-admission.jsonl");
 const DIGEST: [u8; 32] = [42; 32];
@@ -50,7 +53,7 @@ enum Journal {
     Wal,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 enum Objects {
     Empty,
