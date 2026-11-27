@@ -1,0 +1,333 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "acknowledged": {
+          "#bigint": "0"
+        },
+        "binding": {
+          "tag": "Original",
+          "value": {
+            "#tup": []
+          }
+        },
+        "command": {
+          "tag": "Start",
+          "value": {
+            "#tup": []
+          }
+        },
+        "operations": {
+          "#bigint": "0"
+        },
+        "remaining": {
+          "#set": [
+            {
+              "tag": "Branch",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Heartbeat",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Lease",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Payload",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Root",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "remainingAtReplacement": {
+          "#set": []
+        },
+        "result": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sliceRemoved": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "acknowledged": {
+          "#bigint": "1"
+        },
+        "binding": {
+          "tag": "Original",
+          "value": {
+            "#tup": []
+          }
+        },
+        "command": {
+          "tag": "RunSlice",
+          "value": {
+            "tag": "StopAfterPayload",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "1"
+        },
+        "remaining": {
+          "#set": [
+            {
+              "tag": "Branch",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Heartbeat",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Lease",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Root",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "remainingAtReplacement": {
+          "#set": []
+        },
+        "result": {
+          "tag": "Deferred",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sliceRemoved": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "s": {
+        "acknowledged": {
+          "#bigint": "1"
+        },
+        "binding": {
+          "tag": "Replacement",
+          "value": {
+            "#tup": []
+          }
+        },
+        "command": {
+          "tag": "ReplaceName",
+          "value": {
+            "#tup": []
+          }
+        },
+        "operations": {
+          "#bigint": "2"
+        },
+        "remaining": {
+          "#set": [
+            {
+              "tag": "Branch",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Heartbeat",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Lease",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Root",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "remainingAtReplacement": {
+          "#set": [
+            {
+              "tag": "Branch",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Heartbeat",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Lease",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Root",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "result": {
+          "tag": "NotRun",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sliceRemoved": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "s": {
+        "acknowledged": {
+          "#bigint": "1"
+        },
+        "binding": {
+          "tag": "Replacement",
+          "value": {
+            "#tup": []
+          }
+        },
+        "command": {
+          "tag": "RunSlice",
+          "value": {
+            "tag": "FullSlice",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "3"
+        },
+        "remaining": {
+          "#set": [
+            {
+              "tag": "Branch",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Heartbeat",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Lease",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Root",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "remainingAtReplacement": {
+          "#set": [
+            {
+              "tag": "Branch",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Heartbeat",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Lease",
+              "value": {
+                "#tup": []
+              }
+            },
+            {
+              "tag": "Root",
+              "value": {
+                "#tup": []
+              }
+            }
+          ]
+        },
+        "result": {
+          "tag": "Refused",
+          "value": {
+            "#tup": []
+          }
+        },
+        "sliceRemoved": {
+          "#bigint": "0"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

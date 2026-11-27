@@ -21,6 +21,9 @@ mod quint_namespace_recovery;
 #[path = "janitor/quint_reclaim.rs"]
 mod quint_reclaim;
 #[cfg(test)]
+#[path = "janitor/quint_removal.rs"]
+mod quint_removal;
+#[cfg(test)]
 #[path = "janitor/quint_retry.rs"]
 mod quint_retry;
 #[cfg(test)]

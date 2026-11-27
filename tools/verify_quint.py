@@ -97,6 +97,14 @@ MODELS = (
         simulation_mutant_step="acknowledgementLostStep",
     ),
     Model(
+        "janitor_removal.qnt",
+        "JanitorRemoval",
+        "janitor_removal",
+        scenarios=("limitsStep", "finalizationStep", "replacementStep"),
+        simulation_only=True,
+        simulation_mutant_step="removeLeaseEarlyStep",
+    ),
+    Model(
         "janitor_retry.qnt",
         "JanitorRetry",
         "janitor_retry",

@@ -196,7 +196,7 @@ each boundary.
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers a valid lease marker, retention, readiness, and heartbeat evidence | Invalid or absent observations before eligibility, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease | Claim combined with coordinator unlock, deletion, and report accounting |
-| Bounded removal within a claimed root | The Lean `CleanupCapabilityModel` checks retained write authority across replacement. Rust has bounded removal and replacement fixtures | Traversal, slice limits, partial deletion acknowledgements, and preserving other identities |
+| Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, and partial deletion with a small tree. Lean's `CleanupCapabilityModel` checks retained authority across replacement | Integration of the Windows pinned handle, pending rounds, and report accounting |
 | Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler | Composition of real deletion outcomes, pending progress, and final root disposition |
 | Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results and retained details | End-to-end aggregation across selection, claim, and cleanup |
 
@@ -419,6 +419,26 @@ time. `acceptWrongLeaseStep` must violate `Safety`.
 
 ```sh
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_claim
+```
+
+## Startup janitor bounded tree removal
+
+`janitor_removal.qnt` follows a single tree with one nested payload file, its
+parent directory, and two root control markers. The model compares an
+uninterrupted slice with a one-entry cap, an immediate stop, and stops after
+acknowledged payload, branch, or heartbeat deletion. Cleanup removes the
+nested entries before the control markers. Reopening a replaced name must
+preserve both the parked original and the replacement. `removeLeaseEarlyStep`
+must violate `Safety` by removing the lease while payload remains.
+
+The Rust replay drives `remove_claimed_tree_slice_with_capabilities` against
+the claimed name and its original identity. It checks the per-call and
+cumulative removals, the cap when a slice examines one entry, and the actual
+layout after every operation. The replacement scenario exercises reopening by
+name. Windows exact-handle removal has separate implementation tests.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_removal
 ```
 
 ## SQLite persistence, resume selection and ownership
