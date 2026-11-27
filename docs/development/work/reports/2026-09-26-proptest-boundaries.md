@@ -2185,3 +2185,43 @@ single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_stored_result -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test session_handler stored_result_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean audit of resume selection and fingerprint history
+
+Resume uses insertion order to select the newest incomplete run
+with the requested fingerprint and an eligible budget. A malformed
+budget on a matching incomplete row remains eligible for selection
+so validation can report the corruption. The selected row's budget
+is validated before ownership is acquired. An invalid budget or
+active owner ends the attempt at that row.
+
+If the candidate query returns nothing, selection inspects the
+fingerprint schema of the newest incomplete run with a matching
+metadata row in the fingerprint table. A legacy schema or invalid
+SQL type takes precedence over the ordinary fresh-run reason. A
+run without a fingerprint metadata row is absent from this join.
+An eligible exact fingerprint instead follows the candidate path,
+even if its schema metadata is legacy, future, ill-typed, or missing.
+Those metadata cases use deliberate database fixture edits.
+
+Lean proves the selected-row precedence, budget validation before
+ownership, active-owner refusal, legacy history precedence, and
+preservation of other rows' budgets. The 49 cases use SQLite files,
+real session ownership, and the production load call. They compare
+the selected run or reason, every run's stored budget, the
+fingerprint metadata, and which run the caller owns after the attempt.
+Six sensitivity checks cover sorting, malformed budgets, active
+ownership, the candidate and fallback order, legacy history, and
+missing fingerprint metadata.
+
+All 49 cases matched on macOS in default and `contracts` builds.
+The session handler suite passed 104 tests in each build with one
+existing ignored test. The related Lean session targets passed 93
+tests and the workflow suite passed 222. Lean used a 2 GiB limit and
+single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_resume_selection -- --check corpus/resume-selection.jsonl)
+(cd formal/HoiminOracle && lake exe generate_resume_selection -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test session_handler resume_selection_matches_lean_oracle -- --test-threads=1
+```

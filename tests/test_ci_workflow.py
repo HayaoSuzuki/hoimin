@@ -159,6 +159,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_session_catalog": "corpus/session-catalog.jsonl",
     "generate_session_configuration": "corpus/session-configuration.jsonl",
     "generate_stored_result": "corpus/stored-result.jsonl",
+    "generate_resume_selection": "corpus/resume-selection.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

@@ -178,6 +178,7 @@ import HoiminOracle.SessionHeaderModel
 import HoiminOracle.SessionCatalogModel
 import HoiminOracle.SessionConfigurationModel
 import HoiminOracle.StoredResultModel
+import HoiminOracle.ResumeSelectionModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

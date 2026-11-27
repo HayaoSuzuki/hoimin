@@ -1,4 +1,6 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
+#[path = "session_handler/resume_selection_oracle.rs"]
+mod resume_selection_oracle;
 #[path = "session_handler/stored_result_oracle.rs"]
 mod stored_result_oracle;
 
