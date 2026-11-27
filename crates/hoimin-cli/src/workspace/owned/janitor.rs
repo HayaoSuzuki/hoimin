@@ -3,6 +3,9 @@ use hoimin_core::{JanitorDetail, JanitorReason, JanitorSummary};
 use std::collections::VecDeque;
 
 #[cfg(test)]
+#[path = "janitor/quint_claim.rs"]
+mod quint_claim;
+#[cfg(test)]
 #[path = "janitor/quint_cursor_recovery.rs"]
 mod quint_cursor_recovery;
 #[cfg(test)]

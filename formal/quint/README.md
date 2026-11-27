@@ -195,7 +195,7 @@ each boundary.
 | Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow | Integration with reported cursor-write errors |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers a valid lease marker, retention, readiness, and heartbeat evidence | Invalid or absent observations before eligibility, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
-| Claim and lease handoff | Native Rust fixtures exercise rename, cancellation, replacement, and Windows lease reacquisition | Namespace and lease authority at the claim boundary |
+| Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease | Claim combined with coordinator unlock, deletion, and report accounting |
 | Bounded removal within a claimed root | The Lean `CleanupCapabilityModel` checks retained write authority across replacement. Rust has bounded removal and replacement fixtures | Traversal, slice limits, partial deletion acknowledgements, and preserving other identities |
 | Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler | Composition of real deletion outcomes, pending progress, and final root disposition |
 | Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results and retained details | End-to-end aggregation across selection, claim, and cleanup |
@@ -397,6 +397,28 @@ by allowing removal of a young empty staging directory.
 
 ```sh
 cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_namespace_recovery
+```
+
+## Startup janitor claim and lease handoff
+
+`janitor_claim.qnt` models one admitted root before removal. A claim checks
+the observed directory and lease identities, checks the marker, and publishes
+the deleting name. The model covers an absent candidate, fallback to the
+deleting name, identity and marker mismatches, cancellation, and rename failure.
+Windows traces distinguish restoration after a failed rename from reacquisition
+after the deleting name was published. A failure to reacquire leaves the
+namespace move visible and does not grant a lease to the caller.
+
+The Rust replay calls `claim_managed_child` under the coordinator lock, using
+distinct files with the same marker bytes to test identity checks. It compares
+the outcome, notification count, surviving paths, and whether a competing
+handle can lock the expected lease. The Windows replay uses a second handle
+that denies delete sharing to interrupt lease reopening. The coordinator is
+available throughout and the model considers one occupied candidate name at a
+time. `acceptWrongLeaseStep` must violate `Safety`.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_claim
 ```
 
 ## SQLite persistence, resume selection and ownership

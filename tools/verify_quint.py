@@ -37,6 +37,21 @@ class Model:
 
 MODELS = (
     Model(
+        "janitor_claim.qnt",
+        "JanitorClaim",
+        "janitor_claim",
+        scenarios=(
+            "unixIdentityStep",
+            "windowsIdentityStep",
+            "unixHandoffStep",
+            "windowsHandoffStep",
+            "unixFaultStep",
+            "windowsFaultStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="acceptWrongLeaseStep",
+    ),
+    Model(
         "janitor_cursor_recovery.qnt",
         "JanitorCursorRecovery",
         "janitor_cursor_recovery",
@@ -515,6 +530,7 @@ def check_simulation_mutant(
             f"--max-steps={specification.scenario_steps}",
             "--max-samples=1",
             "--seed=1172",
+            "--verbosity=1",
         ],
         build,
         f"{specification.main}-{step}-simulation",
