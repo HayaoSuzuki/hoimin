@@ -27,6 +27,20 @@ inductive OutputOutcome
   | failed
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
+inductive DrainSource
+  | stdout | stderr | collector
+  deriving Repr, DecidableEq, BEq
+
+-- Ordered evidence from the three output tasks. A definite failure takes
+-- precedence over a timeout, with task order breaking ties of the same kind.
+def drainEvidence (stdout stderr collector : OutputOutcome) : List (DrainSource × OutputOutcome) :=
+  [(.stdout, stdout), (.stderr, stderr), (.collector, collector)]
+
+def selectDrainError (stdout stderr collector : OutputOutcome) : Option (DrainSource × OutputOutcome) :=
+  let evidence := drainEvidence stdout stderr collector
+  (evidence.find? fun item => item.2 == .failed).orElse
+    (fun _ => evidence.find? fun item => item.2 == .closeTimedOut)
+
 inductive Status
   | killed
   | survived
@@ -84,6 +98,16 @@ def processOutcomes : List ProcessOutcome := [
 ]
 
 def outputOutcomes : List OutputOutcome := [.complete, .closeTimedOut, .failed]
+
+def drainAssignments : List (OutputOutcome × OutputOutcome × OutputOutcome) :=
+  outputOutcomes.flatMap fun stdout => outputOutcomes.flatMap fun stderr =>
+    outputOutcomes.map fun collector => (stdout, stderr, collector)
+
+def drainErrorSensitivity : Bool :=
+  let evidence := drainEvidence .closeTimedOut .failed .complete
+  let broken := evidence.find? fun item => item.2 != .complete
+  selectDrainError .closeTimedOut .failed .complete == some (.stderr, .failed) &&
+    selectDrainError .closeTimedOut .failed .complete != broken
 
 def assignments : List (ExecutionKind × ProcessOutcome × OutputOutcome) :=
   executions.flatMap fun execution =>

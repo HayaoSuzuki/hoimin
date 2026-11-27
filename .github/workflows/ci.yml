@@ -692,6 +692,8 @@ jobs:
                 lake exe "$executable" -- --sensitivity
             fi
           done
+          run_guard check-process-output-drain \
+            lake exe generate_process_output -- --check-drain corpus/process-output-drain.jsonl
       - name: Verify release SBOM model and corpus
         working-directory: formal/HoiminOracle
         run: |

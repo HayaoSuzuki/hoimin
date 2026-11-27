@@ -21,4 +21,14 @@ theorem process_failure_remains_fatal (execution : ExecutionKind)
 
 theorem sensitivity_detects_broken_families : sensitivityPasses = true := by native_decide
 
+theorem definite_drain_failure_precedes_close_timeout (stdout stderr collector : OutputOutcome)
+    (failed : stdout = .failed ∨ stderr = .failed ∨ collector = .failed) :
+    (selectDrainError stdout stderr collector).map Prod.snd = some .failed := by
+  cases stdout <;> cases stderr <;> cases collector <;> simp_all [selectDrainError, drainEvidence]
+
+theorem drain_timeout_requires_no_definite_failure (stdout stderr collector : OutputOutcome)
+    (timeout : (selectDrainError stdout stderr collector).map Prod.snd = some .closeTimedOut) :
+    stdout ≠ .failed ∧ stderr ≠ .failed ∧ collector ≠ .failed := by
+  cases stdout <;> cases stderr <;> cases collector <;> simp_all [selectDrainError, drainEvidence]
+
 end HoiminOracle.ProcessOutput

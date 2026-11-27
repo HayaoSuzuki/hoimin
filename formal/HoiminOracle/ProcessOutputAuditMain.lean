@@ -33,33 +33,54 @@ private def caseJson (item : OracleCase) : Lean.Json :=
 def renderCorpus : String :=
   String.join (cases.map fun item => (caseJson item).compress ++ "\n")
 
+private def drainSourceName : DrainSource → String
+  | .stdout => "stdout"
+  | .stderr => "stderr"
+  | .collector => "collector"
+
+private def drainJson (stdout stderr collector : OutputOutcome) : Lean.Json :=
+  let failure := selectDrainError stdout stderr collector
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)),
+    ("stdout", .str (outputName stdout)), ("stderr", .str (outputName stderr)),
+    ("collector", .str (outputName collector)),
+    ("expected_source", optionJson (failure.map fun item => drainSourceName item.1)),
+    ("expected_error", optionJson (failure.map fun item => outputName item.2)) ]
+
+def renderDrainCorpus : String :=
+  String.join (drainAssignments.map fun (stdout, stderr, collector) =>
+    (drainJson stdout stderr collector).compress ++ "\n")
+
 private def ensureAudit : IO (Except UInt32 Unit) := do
   unless allSafe do
     IO.eprintln "process output decision table is unsafe"
     return .error 2
-  unless sensitivityPasses do
+  unless sensitivityPasses && drainErrorSensitivity do
     IO.eprintln "process output audit missed a broken family"
     return .error 2
   unless cases.length == 42 && cases.all caseSafe do
     IO.eprintln "process output cases violate the closed contract"
     return .error 2
+  unless drainAssignments.length == 27 do
+    IO.eprintln "process output drain cases do not cover the closed table"
+    return .error 2
   return .ok ()
 
-private def writeCorpus (path : System.FilePath) : IO UInt32 := do
+private def writeCorpus (path : System.FilePath) (content : String) : IO UInt32 := do
   match ← ensureAudit with
   | .error code => return code
   | .ok () =>
       if let some parent := path.parent then IO.FS.createDirAll parent
-      IO.FS.writeFile path renderCorpus
+      IO.FS.writeFile path content
       return 0
 
-private def checkCorpus (path : System.FilePath) : IO UInt32 := do
+private def checkCorpus (path : System.FilePath) (content : String) : IO UInt32 := do
   match ← ensureAudit with
   | .error code => return code
   | .ok () =>
       try
         let actual ← IO.FS.readFile path
-        if actual == renderCorpus then return 0
+        if actual == content then return 0
         IO.eprintln s!"stale process output corpus: {path}"
         return 1
       catch error =>
@@ -68,7 +89,8 @@ private def checkCorpus (path : System.FilePath) : IO UInt32 := do
 
 private def printSensitivity : IO UInt32 := do
   IO.println s!"broken_families_detected={sensitivityPasses}"
-  return if sensitivityPasses then 0 else 2
+  IO.println s!"drain_error_detected={drainErrorSensitivity}"
+  return if sensitivityPasses && drainErrorSensitivity then 0 else 2
 
 private def printCases : IO UInt32 := do
   for item in cases do IO.println s!"{item.id}={caseSafe item}"
@@ -77,12 +99,14 @@ private def printCases : IO UInt32 := do
 def main (args : List String) : IO UInt32 := do
   let args := match args with | "--" :: rest => rest | _ => args
   match args with
-  | ["--output", path] => writeCorpus path
-  | ["--check", path] => checkCorpus path
+  | ["--output", path] => writeCorpus path renderCorpus
+  | ["--check", path] => checkCorpus path renderCorpus
+  | ["--output-drain", path] => writeCorpus path renderDrainCorpus
+  | ["--check-drain", path] => checkCorpus path renderDrainCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--cases"] => printCases
   | _ =>
-      IO.eprintln "usage: generate_process_output --output PATH | --check PATH | --sensitivity | --cases"
+      IO.eprintln "usage: generate_process_output (--output | --check | --output-drain | --check-drain) PATH | --sensitivity | --cases"
       return 2
 
 end HoiminOracle.ProcessOutput.Executable

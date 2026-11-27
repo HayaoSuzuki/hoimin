@@ -138,3 +138,19 @@ from the process termination, or stopping subsequent mutants.
   complete/empty defaults remain omitted when it is serialized again.
 - Run focused mutation testing over the combiner and machine classification,
   then the full Rust, Python, lint, and wheel suites.
+
+## Output drain failure precedence
+
+When stdout reached the close deadline first, the handler could discard a
+completed stderr read failure and return a recoverable mutant close timeout.
+The handler now observes the remaining tasks using the same deadline and gives
+definite failures precedence over close timeouts. Failures of the same kind
+retain the stdout, stderr, collector order. A definite stdout failure already
+determines the result, so the handler still cancels stderr in that case.
+
+The Lean drain model proves that a definite failure among the observed outcomes
+precludes choosing a close timeout. Its 27 rows cover completion, close
+timeout, and definite failure for each of stdout, stderr, and the collector.
+The Rust selector checks the error class and source for all rows. A separate
+Rust test with a paused clock exercises the wait path with a pending stdout
+task and a failed stderr task, then checks that the mutant result is fatal.
