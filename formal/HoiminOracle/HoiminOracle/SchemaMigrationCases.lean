@@ -122,8 +122,17 @@ def unsupportedPrecedenceSensitivity : Bool :=
     correct.version == version && correct.leftPhase == .unsupportedRejected &&
       broken.version == version && broken.leftPhase == .initializationFailed
 
+def schemaSeparatorSensitivity : Bool :=
+  let canonical := "schema_version INTEGER".toList
+  let nbsp := Char.ofNat 160
+  let changed := "schema_version".toList ++ nbsp :: " INTEGER".toList
+  let broadSpace := fun c => sqliteSchemaSpace c || c == nbsp
+  normalizeSchemaSql sqliteSchemaSpace canonical != normalizeSchemaSql sqliteSchemaSpace changed &&
+    normalizeSchemaSql broadSpace canonical == normalizeSchemaSql broadSpace changed
+
 def sensitivityPasses : Bool :=
-  atomicitySensitivity && staleReadSensitivity && unsupportedPrecedenceSensitivity
+  atomicitySensitivity && staleReadSensitivity && unsupportedPrecedenceSensitivity &&
+    schemaSeparatorSensitivity
 
 structure OracleCase where
   schema : Nat

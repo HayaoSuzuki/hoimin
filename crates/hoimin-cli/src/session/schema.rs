@@ -180,7 +180,8 @@ fn schema_objects(connection: &Connection) -> Result<SchemaObjects, rusqlite::Er
                 row.get(0)?,
                 row.get(1)?,
                 row.get(2)?,
-                sql.map(|sql| sql.split_whitespace().collect::<Vec<_>>().join(" ")),
+                // SQLite treats non-ASCII whitespace as part of a bare identifier.
+                sql.map(|sql| sql.split_ascii_whitespace().collect::<Vec<_>>().join(" ")),
             ))
         })?
         .collect()
@@ -666,6 +667,56 @@ mod tests {
         )
         .unwrap();
         assert_rejected_without_disk_changes(&path);
+    }
+
+    #[test]
+    fn admission_rejects_non_ascii_space_inside_a_current_schema_identifier() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("different.sqlite3");
+        let mut reference = Connection::open_in_memory().unwrap();
+        let transaction = reference.transaction().unwrap();
+        initialize(&transaction).unwrap();
+        transaction.commit().unwrap();
+
+        let mut statements = reference
+            .prepare("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid")
+            .unwrap();
+        let sql = statements
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .join(";\n");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(&sql.replacen(
+                "schema_version INTEGER",
+                "schema_version\u{a0} INTEGER",
+                1,
+            ))
+            .unwrap();
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION)
+            .unwrap();
+        assert!(
+            connection
+                .prepare("SELECT schema_version FROM fingerprints")
+                .is_err()
+        );
+        drop(connection);
+
+        let before = directory_bytes(directory.path());
+        let result = super::super::SessionHandler::open(&path);
+        assert!(
+            matches!(
+                result,
+                Err(super::super::SessionError::Schema(
+                    SchemaError::InvalidIdentity
+                ))
+            ),
+            "admission accepted a schema that cannot name the required column"
+        );
+        assert_eq!(directory_bytes(directory.path()), before);
     }
 
     fn closed_database_snapshot(path: &Path) -> (Vec<String>, i64, String) {

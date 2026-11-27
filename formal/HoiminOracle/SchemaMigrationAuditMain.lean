@@ -112,6 +112,7 @@ private def printSensitivity : IO UInt32 := do
   IO.println s!"atomicity_detected={atomicitySensitivity}"
   IO.println s!"stale_reread_detected={staleReadSensitivity}"
   IO.println s!"unsupported_precedence_detected={unsupportedPrecedenceSensitivity}"
+  IO.println s!"schema_separator_detected={schemaSeparatorSensitivity}"
   return if sensitivityPasses then 0 else 2
 
 private def printCases : IO UInt32 := do

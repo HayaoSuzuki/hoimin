@@ -118,4 +118,15 @@ def Invariant (state : State) : Prop :=
   (state.leftPhase = .succeeded → state.version = .current) ∧
   (state.rightPhase = .succeeded → state.version = .current)
 
+-- These are SQLite's ASCII whitespace characters at a token boundary. Catalog
+-- comparison groups text by separators, without parsing arbitrary SQL syntax.
+def sqliteSchemaSpace (character : Char) : Bool :=
+  character.isWhitespace || character == Char.ofNat 12
+
+def schemaWords (isSpace : Char → Bool) (sql : List Char) : List (List Char) :=
+  (sql.splitOnP isSpace).filter (fun word => !word.isEmpty)
+
+def normalizeSchemaSql (isSpace : Char → Bool) (sql : List Char) : List Char :=
+  [' '].intercalateTR (schemaWords isSpace sql)
+
 end HoiminOracle.SchemaMigration
