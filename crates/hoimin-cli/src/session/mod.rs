@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod finish_transaction_oracle_tests;
 mod ownership;
 #[cfg(test)]
 mod resume_recheck_oracle_tests;

@@ -180,6 +180,7 @@ import HoiminOracle.SessionConfigurationModel
 import HoiminOracle.StoredResultModel
 import HoiminOracle.ResumeSelectionModel
 import HoiminOracle.ResumeRecheckModel
+import HoiminOracle.FinishTransactionModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

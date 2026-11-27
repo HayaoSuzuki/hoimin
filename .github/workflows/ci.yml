@@ -777,6 +777,9 @@ jobs:
             HoiminOracle.ResumeRecheckModel
             HoiminOracle.ResumeRecheckCases
             ResumeRecheckAuditMain
+            HoiminOracle.FinishTransactionModel
+            HoiminOracle.FinishTransactionCases
+            FinishTransactionAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -885,6 +888,7 @@ jobs:
             'generate_stored_result|corpus/stored-result.jsonl|sensitivity'
             'generate_resume_selection|corpus/resume-selection.jsonl|sensitivity'
             'generate_resume_recheck|corpus/resume-recheck.jsonl|sensitivity'
+            'generate_finish_transaction|corpus/finish-transaction.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

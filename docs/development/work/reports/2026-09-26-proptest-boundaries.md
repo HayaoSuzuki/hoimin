@@ -2265,3 +2265,40 @@ single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_resume_recheck -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib resume_recheck_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of finish transaction and retry
+
+The finish handler checks ownership before opening its transaction.
+An owned row is eligible when its complete flag is clear, even if it
+has already been marked finished. A missing row or a complete flag
+produces a state error after the transaction begins. This includes
+the SQLite schema's legal combination of a set complete flag and a
+clear finished flag.
+
+Lean proves that refusals preserve the stored row and ownership and
+that success sets the requested flags and releases ownership.
+After a rejected commit, the same handler can retry with a different
+completion flag once the fault is cleared. After success, another
+finish requires the handler to acquire ownership again.
+
+The 100 cases replay an attempt and a retry through the Rust handler.
+A separate SQLite connection holds a competing write transaction.
+Temporary triggers abort or ignore the update or introduce a deferred
+foreign-key violation at commit. An independent observer reads the
+committed flags and probes the locks for both the target run
+and an unrelated run. Eight sensitivity variants exercise ownership,
+row eligibility, update errors, rollback, and lock release. This audit
+covers individual transaction failures and immediate retries after the
+fault is cleared.
+
+All 100 cases matched on macOS in default and `contracts` builds.
+The session unit suites passed 162 and 174 tests respectively. The
+session handler target passed 104 tests with one existing ignored
+test, and the workflow suite passed 222. Lean used a 2 GiB limit and
+single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_finish_transaction -- --check corpus/finish-transaction.jsonl)
+(cd formal/HoiminOracle && lake exe generate_finish_transaction -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib finish_transaction_matches_lean_oracle -- --test-threads=1
+```

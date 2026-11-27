@@ -335,6 +335,10 @@ name = "generate_resume_recheck"
 root = "ResumeRecheckAuditMain"
 
 [[lean_exe]]
+name = "generate_finish_transaction"
+root = "FinishTransactionAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 
