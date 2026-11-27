@@ -378,6 +378,8 @@ matches remain in the report as omissions. No page or cursor is published.
 while other names remain. The Rust replay injects the error based on the name
 actually yielded by the directory iterator. The report retains that one
 observation, and the following scan selects from the previous cursor.
+`partialDeadlineStep` expires before the next read at the same boundary. It
+retains the observation and records `SelectionDeadline`.
 
 The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
 in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.

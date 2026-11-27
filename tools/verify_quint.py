@@ -161,6 +161,7 @@ MODELS = (
             "startupStopsStep",
             "enumerationErrorStep",
             "partialEnumerationStep",
+            "partialDeadlineStep",
         ),
         scenario_steps=24,
         simulation_only=True,
