@@ -1381,3 +1381,40 @@ job and a 3 GiB cap.
 (cd formal/HoiminOracle && lake exe generate_workspace_integrity -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test plan --test workspace_handler --test workspace_empty_directories -- --test-threads=2
 ```
+
+## Lean model of worker workspace restoration
+
+Reset removes added entries and entries of the wrong kind, recreates
+missing snapshot directories, and then restores snapshot files in
+path order. The model takes the directory phase as completed before
+any injected restoration fault. Lean proves that a complete file pass
+produces the saved state for every slot and replaces exactly the files
+that differ. A matching file pass performs no replacements, even when
+a write fault is armed.
+
+The 60 cases exercise the real `WorkerWorkspace::reset` over files and
+directories. They check the inventory, file bytes and read-only state,
+and on Unix the identity of existing files and removal of symlinks
+without changes to the external target. The tests change the original
+after taking the snapshot and check that reset uses the snapshot and
+leaves the changed original intact.
+
+The injected faults cover rewind before replacement, the first data
+write after replacement, and permission setting after all bytes are
+written. They leave the old file, an empty replacement, and a
+replacement with saved bytes and writable permissions, respectively.
+Earlier completed work stays in place during retry. Seven deliberately
+incorrect variants exercise the comparison and interruption rules.
+
+On macOS, all 60 cases matched. The reset, workspace handler and
+workspace recovery suites passed 28, 60 and 39 tests respectively,
+with one existing ignored reset test. The reset suite with contracts
+enabled passed 30 tests, with the same ignored test. The workflow suite
+passed 222 tests. Lean ran under a 2 GiB cap and single-job Rust ran
+under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_workspace_restore -- --check corpus/workspace-restore.jsonl)
+(cd formal/HoiminOracle && lake exe generate_workspace_restore -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib workspace::reset -- --test-threads=2
+```

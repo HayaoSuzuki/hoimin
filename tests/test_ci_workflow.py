@@ -141,6 +141,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_plan_discovery_budget": "corpus/plan-discovery-budget.jsonl",
     "generate_verify_selection_flow": "corpus/verify-selection-flow.jsonl",
     "generate_workspace_integrity": "corpus/workspace-integrity.jsonl",
+    "generate_workspace_restore": "corpus/workspace-restore.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

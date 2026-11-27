@@ -4,6 +4,10 @@ use std::io::Seek;
 use super::root::WorkerEntryKind;
 use super::{WorkerWorkspace, WorkspaceError};
 
+#[cfg(test)]
+#[path = "reset/restore_oracle_tests.rs"]
+mod restore_oracle_tests;
+
 impl WorkerWorkspace {
     /// Restores the worker filesystem from its private preflight snapshot.
     ///
