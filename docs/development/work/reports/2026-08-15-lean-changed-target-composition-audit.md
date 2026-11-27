@@ -66,12 +66,13 @@ fields are independently validated. The deletion/binary fixture also inspects
 owned `ResolveGitChanges` output and raw Git name/numstat premises, so zero
 candidates cannot hide a leaked target.
 
-Git parsing remains Rust evidence. Existing property tests generate hostile
-zero-context diff bodies. A named internal regression corresponding to the
-`hostile-parser` row shows that structural-looking body lines in one section do
-not contaminate the later valid Python section. Integration tests pin
+The original changed-target model takes parsed facts as input. Existing Rust
+property tests generate zero-context diff bodies. The regression corresponding
+to the `hostile-parser` row shows that structural-looking body lines in one
+section do not contaminate the later valid Python section. Integration tests pin
 destination hunk coordinates, rename configuration, binary numstat, deletion,
-and staged/unstaged cancellation. These are not presented as Lean grammar proofs.
+and staged/unstaged cancellation. The patch transport audit below covers the
+file-section boundary and destination hunk ranges directly.
 
 ## Sensitivity and bounded cases
 
@@ -245,4 +246,52 @@ The single-job Rust checks peaked at 2,250,816 KiB under a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git::tracked
 CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope
+```
+
+## Git patch section transport
+
+Each `diff --git` marker begins a separate file section. The first old header
+and the first subsequent new header define its source and destination. A hunk
+before that pair produces no range. After the pair, source text that resembles
+a path header cannot alter the destination. A nonempty hunk uses the new-side
+coordinates, defaults an omitted count to one, and rejects an inclusive end
+outside `u32`. Zero-count hunks emit no range. The parser records an exclusion
+when a Python source is in scope and the destination is absent or outside the
+scope. Later processing applies those exclusions and normalizes the ranges.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| File-section placement | Prelude and independent lists of classified lines | Renderer places `diff --git` boundaries in bytes passed to `parse_diff` |
+| Path validation and scope | Typed header form, canonical relative path, optional selection | Real quote decoding and `GitPathScope` |
+| Destination coordinates | Decimal natural or malformed field, optional new count | `parse_hunk_range` reads the rendered hunk header |
+| Complete result | Raw ranges in encounter order, excluded path set, or first diagnostic | Real parser maps and `TargetError::GitFailed` at the owned seam |
+
+The 108 `internal-fixture` cases include 80 combinations of four old headers,
+four new headers, and five scopes. The 28 additional cases exercise section
+isolation, preamble, numeric limits, encoding, duplicate destinations, and
+diagnostic order. On an error the caller discards the accumulated maps, so the
+corpus compares the diagnostic in that branch. The model treats path spellings
+as classified inputs and exercises representative wire encodings. The complete
+byte grammar, platform case aliases, and binary numstat are outside this audit.
+
+Lean proves that sections compose in order, concatenating effects on success
+and returning the first diagnostic on failure. It also proves that path-header
+lookalikes inserted into a body have no effect and that the old coordinate
+cannot change the new-side range. A successful range has a positive count and
+the corresponding in-bounds inclusive endpoint.
+Six sensitivity witnesses detect using the old coordinates, retaining zero-count
+hunks, accepting a body header as a destination, merging file sections, ignoring
+scope, and omitting exclusions.
+
+Rust matched all 95 success cases and 13 failure cases, which span nine
+diagnostics. On macOS, 111 Git unit tests and 30 integration tests passed.
+Final Lean checks ran serially under a 20-second deadline and 2 GiB RSS
+ceiling, peaking at 1,281,920 KiB. The single-job Rust checks peaked at
+2,257,168 KiB under a 3 GiB ceiling.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-git-patch corpus/git-patch.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_target_oracle
 ```

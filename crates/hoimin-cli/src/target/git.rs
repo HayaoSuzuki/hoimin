@@ -603,6 +603,64 @@ mod tests {
     };
 
     #[test]
+    fn git_patch_transport_matches_lean() {
+        #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum Observation {
+            Ok {
+                changed: BTreeMap<Utf8PathBuf, Vec<LineRange>>,
+                excluded: BTreeSet<Utf8PathBuf>,
+            },
+            Error {
+                message: String,
+            },
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            schema: u32,
+            mode: String,
+            id: String,
+            scope: Option<Vec<Utf8PathBuf>>,
+            patch: String,
+            expected: Observation,
+        }
+
+        let mut ids = BTreeSet::new();
+        for row in include_str!("../../../../formal/HoiminOracle/corpus/git-patch.jsonl").lines() {
+            let fixture: Fixture = serde_json::from_str(row).unwrap();
+            assert_eq!(fixture.schema, 1, "{}", fixture.id);
+            assert_eq!(fixture.mode, "internal-fixture", "{}", fixture.id);
+            let targets = fixture.scope.map(|paths| {
+                paths
+                    .into_iter()
+                    .map(|path| hoimin_core::TargetSlice {
+                        path,
+                        lines: Vec::new(),
+                        symbols: Vec::new(),
+                    })
+                    .collect::<Vec<_>>()
+            });
+            let scope = GitPathScope::new(targets.as_deref());
+            let mut changed = BTreeMap::new();
+            let mut excluded = BTreeSet::new();
+            let actual = match parse_diff(
+                fixture.patch.as_bytes(),
+                &mut changed,
+                &mut excluded,
+                &scope,
+            ) {
+                Ok(()) => Observation::Ok { changed, excluded },
+                Err(super::TargetError::GitFailed(message)) => Observation::Error { message },
+                Err(error) => panic!("{}: unexpected error: {error}", fixture.id),
+            };
+            assert_eq!(actual, fixture.expected, "{}", fixture.id);
+            assert!(ids.insert(fixture.id));
+        }
+        assert_eq!(ids.len(), 108);
+    }
+
+    #[test]
     fn scoped_patch_filtering_preserves_header_body_boundaries() {
         let scope = GitPathScope::new(Some(&[hoimin_core::TargetSlice {
             path: "selected/good.py".into(),

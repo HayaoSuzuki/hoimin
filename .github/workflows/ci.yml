@@ -552,6 +552,8 @@ jobs:
             HoiminOracle.LineCoverageCases
             HoiminOracle.GitInventoryModel
             HoiminOracle.GitInventoryCases
+            HoiminOracle.GitPatchModel
+            HoiminOracle.GitPatchCases
             ChangedContextAuditMain
             ChangedLinesAuditMain
             GlobSelectionAuditMain
@@ -748,6 +750,8 @@ jobs:
             lake exe generate_changed_context -- --check-line-coverage corpus/line-coverage.jsonl
           run_guard check-git-inventory \
             lake exe generate_changed_context -- --check-git-inventory corpus/git-inventory.jsonl
+          run_guard check-git-patch \
+            lake exe generate_changed_context -- --check-git-patch corpus/git-patch.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \
