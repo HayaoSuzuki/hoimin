@@ -130,6 +130,24 @@ fn assert_slots_and_reopen(parent: &Utf8Path, path: &Utf8Path, expected: &Value)
     );
 }
 
+fn reject_overflow(parent: &Utf8Path, path: &Utf8Path, rank: u64) {
+    let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+    let before = fs::read(path).unwrap();
+    let guard = CoordinatorLockGuard::acquire(&coordinator).unwrap();
+    let (active, state) = read_coordinator_state(&coordinator.file, path).unwrap();
+    let error = persist_coordinator_cursor(
+        &coordinator.file,
+        path,
+        active,
+        &state,
+        &quint_cursor_name(rank),
+    )
+    .unwrap_err();
+    guard.unlock(&coordinator.path).unwrap();
+    assert!(error.to_string().contains("generation overflow"), "{error}");
+    assert_eq!(fs::read(path).unwrap(), before);
+}
+
 fn replay_step(parent: &Utf8Path, path: &Utf8Path, expected: &Value) {
     let command = &expected["command"];
     match command["tag"].as_str().unwrap() {
@@ -139,7 +157,7 @@ fn replay_step(parent: &Utf8Path, path: &Utf8Path, expected: &Value) {
             path,
             usize::try_from(number(&command["value"]["index"])).unwrap(),
         ),
-        "InstallConflict" => {
+        "InstallConflict" | "InstallMaximum" => {
             let mut bytes = fs::read(path).unwrap();
             let conflicting = record(&command["value"]);
             let encoded =
@@ -147,6 +165,7 @@ fn replay_step(parent: &Utf8Path, path: &Utf8Path, expected: &Value) {
             bytes[slot_range(1)].copy_from_slice(&encoded);
             fs::write(path, bytes).unwrap();
         }
+        "RejectOverflow" => reject_overflow(parent, path, number(&command["value"])),
         other => panic!("unknown cursor operation {other}"),
     }
     assert_slots_and_reopen(parent, path, expected);
@@ -164,6 +183,7 @@ const RECOVERY: &str = include_str!(
 #[case::recover(RECOVERY)]
 #[case::interrupted_write(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_interruptedWriteStep_0.itf.json"))]
 #[case::conflicting_generation(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_conflictingGenerationStep_0.itf.json"))]
+#[case::overflow(include_str!("../../../../../../formal/quint/traces/janitor_cursor_recovery_overflowStep_0.itf.json"))]
 fn quint_history_matches_coordinator_cursor_recovery(#[case] trace: &str) {
     let directory = tempfile::tempdir().unwrap();
     let parent = Utf8Path::from_path(directory.path()).unwrap();

@@ -1,0 +1,220 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "command": {
+          "tag": "Init",
+          "value": {
+            "#tup": []
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "0"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "0"
+              },
+              "generation": {
+                "#bigint": "0"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "0"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "command": {
+          "tag": "InstallMaximum",
+          "value": {
+            "cursor": {
+              "#bigint": "1"
+            },
+            "generation": {
+              "#bigint": "18446744073709551615"
+            }
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "1"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "1"
+              },
+              "generation": {
+                "#bigint": "18446744073709551615"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "1"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "1"
+                  },
+                  "generation": {
+                    "#bigint": "18446744073709551615"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "s": {
+        "command": {
+          "tag": "RejectOverflow",
+          "value": {
+            "#bigint": "2"
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "1"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "1"
+              },
+              "generation": {
+                "#bigint": "18446744073709551615"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "2"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "1"
+                  },
+                  "generation": {
+                    "#bigint": "18446744073709551615"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

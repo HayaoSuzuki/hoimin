@@ -179,6 +179,31 @@ cargo test --locked -p hoimin-cli --lib shell::finalization::quint
 cargo test --locked -p hoimin-cli --lib session::ownership::quint
 ```
 
+## Startup janitor verification inventory
+
+The startup path runs from `create_managed_shell_roots_controlled` in
+`crates/hoimin-cli/src/shell.rs` through the controlled entry point and the
+selection, claim, and removal functions in `crates/hoimin-cli/src/workspace/owned.rs`.
+The janitor ledger converts observed outcomes to the report contract in
+`crates/hoimin-core/src/report/janitor.rs`. The table records the coverage of
+each boundary.
+
+| Boundary | Existing model and implementation correspondence | Model work remaining |
+| --- | --- | --- |
+| Startup invocation, shared deadline, and report handoff | Rust shell and controlled-startup fixtures | Stop before selection, after observation, and before reporting |
+| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays normal pages and deadline checkpoints against directory entries | Bounded selection, scan errors, coordinator contention, and uninspected selected roots at the handoff |
+| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow | Integration with reported cursor-write errors |
+| Observed candidate identity and admission | `janitor_eligibility.qnt` covers a valid lease marker, retention, readiness, and heartbeat evidence | Invalid or absent observations before eligibility, coordinator holds, and the Windows mutation barrier |
+| Startup recovery of staging and deleting roots | Native Rust fixtures create interrupted namespaces | Admission and hold rules for incomplete workspace creation and deletion |
+| Claim and lease handoff | Native Rust fixtures exercise rename, cancellation, replacement, and Windows lease reacquisition | Namespace and lease authority at the claim boundary |
+| Bounded removal within a claimed root | The Lean `CleanupCapabilityModel` checks retained write authority across replacement. Rust has bounded removal and replacement fixtures | Traversal, slice limits, partial deletion acknowledgements, and preserving other identities |
+| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline against the scheduler | Composition of real deletion outcomes, pending progress, and final root disposition |
+| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` compare ledger results and retained details | End-to-end aggregation across selection, claim, and cleanup |
+
+Existing host-specific tests remain part of the implementation evidence. Quint
+models use small representative directories and explicit filesystem outcomes
+so that the checks can run on each change.
+
 ## Startup janitor reclaim evidence
 
 `janitor_reclaim.qnt` models two selected roots from three matching directory
@@ -302,6 +327,8 @@ valid generation, uses slot zero for the initial identical pair, and rejects
 both an entirely invalid file and a valid pair that disagrees at the same
 generation. `conflictingGenerationStep` checks that the reader and coordinator
 open both reject that conflicting pair without rewriting the file.
+`overflowStep` starts with a readable maximum generation and checks that a
+new save fails without modifying either slot.
 After the newest digest is damaged, recovery
 uses the preceding slot, and the next save increments that recovered generation.
 `preferOlderStep` selects the older slot after a successful save and violates
