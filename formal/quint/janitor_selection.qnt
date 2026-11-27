@@ -2,6 +2,7 @@
 // The coordinator serializes scans. The available names can change between scans.
 module JanitorSelection {
   type Phase = Idle | Scanning | Eof | BeforePersist | Published | PersistFailed |
+    PersistTorn | PersistSyncFailed |
     ExpiredScan | ExpiredEof | ExpiredPersist | NamespaceLimited | CoordinatorBusy | SelectionReadFailed
   type Scan = { phase: Phase, listing: Set[int], seen: Set[int], chosen: List[int],
     rawEntries: int, complete: bool, limited: bool, cursorDeferred: bool, scans: int }
@@ -26,8 +27,8 @@ module JanitorSelection {
   }
 
   pure def terminal(phase: Phase): bool =
-    Set(Published, PersistFailed, ExpiredScan, ExpiredEof, ExpiredPersist, NamespaceLimited,
-      CoordinatorBusy, SelectionReadFailed)
+    Set(Published, PersistFailed, PersistTorn, PersistSyncFailed, ExpiredScan, ExpiredEof,
+      ExpiredPersist, NamespaceLimited, CoordinatorBusy, SelectionReadFailed)
       .contains(phase)
 
   action begin(listing: Set[int]): bool = all {
@@ -100,9 +101,10 @@ module JanitorSelection {
     publish({ ...scan, phase: Published }, advance(saved, scan.chosen)),
   }
 
-  action failPersist = all {
+  action failPersist(failure: Phase): bool = all {
     scan.phase == BeforePersist and scan.chosen.length() > 0,
-    publish({ ...scan, phase: PersistFailed }, saved),
+    publish({ ...scan, phase: failure },
+      if (failure == PersistSyncFailed) advance(saved, scan.chosen) else saved),
   }
 
   action expireBeforeScan = all {
@@ -158,9 +160,13 @@ module JanitorSelection {
     if (scan.scans == 2 and scan.phase == BeforePersist) expireBeforePersist
     else advanceScenario
 
-  action persistFailureStep =
-    if (scan.scans == 2 and scan.phase == BeforePersist) failPersist
+  action interruptedScan(failure: Phase): bool =
+    if (scan.scans == 2 and scan.phase == BeforePersist) failPersist(failure)
     else advanceScenario
+
+  action persistFailureStep = interruptedScan(PersistFailed)
+  action tornPersistStep = interruptedScan(PersistTorn)
+  action syncFailureStep = interruptedScan(PersistSyncFailed)
 
   // Record the final scan evidence once for each large listing.
   action boundaryScan(listing: Set[int], rawCount: int): bool = {
@@ -203,7 +209,8 @@ module JanitorSelection {
   val completedEmptyScan = scan.phase == Published and scan.chosen.length() == 0
 
   val selectionIsExact = {
-    val hasSelection = Set(BeforePersist, Published, PersistFailed, ExpiredPersist).contains(scan.phase)
+    val hasSelection = Set(BeforePersist, Published, PersistFailed, PersistTorn, PersistSyncFailed,
+      ExpiredPersist).contains(scan.phase)
     val after = scan.seen.filter(name => name > startCursor.name)
     val eligible = if (after.size() == 0) scan.seen else after
     val count = scan.chosen.length()
@@ -225,11 +232,12 @@ module JanitorSelection {
     (scan.phase == NamespaceLimited) == (scan.rawEntries > namespaceLimit),
     scan.rawEntries <= namespaceLimit + 1,
     Set(CoordinatorBusy, SelectionReadFailed).contains(scan.phase) implies scan.rawEntries == 0,
-    scan.complete == Set(Eof, BeforePersist, Published, PersistFailed, ExpiredEof, ExpiredPersist).contains(scan.phase),
+    scan.complete == Set(Eof, BeforePersist, Published, PersistFailed, PersistTorn, PersistSyncFailed,
+      ExpiredEof, ExpiredPersist).contains(scan.phase),
     scan.complete implies scan.seen == scan.listing,
     scan.limited == bucketOverflow(scan.seen, startCursor),
     selectionIsExact,
-    if (scan.phase == Published and scan.chosen.length() > 0)
+    if (Set(Published, PersistSyncFailed).contains(scan.phase) and scan.chosen.length() > 0)
       saved.name == scan.chosen.nth(scan.chosen.length() - 1) and
         saved.generation == startCursor.generation + 1
     else saved == startCursor,

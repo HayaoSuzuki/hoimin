@@ -128,6 +128,8 @@ MODELS = (
             "eofDeadlineStep",
             "persistDeadlineStep",
             "persistFailureStep",
+            "tornPersistStep",
+            "syncFailureStep",
             "recoveredCursorStep",
             "capacityStep",
             "namespaceLimitStep",

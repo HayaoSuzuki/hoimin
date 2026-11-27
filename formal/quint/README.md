@@ -192,7 +192,7 @@ each boundary.
 | --- | --- | --- |
 | Startup invocation, shared deadline, and report handoff | Rust shell and controlled-startup fixtures | Stop before selection, after observation, and before reporting |
 | Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, and cursor read errors | Directory enumeration errors and uninspected selected roots at the handoff |
-| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records and reopening, including conflicting equal generations and generation overflow. `janitor_selection.qnt` follows a write failure through the cleanup report | Recovery after reported partial writes and sync errors is verified at the slot boundary |
+| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins failed writes and syncs to cleanup reporting and the next page | Actual power loss is outside the filesystem fault model |
 | Observed candidate identity and admission | `janitor_eligibility.qnt` covers lease absence, type, lock errors, malformed markers, retention, readiness, and heartbeat evidence | Candidate directory open and identity errors, coordinator holds, and the Windows mutation barrier |
 | Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` compares admission, typed diagnostics, and surviving entries in incomplete workspaces | Admission combined with claim and slice failures |
 | Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease | Claim combined with coordinator unlock, deletion, and report accounting |
@@ -314,6 +314,10 @@ cursor. Both preserve the prior cursor and generation. The negative control
 `persistFailureStep` injects an error before writing the inactive slot.
 The selected page still reaches cleanup, the report records
 `CursorPersistenceFailed`, and the following scan uses the previous cursor.
+`tornPersistStep` leaves an invalid inactive slot and also uses the previous
+cursor on reopening. `syncFailureStep` reports the same diagnostic but reopens
+on a complete, readable new slot and selects the next page from it. The sync
+error checks bytes visible after reopening under fault injection.
 `capacityStep` checks a full page, one excess name, and an excess in the
 wrapped bucket when the selected page contains only a single name.
 `namespaceLimitStep` distinguishes 100,000 raw directory entries from

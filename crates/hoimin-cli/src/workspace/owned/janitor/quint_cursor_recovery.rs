@@ -15,10 +15,27 @@ use std::fs;
 use std::io::{self, Seek, SeekFrom, Write};
 use std::ops::Range;
 
-fn slot_range(index: usize) -> Range<usize> {
+pub(super) fn slot_range(index: usize) -> Range<usize> {
     assert!(index < 2);
     let start = 1 + index * COORDINATOR_SLOT_BYTES;
     start..start + COORDINATOR_SLOT_BYTES
+}
+
+pub(super) fn torn_cursor_write(
+    file: &fs::File,
+    active: usize,
+    state: &CoordinatorSlot,
+    cursor: &str,
+) -> impl FnOnce() -> io::Result<()> + 'static {
+    let mut writer = file.try_clone().unwrap();
+    let intended = coordinator_slot_bytes(state.generation + 1, cursor).unwrap();
+    let offset = u64::try_from(slot_range(1 - active).start).unwrap();
+    move || {
+        writer.seek(SeekFrom::Start(offset))?;
+        // Leave the old digest in place after writing the new payload.
+        writer.write_all(&intended[..COORDINATOR_DIGEST_OFFSET])?;
+        Err(io::Error::other("injected torn cursor write"))
+    }
 }
 
 fn record(expected: &Value) -> CoordinatorSlot {
@@ -45,17 +62,11 @@ fn save(parent: &Utf8Path, path: &Utf8Path, request: &Value) {
         "Commit" => None,
         "BeforeWrite" => Some(io_faults::arm("cursor.write")),
         "SyncError" => Some(io_faults::arm("cursor.flush")),
-        "Torn" => {
-            let mut writer = coordinator.file.try_clone().unwrap();
-            let intended = coordinator_slot_bytes(state.generation + 1, &cursor).unwrap();
-            let offset = u64::try_from(slot_range(1 - active).start).unwrap();
-            Some(io_faults::arm_action("cursor.write", 0, move || {
-                writer.seek(SeekFrom::Start(offset))?;
-                // Leave the old digest in place after writing the new payload.
-                writer.write_all(&intended[..COORDINATOR_DIGEST_OFFSET])?;
-                Err(io::Error::other("injected torn cursor write"))
-            }))
-        }
+        "Torn" => Some(io_faults::arm_action(
+            "cursor.write",
+            0,
+            torn_cursor_write(&coordinator.file, active, &state, &cursor),
+        )),
         other => panic!("unknown cursor write mode {other}"),
     };
     let result = persist_coordinator_cursor(&coordinator.file, path, active, &state, &cursor);

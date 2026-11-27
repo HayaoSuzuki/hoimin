@@ -1,10 +1,11 @@
 //! Replay candidate scans against real directory entries and coordinator slots.
 use super::super::{
     COORDINATOR_FILE, CoordinatorLockGuard, ManagedRootCoordinator, ManagedRunRoot,
-    read_coordinator_state, select_reclaim_candidates,
+    decode_coordinator_slot, read_coordinator_state, select_reclaim_candidates,
     select_reclaim_candidates_locked_until_with_hooks,
 };
 use super::quint_cursor_name as name;
+use super::quint_cursor_recovery::{slot_range, torn_cursor_write};
 use crate::io_faults;
 use crate::quint_itf::{number, set, states};
 use camino::Utf8Path;
@@ -136,9 +137,9 @@ fn quint_history_matches_candidate_selection(#[case] trace: &str) {
 }
 
 fn replay_selection(trace: &str) {
-    let parent = tempfile::tempdir().unwrap();
-    let coordinator =
-        ManagedRootCoordinator::open(Utf8Path::from_path(parent.path()).unwrap()).unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let parent = Utf8Path::from_path(directory.path()).unwrap();
+    let mut coordinator = ManagedRootCoordinator::open(parent).unwrap();
     let mut previous = BTreeSet::new();
     let mut finished = 0;
     for row in states(trace) {
@@ -148,6 +149,8 @@ fn replay_selection(trace: &str) {
             phase,
             "Published"
                 | "PersistFailed"
+                | "PersistTorn"
+                | "PersistSyncFailed"
                 | "ExpiredScan"
                 | "ExpiredEof"
                 | "ExpiredPersist"
@@ -159,7 +162,11 @@ fn replay_selection(trace: &str) {
         update_listing(&coordinator, &mut previous, &scan["listing"]);
         assert_cursor(&coordinator, &row["startCursor"]);
         match phase {
-            "PersistFailed" => check_cursor_failure_handoff(&coordinator, scan),
+            "PersistFailed" | "PersistTorn" | "PersistSyncFailed" => {
+                check_cursor_failure_handoff(&coordinator, scan, phase);
+                drop(coordinator);
+                coordinator = ManagedRootCoordinator::open(parent).unwrap();
+            }
             "CoordinatorBusy" | "SelectionReadFailed" => check_unavailable(&coordinator, phase),
             _ => check_scan(&coordinator, scan),
         }
@@ -215,8 +222,15 @@ fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str) {
     assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
 }
 
-fn check_cursor_failure_handoff(coordinator: &ManagedRootCoordinator, expected: &Value) {
+fn check_cursor_failure_handoff(
+    coordinator: &ManagedRootCoordinator,
+    expected: &Value,
+    phase: &str,
+) {
     let initial_bytes = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let (active, state) =
+        read_coordinator_state(&coordinator.file, &coordinator.path.join(COORDINATOR_FILE))
+            .unwrap();
     let expected_page = expected_page(expected);
     let report = ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
         coordinator,
@@ -224,11 +238,30 @@ fn check_cursor_failure_handoff(coordinator: &ManagedRootCoordinator, expected: 
         Instant::now(),
         &|_| Duration::ZERO,
         &|scan| {
-            let fault = io_faults::arm("cursor.write");
+            let fault = match phase {
+                "PersistFailed" => io_faults::arm("cursor.write"),
+                "PersistTorn" => io_faults::arm_action(
+                    "cursor.write",
+                    0,
+                    torn_cursor_write(
+                        &coordinator.file,
+                        active,
+                        &state,
+                        expected_page.last().unwrap(),
+                    ),
+                ),
+                "PersistSyncFailed" => io_faults::arm("cursor.flush"),
+                other => panic!("unexpected cursor fault {other}"),
+            };
             let (page, error) = select_reclaim_candidates(coordinator, scan).unwrap();
             assert!(fault.triggered());
             assert_eq!(page, expected_page);
-            assert!(error.is_some());
+            let operation = if phase == "PersistSyncFailed" {
+                "flush coordinator cursor"
+            } else {
+                "write coordinator cursor"
+            };
+            assert!(error.as_ref().unwrap().contains(operation));
             Ok((page, error))
         },
     );
@@ -266,21 +299,31 @@ fn check_cursor_failure_handoff(coordinator: &ManagedRootCoordinator, expected: 
         JanitorReason::CursorPersistenceFailed
     );
     assert_eq!(report.details.len(), expected_page.len() + 1);
-    assert_eq!(
-        coordinator.dir.read(COORDINATOR_FILE).unwrap(),
-        initial_bytes
-    );
+    let bytes = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    assert_eq!(bytes[slot_range(active)], initial_bytes[slot_range(active)]);
+    if phase == "PersistFailed" {
+        assert_eq!(bytes, initial_bytes);
+    } else {
+        assert_ne!(bytes, initial_bytes);
+        assert_eq!(
+            decode_coordinator_slot(&bytes[slot_range(1 - active)]).is_some(),
+            phase == "PersistSyncFailed",
+        );
+    }
 }
 
-#[test]
-fn cursor_write_failure_preserves_the_page_and_reports_the_failure() {
-    let trace = include_str!(
-        "../../../../../../formal/quint/traces/janitor_selection_persistFailureStep_0.itf.json"
-    );
+#[rstest::rstest]
+#[case::before_write("PersistFailed", include_str!("../../../../../../formal/quint/traces/janitor_selection_persistFailureStep_0.itf.json"))]
+#[case::torn("PersistTorn", include_str!("../../../../../../formal/quint/traces/janitor_selection_tornPersistStep_0.itf.json"))]
+#[case::sync("PersistSyncFailed", include_str!("../../../../../../formal/quint/traces/janitor_selection_syncFailureStep_0.itf.json"))]
+fn quint_cursor_failure_preserves_the_page_and_reports_the_failure(
+    #[case] phase: &str,
+    #[case] trace: &str,
+) {
     assert!(
         states(trace)
             .iter()
-            .any(|row| row["scan"]["phase"]["tag"] == "PersistFailed")
+            .any(|row| row["scan"]["phase"]["tag"] == phase)
     );
     replay_selection(trace);
 }
