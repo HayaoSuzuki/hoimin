@@ -40,26 +40,32 @@ test and the metrics sidecar integration tests.
 
 ## Lean model and Rust comparison
 
-The model uses integer milliseconds and a monotonic clock. Each transition
-preserves the bound on a worker's accounted time. While that worker is queued
-or running, the bound is the start of the open interval. This lets the proof
-bound the sum after accounting for the interval. The model also proves that
-rejected operations preserve worker state and cancelling a queued process
-preserves its accumulated counters.
+The model uses a monotonic clock with nanosecond resolution. It subtracts the
+timestamps before truncating each closed interval to milliseconds. Time
+conversion and accumulation saturate at `u64::MAX`. Each transition
+preserves the bound on the worker's accounted time. While the worker is
+queued or running, the bound is the start of the open interval. When elapsed
+milliseconds are representable, the invariant implies that the published
+per-worker total fits the elapsed counter. The model also proves that
+rejected operations preserve worker state and that cancelling a queued
+process preserves its accumulated counters.
 
 The corpus replays all 125 sequences of three operations for one worker at
-fixed timestamps. Eight additional cases cover overlapping work on two
+fixed timestamps. Fourteen additional cases cover overlapping work on two
 workers, rejection followed by successful completion, cancellation and reuse,
 uncounted work, outstanding-process error precedence, empty output, a count
-above discovery, and an elapsed time of `u64::MAX`. The Rust adapter uses the
-collector's test clock and checks each operation's typed result, the final
-validation status, and the ordered worker counters. The comparison covers
-integer-millisecond inputs. Submillisecond truncation and stage timing remain
-outside this model.
+above discovery, submillisecond boundaries, and saturation. Beyond the elapsed
+counter's range, one counter can saturate and still be valid, while combined
+wait and busy counters above that range cause validation to fail. The Rust
+adapter uses the collector's test clock and checks each operation's typed
+result, the final validation status, and the ordered worker counters. Stage
+timing and process-count saturation remain outside this model.
 
 The sensitivity check finds differences when a duplicate queue resets its
-timestamp, an uncounted process increments the process count, or cancelling
-a queued process charges elapsed queue time.
+timestamp, an uncounted process increments the process count, a cancelled
+queue interval is charged, timestamps are rounded before subtraction,
+fractional intervals are rounded only after accumulation, or accumulated time
+is allowed to exceed the counter's range.
 
 ```sh
 (cd formal/HoiminOracle && lake exe generate_worker_metrics -- --check corpus/worker-metrics.jsonl)

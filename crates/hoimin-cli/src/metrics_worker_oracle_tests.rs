@@ -22,7 +22,7 @@ enum Rejection {
 
 #[derive(serde::Deserialize)]
 struct Event {
-    at_ms: u64,
+    at_ns: String,
     worker: u32,
     action: Action,
 }
@@ -47,10 +47,19 @@ struct Fixture {
     mode: String,
     events: Vec<Event>,
     decisions: Vec<Option<Rejection>>,
+    elapsed_ns: String,
     elapsed_ms: u64,
     discovered: u64,
     executed: u64,
     finish: Finish,
+}
+
+fn duration_from_nanos(value: &str) -> Duration {
+    let nanos = value.parse::<u128>().unwrap();
+    Duration::new(
+        u64::try_from(nanos / 1_000_000_000).unwrap(),
+        u32::try_from(nanos % 1_000_000_000).unwrap(),
+    )
 }
 
 fn record(
@@ -59,11 +68,11 @@ fn record(
     id: &str,
 ) -> Option<Rejection> {
     let Event {
-        at_ms,
+        at_ns,
         worker,
         action,
     } = event;
-    collector.clock.set(Duration::from_millis(at_ms));
+    collector.clock.set(duration_from_nanos(&at_ns));
     let result = match action {
         Action::Queue => collector.queued(worker),
         Action::Start => collector.process_started(worker),
@@ -92,7 +101,9 @@ fn replay(fixture: Fixture) {
         .map(|event| record(&mut collector, event, id))
         .collect();
     assert_eq!(decisions, fixture.decisions, "{id}: worker transitions");
-    collector.clock.set(Duration::from_millis(fixture.elapsed_ms));
+    collector
+        .clock
+        .set(duration_from_nanos(&fixture.elapsed_ns));
     let finished = match collector.finish(fixture.discovered, fixture.executed) {
         Ok(metrics) => {
             metrics.validate().unwrap();
@@ -115,10 +126,10 @@ fn worker_metrics_accounting_matches_lean() {
     let mut ids = BTreeSet::new();
     for line in include_str!("../../../formal/HoiminOracle/corpus/worker-metrics.jsonl").lines() {
         let fixture: Fixture = serde_json::from_str(line).unwrap();
-        assert_eq!(fixture.schema, 1, "{}", fixture.id);
+        assert_eq!(fixture.schema, 2, "{}", fixture.id);
         assert_eq!(fixture.mode, "internal-fixture", "{}", fixture.id);
         assert!(ids.insert(fixture.id.clone()));
         replay(fixture);
     }
-    assert_eq!(ids.len(), 133);
+    assert_eq!(ids.len(), 139);
 }
