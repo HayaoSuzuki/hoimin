@@ -86,6 +86,7 @@ import HoiminOracle.GitInventoryModel
 import HoiminOracle.GitPatchModel
 import HoiminOracle.GitNumstatModel
 import HoiminOracle.ChangedLinesModel
+import HoiminOracle.GitPhysicalRowsModel
 import HoiminOracle.ProcessOutputModel
 import HoiminOracle.ProcessOutputProofs
 import HoiminOracle.ProcessOutputCases

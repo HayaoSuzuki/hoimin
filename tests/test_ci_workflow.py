@@ -1637,6 +1637,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
         ("generate_changed_context", "--check-git-patch", "corpus/git-patch.jsonl"),
         ("generate_changed_context", "--check-git-numstat", "corpus/git-numstat.jsonl"),
         (
+            "generate_changed_lines",
+            "--check-physical-rows",
+            "corpus/git-physical-rows.jsonl",
+        ),
+        (
             "generate_resume_budget",
             "--check-recheck",
             "corpus/resume-budget-recheck.jsonl",

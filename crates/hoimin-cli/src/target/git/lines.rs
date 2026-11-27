@@ -2,6 +2,8 @@
 use hoimin_core::{LineRange, TargetError};
 
 #[cfg(test)]
+mod physical_row_oracle_tests;
+#[cfg(test)]
 mod property_tests;
 
 struct LineCursor<'a> {

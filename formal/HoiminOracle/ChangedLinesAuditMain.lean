@@ -1,4 +1,5 @@
 import HoiminOracle.ChangedLinesModel
+import HoiminOracle.GitPhysicalRowsCases
 import Lean.Data.Json
 
 open HoiminOracle.ChangedLines Lean
@@ -38,11 +39,20 @@ def main (args : List String) : IO UInt32 := do
       if (← IO.FS.readFile path) = corpus then pure 0
       else IO.eprintln "corpus is stale" *> pure 1
   | ["--output", path] => IO.FS.writeFile path corpus *> pure 0
+  | ["--check-physical-rows", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitPhysicalRows.corpus then pure 0
+      else IO.eprintln "Git physical rows corpus is stale" *> pure 1
+  | ["--output-physical-rows", path] =>
+      IO.FS.writeFile path HoiminOracle.GitPhysicalRows.corpus *> pure 0
   | ["--sensitivity"] =>
       for (name, passed) in sensitivity do IO.println s!"{name}={passed}"
-      pure <| if sensitivity.all (·.2) then 0 else 1
+      unless sensitivity.all (·.2) do return 1
+      HoiminOracle.GitPhysicalRows.sensitivity
   | ["--stats"] =>
       IO.println s!"cases={rows.length}\nseparator_pairs=9\ngit_states=4\nmaximum_source_bytes=37\nsensitivity_families={sensitivity.length}\ntransitions=not-applicable"
       pure 0
+  | ["--physical-rows-stats"] =>
+      HoiminOracle.GitPhysicalRows.stats
+      pure 0
   | [] => IO.print corpus *> pure 0
-  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--sensitivity|--stats]" *> pure 2
+  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--check-physical-rows PATH|--output-physical-rows PATH|--sensitivity|--stats|--physical-rows-stats]" *> pure 2

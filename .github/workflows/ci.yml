@@ -557,6 +557,8 @@ jobs:
             HoiminOracle.GitNumstatModel
             HoiminOracle.GitNumstatCases
             ChangedContextAuditMain
+            HoiminOracle.GitPhysicalRowsModel
+            HoiminOracle.GitPhysicalRowsCases
             ChangedLinesAuditMain
             GlobSelectionAuditMain
             CleanupCapabilityAuditMain
@@ -756,6 +758,8 @@ jobs:
             lake exe generate_changed_context -- --check-git-patch corpus/git-patch.jsonl
           run_guard check-git-numstat \
             lake exe generate_changed_context -- --check-git-numstat corpus/git-numstat.jsonl
+          run_guard check-git-physical-rows \
+            lake exe generate_changed_lines -- --check-physical-rows corpus/git-physical-rows.jsonl
           run_guard check-resume-budget-recheck \
             lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
           run_guard check-disk-report-evidence \
