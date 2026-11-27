@@ -69,6 +69,28 @@ fn record_args(args: &[String]) -> Vec<String> {
 }
 
 #[tokio::test]
+async fn review_rejects_a_wal_alias_before_decoding_the_report() {
+    let (directory, mut args) = fixture().await;
+    let report = directory.path().join("malformed.jsonl");
+    let wal = directory.path().join("reviews.sqlite3-wal");
+    let bytes = b"not a JSONL report\n";
+    std::fs::write(&report, bytes).unwrap();
+    std::fs::hard_link(&report, &wal).unwrap();
+    args.extend(["--report".into(), report.to_str().unwrap().into()]);
+
+    let (alias_code, alias_stdout, alias_stderr) = run(args.clone()).await;
+    std::fs::remove_file(wal).unwrap();
+    let (parse_code, parse_stdout, parse_stderr) = run(args).await;
+
+    assert_eq!((alias_code, parse_code), (2, 2));
+    assert!(alias_stdout.is_empty() && parse_stdout.is_empty());
+    assert!(String::from_utf8_lossy(&alias_stderr).contains("store aliases a protected input"));
+    assert!(String::from_utf8_lossy(&parse_stderr).contains("could not parse report"));
+    assert_eq!(std::fs::read(report).unwrap(), bytes);
+    assert!(!directory.path().join("reviews.sqlite3").exists());
+}
+
+#[tokio::test]
 async fn agent_output_review_defaults_to_json() {
     let (_dir, args) = fixture().await;
 

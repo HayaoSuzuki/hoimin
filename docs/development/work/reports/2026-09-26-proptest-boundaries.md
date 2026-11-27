@@ -860,3 +860,47 @@ with one build job under a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests artifacts::run_report
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of review store destination checks
+
+Review checks the database, rollback journal, WAL, and SHM in that order
+before admitting the optional report or opening the database. A missing
+destination entry requires no protected-input lookups. An existing
+destination must be a regular file and must have a different descriptor
+identity from each readable protected file. The input order is plan,
+optional report, manifest sources, and environment fingerprint inputs.
+A missing protected path or an opened nonregular input can be skipped.
+Other protected-input I/O failures propagate.
+
+Lean proves that an accepted destination set has no protected-file alias.
+It also proves that appending checks after the first failed destination
+or protected input preserves the failure. The proofs compare observed
+descriptor identities. The filesystem fixture keeps paths stable during
+each call.
+
+The corpus has 46 portable internal-fixture cases and 13 Unix-only cases.
+The portable cases put hard links to each protected input in each
+destination slot, accept separate copies with identical bytes, and
+compare the diagnostics from competing failures. Unix cases exercise
+symlinks, nonregular protected inputs, and a report path with a regular
+file as its parent. The adapter invokes the real validator, compares
+diagnostics, and verifies that regular-file contents are preserved.
+The public CLI test confirms that an alias in the WAL is rejected before
+parsing a malformed report, even with the main database absent.
+
+Eight broken variants expose skipping each companion, reversing the
+destination order, ignoring file identity, omitting fingerprint input
+protection, ignoring a protected-input I/O error, and checking inputs for
+a missing destination.
+
+On macOS all 59 cases matched. The targeted Rust runs passed 124 unit
+tests and 44 CLI integration tests, and the CI workflow suite passed 222.
+Lean used a 2 GiB cap and a 20-second timeout per command. Single-job
+Rust peaked at 2,129,040 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-store-destination corpus/review-store-destination.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests artifacts::tests
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```
