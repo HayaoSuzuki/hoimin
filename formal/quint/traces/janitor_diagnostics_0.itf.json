@@ -1,0 +1,534 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "arrivals": [],
+      "summary": {
+        "omittedIssue": {
+          "#bigint": "0"
+        },
+        "omittedNormal": {
+          "#bigint": "0"
+        },
+        "retained": [],
+        "truncated": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "arrivals": [
+        {
+          "id": {
+            "#bigint": "0"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        }
+      ],
+      "summary": {
+        "omittedIssue": {
+          "#bigint": "0"
+        },
+        "omittedNormal": {
+          "#bigint": "0"
+        },
+        "retained": [
+          {
+            "id": {
+              "#bigint": "0"
+            },
+            "kind": {
+              "tag": "Normal",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          }
+        ],
+        "truncated": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "arrivals": [
+        {
+          "id": {
+            "#bigint": "0"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "1"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        }
+      ],
+      "summary": {
+        "omittedIssue": {
+          "#bigint": "0"
+        },
+        "omittedNormal": {
+          "#bigint": "0"
+        },
+        "retained": [
+          {
+            "id": {
+              "#bigint": "0"
+            },
+            "kind": {
+              "tag": "Normal",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          },
+          {
+            "id": {
+              "#bigint": "1"
+            },
+            "kind": {
+              "tag": "Normal",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          }
+        ],
+        "truncated": {
+          "#bigint": "2"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "arrivals": [
+        {
+          "id": {
+            "#bigint": "0"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "1"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "2"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        }
+      ],
+      "summary": {
+        "omittedIssue": {
+          "#bigint": "0"
+        },
+        "omittedNormal": {
+          "#bigint": "1"
+        },
+        "retained": [
+          {
+            "id": {
+              "#bigint": "0"
+            },
+            "kind": {
+              "tag": "Normal",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          },
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "tag": "Issue",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          }
+        ],
+        "truncated": {
+          "#bigint": "3"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "arrivals": [
+        {
+          "id": {
+            "#bigint": "0"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "1"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "2"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "3"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        }
+      ],
+      "summary": {
+        "omittedIssue": {
+          "#bigint": "0"
+        },
+        "omittedNormal": {
+          "#bigint": "2"
+        },
+        "retained": [
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "tag": "Issue",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          },
+          {
+            "id": {
+              "#bigint": "3"
+            },
+            "kind": {
+              "tag": "Issue",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          }
+        ],
+        "truncated": {
+          "#bigint": "4"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "arrivals": [
+        {
+          "id": {
+            "#bigint": "0"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "1"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "2"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "3"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "4"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        }
+      ],
+      "summary": {
+        "omittedIssue": {
+          "#bigint": "0"
+        },
+        "omittedNormal": {
+          "#bigint": "3"
+        },
+        "retained": [
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "tag": "Issue",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          },
+          {
+            "id": {
+              "#bigint": "3"
+            },
+            "kind": {
+              "tag": "Issue",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          }
+        ],
+        "truncated": {
+          "#bigint": "4"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "arrivals": [
+        {
+          "id": {
+            "#bigint": "0"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "1"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "2"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "3"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "4"
+          },
+          "kind": {
+            "tag": "Normal",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": true
+        },
+        {
+          "id": {
+            "#bigint": "5"
+          },
+          "kind": {
+            "tag": "Issue",
+            "value": {
+              "#tup": []
+            }
+          },
+          "long": false
+        }
+      ],
+      "summary": {
+        "omittedIssue": {
+          "#bigint": "1"
+        },
+        "omittedNormal": {
+          "#bigint": "3"
+        },
+        "retained": [
+          {
+            "id": {
+              "#bigint": "2"
+            },
+            "kind": {
+              "tag": "Issue",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          },
+          {
+            "id": {
+              "#bigint": "3"
+            },
+            "kind": {
+              "tag": "Issue",
+              "value": {
+                "#tup": []
+              }
+            },
+            "long": true
+          }
+        ],
+        "truncated": {
+          "#bigint": "4"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "arrivals",
+    "summary"
+  ]
+}

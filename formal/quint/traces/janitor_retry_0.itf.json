@@ -1,0 +1,324 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "pending": [
+          {
+            "#bigint": "0"
+          },
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Running",
+          "value": {
+            "#tup": []
+          }
+        },
+        "progressed": false,
+        "round": {
+          "#bigint": "0"
+        },
+        "unvisited": {
+          "#bigint": "2"
+        },
+        "visits": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Running",
+          "value": {
+            "#tup": []
+          }
+        },
+        "progressed": false,
+        "round": {
+          "#bigint": "0"
+        },
+        "unvisited": {
+          "#bigint": "1"
+        },
+        "visits": [
+          {
+            "result": {
+              "tag": "Complete",
+              "value": {
+                "#tup": []
+              }
+            },
+            "root": {
+              "#bigint": "0"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "s": {
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Running",
+          "value": {
+            "#tup": []
+          }
+        },
+        "progressed": true,
+        "round": {
+          "#bigint": "0"
+        },
+        "unvisited": {
+          "#bigint": "0"
+        },
+        "visits": [
+          {
+            "result": {
+              "tag": "Complete",
+              "value": {
+                "#tup": []
+              }
+            },
+            "root": {
+              "#bigint": "0"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "result": {
+              "tag": "Deferred",
+              "value": {
+                "#bigint": "1"
+              }
+            },
+            "root": {
+              "#bigint": "1"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "s": {
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Running",
+          "value": {
+            "#tup": []
+          }
+        },
+        "progressed": false,
+        "round": {
+          "#bigint": "1"
+        },
+        "unvisited": {
+          "#bigint": "1"
+        },
+        "visits": [
+          {
+            "result": {
+              "tag": "Complete",
+              "value": {
+                "#tup": []
+              }
+            },
+            "root": {
+              "#bigint": "0"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "result": {
+              "tag": "Deferred",
+              "value": {
+                "#bigint": "1"
+              }
+            },
+            "root": {
+              "#bigint": "1"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "s": {
+        "pending": [],
+        "phase": {
+          "tag": "Running",
+          "value": {
+            "#tup": []
+          }
+        },
+        "progressed": false,
+        "round": {
+          "#bigint": "1"
+        },
+        "unvisited": {
+          "#bigint": "0"
+        },
+        "visits": [
+          {
+            "result": {
+              "tag": "Complete",
+              "value": {
+                "#tup": []
+              }
+            },
+            "root": {
+              "#bigint": "0"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "result": {
+              "tag": "Deferred",
+              "value": {
+                "#bigint": "1"
+              }
+            },
+            "root": {
+              "#bigint": "1"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "result": {
+              "tag": "Complete",
+              "value": {
+                "#tup": []
+              }
+            },
+            "root": {
+              "#bigint": "1"
+            },
+            "round": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "s": {
+        "pending": [],
+        "phase": {
+          "tag": "Halted",
+          "value": {
+            "tag": "Drained",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "progressed": false,
+        "round": {
+          "#bigint": "1"
+        },
+        "unvisited": {
+          "#bigint": "0"
+        },
+        "visits": [
+          {
+            "result": {
+              "tag": "Complete",
+              "value": {
+                "#tup": []
+              }
+            },
+            "root": {
+              "#bigint": "0"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "result": {
+              "tag": "Deferred",
+              "value": {
+                "#bigint": "1"
+              }
+            },
+            "root": {
+              "#bigint": "1"
+            },
+            "round": {
+              "#bigint": "0"
+            }
+          },
+          {
+            "result": {
+              "tag": "Complete",
+              "value": {
+                "#tup": []
+              }
+            },
+            "root": {
+              "#bigint": "1"
+            },
+            "round": {
+              "#bigint": "1"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

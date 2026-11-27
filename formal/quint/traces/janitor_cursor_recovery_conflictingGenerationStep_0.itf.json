@@ -1,0 +1,142 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "command": {
+          "tag": "Init",
+          "value": {
+            "#tup": []
+          }
+        },
+        "observed": {
+          "tag": "Readable",
+          "value": {
+            "index": {
+              "#bigint": "0"
+            },
+            "record": {
+              "cursor": {
+                "#bigint": "0"
+              },
+              "generation": {
+                "#bigint": "0"
+              }
+            }
+          }
+        },
+        "operations": {
+          "#bigint": "0"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "command": {
+          "tag": "InstallConflict",
+          "value": {
+            "cursor": {
+              "#bigint": "1"
+            },
+            "generation": {
+              "#bigint": "0"
+            }
+          }
+        },
+        "observed": {
+          "tag": "Unusable",
+          "value": {
+            "#tup": []
+          }
+        },
+        "operations": {
+          "#bigint": "1"
+        },
+        "slots": {
+          "#map": [
+            [
+              {
+                "#bigint": "0"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "0"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "tag": "Valid",
+                "value": {
+                  "cursor": {
+                    "#bigint": "1"
+                  },
+                  "generation": {
+                    "#bigint": "0"
+                  }
+                }
+              }
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

@@ -3123,7 +3123,7 @@ use super::WorkspaceError;
 use hoimin_core::{DiskCleanupStatus, JanitorReason, JanitorScan};
 #[path = "owned/janitor.rs"]
 mod janitor;
-use janitor::{DeletionProgress, ReclaimLedger};
+use janitor::{DeletionProgress, ReclaimLedger, retry_deferred};
 
 #[cfg(test)]
 pub(super) use crate::io_faults;
@@ -3484,6 +3484,13 @@ impl ManagedRootCoordinator {
             file,
             local_lock,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn create_empty_deleting_fixture(&self, id: uuid::Uuid) -> Utf8PathBuf {
+        let name = format!("{DELETING_PREFIX}{id}");
+        create_owned_directory(&self.dir, &name).unwrap();
+        self.path.join(name)
     }
 }
 
@@ -6186,7 +6193,10 @@ impl ManagedRunRoot {
                 continue;
             }
             #[cfg(windows)]
-            match windows::root_mutation_barrier_exists(run_id) {
+            match owned_io!(
+                "janitor.mutation_barrier",
+                windows::root_mutation_barrier_exists(run_id)
+            ) {
                 Ok(true) => {
                     report.hold(
                         index,
@@ -6226,9 +6236,15 @@ impl ManagedRunRoot {
                 }
             };
             #[cfg(unix)]
-            let candidate = open_owned_directory(&coordinator.dir, name);
+            let candidate = owned_io!(
+                "janitor.candidate_open",
+                open_owned_directory(&coordinator.dir, name)
+            );
             #[cfg(windows)]
-            let candidate = open_owned_directory_for_rename(&coordinator.dir, name);
+            let candidate = owned_io!(
+                "janitor.candidate_open",
+                open_owned_directory_for_rename(&coordinator.dir, name)
+            );
             let candidate = match candidate {
                 Ok(candidate) => candidate,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -6548,50 +6564,36 @@ impl ManagedRunRoot {
                 &elapsed,
             );
         }
-        while !pending_cleanup.is_empty() && elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET {
-            let round_len = pending_cleanup.len();
-            let mut round_removed = 0_u64;
-            for _ in 0..round_len {
-                if elapsed(cleanup_started) >= JANITOR_CLEANUP_BUDGET {
-                    break;
+        retry_deferred(
+            &mut pending_cleanup,
+            || elapsed(cleanup_started) < JANITOR_CLEANUP_BUDGET,
+            |pending| match reclaim_removal(
+                coordinator,
+                &pending.deleting_name,
+                pending.expected_identity,
+                cleanup_started,
+                &mut pending.capabilities,
+                &elapsed,
+            ) {
+                ReclaimRemoval::Complete => {
+                    report.removal(pending.index, pending.capabilities.progress, true);
+                    None
                 }
-                // Each iteration pops once and only optionally pushes back; round_len is the initial queue length.
-                let mut pending = pending_cleanup
-                    .pop_front()
-                    .expect("a round retains its unvisited entries");
-                match reclaim_removal(
-                    coordinator,
-                    &pending.deleting_name,
-                    pending.expected_identity,
-                    cleanup_started,
-                    &mut pending.capabilities,
-                    &elapsed,
-                ) {
-                    ReclaimRemoval::Complete => {
-                        report.removal(pending.index, pending.capabilities.progress, true);
-                    }
-                    ReclaimRemoval::Deferred { removed } => {
-                        // Scheduling uses ONLY deferred-slice progress, as before.
-                        round_removed = round_removed.saturating_add(removed);
-                        pending_cleanup.push_back(pending);
-                    }
-                    ReclaimRemoval::Failed(error) => {
-                        report.hold(
-                            pending.index,
-                            JanitorReason::DeleteFailed,
-                            format!(
-                                "cleanup failed for {}: {error}",
-                                coordinator.path.join(&pending.deleting_name)
-                            ),
-                        );
-                        report.removal(pending.index, pending.capabilities.progress, false);
-                    }
+                ReclaimRemoval::Deferred { removed } => Some(removed),
+                ReclaimRemoval::Failed(error) => {
+                    report.hold(
+                        pending.index,
+                        JanitorReason::DeleteFailed,
+                        format!(
+                            "cleanup failed for {}: {error}",
+                            coordinator.path.join(&pending.deleting_name)
+                        ),
+                    );
+                    report.removal(pending.index, pending.capabilities.progress, false);
+                    None
                 }
-            }
-            if round_removed == 0 {
-                break;
-            }
-        }
+            },
+        );
         for pending in pending_cleanup {
             report.hold(
                 pending.index,
@@ -7026,22 +7028,25 @@ fn select_reclaim_candidates_locked_until_with_hooks(
     let coordinator_path = coordinator.path.join(COORDINATOR_FILE);
     let (active_slot, state) = read_coordinator_state(&coordinator.file, &coordinator_path)?;
     ensure_selection_deadline(coordinator, scan, deadline, &now)?;
-    let mut entries = owned_directory_entries(&coordinator.dir)
-        .map_err(|error| WorkspaceError::io("enumerate managed roots", &coordinator.path, error))?;
+    let mut entries = owned_io!(
+        "janitor.selection_entries",
+        owned_directory_entries(&coordinator.dir)
+    )
+    .map_err(|error| WorkspaceError::io("enumerate managed roots", &coordinator.path, error))?;
     ensure_selection_deadline(coordinator, scan, deadline, &now)?;
     let mut examined = 0_usize;
     let mut after = BTreeSet::new();
     let mut wrapped = BTreeSet::new();
     loop {
         ensure_selection_deadline(coordinator, scan, deadline, &now)?;
-        let entry = entries.next();
+        let entry = owned_io!("janitor.selection_next", entries.next().transpose());
         ensure_selection_deadline(coordinator, scan, deadline, &now)?;
-        let Some(entry) = entry else {
+        let Some(entry) = entry.map_err(|error| {
+            WorkspaceError::io("enumerate managed roots", &coordinator.path, error)
+        })?
+        else {
             break;
         };
-        let entry = entry.map_err(|error| {
-            WorkspaceError::io("enumerate managed roots", &coordinator.path, error)
-        })?;
         after_entry();
         ensure_selection_deadline(coordinator, scan, deadline, &now)?;
         // The preceding iteration returned if its count exceeded 100,000,

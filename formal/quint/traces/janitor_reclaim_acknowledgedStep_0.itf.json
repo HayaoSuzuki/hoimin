@@ -1,0 +1,551 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "command": {
+        "tag": "Init",
+        "value": {
+          "#tup": []
+        }
+      },
+      "evidence": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Uninspected",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Uninspected",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "summary": {
+        "absent": {
+          "#bigint": "0"
+        },
+        "cleanupIncomplete": {
+          "#bigint": "0"
+        },
+        "deleteFailed": {
+          "#bigint": "0"
+        },
+        "examined": {
+          "#bigint": "0"
+        },
+        "inspected": {
+          "#bigint": "0"
+        },
+        "omitted": {
+          "#bigint": "1"
+        },
+        "preserved": {
+          "#bigint": "0"
+        },
+        "reclaimed": {
+          "#bigint": "0"
+        },
+        "removed": {
+          "#bigint": "0"
+        },
+        "uninspected": {
+          "#bigint": "2"
+        },
+        "unresolved": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "command": {
+        "tag": "Inspect",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "evidence": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Uninspected",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "summary": {
+        "absent": {
+          "#bigint": "0"
+        },
+        "cleanupIncomplete": {
+          "#bigint": "1"
+        },
+        "deleteFailed": {
+          "#bigint": "0"
+        },
+        "examined": {
+          "#bigint": "0"
+        },
+        "inspected": {
+          "#bigint": "1"
+        },
+        "omitted": {
+          "#bigint": "1"
+        },
+        "preserved": {
+          "#bigint": "0"
+        },
+        "reclaimed": {
+          "#bigint": "0"
+        },
+        "removed": {
+          "#bigint": "0"
+        },
+        "uninspected": {
+          "#bigint": "1"
+        },
+        "unresolved": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "command": {
+        "tag": "Fail",
+        "value": {
+          "#bigint": "0"
+        }
+      },
+      "evidence": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Failed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Uninspected",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "summary": {
+        "absent": {
+          "#bigint": "0"
+        },
+        "cleanupIncomplete": {
+          "#bigint": "0"
+        },
+        "deleteFailed": {
+          "#bigint": "1"
+        },
+        "examined": {
+          "#bigint": "0"
+        },
+        "inspected": {
+          "#bigint": "1"
+        },
+        "omitted": {
+          "#bigint": "1"
+        },
+        "preserved": {
+          "#bigint": "0"
+        },
+        "reclaimed": {
+          "#bigint": "0"
+        },
+        "removed": {
+          "#bigint": "0"
+        },
+        "uninspected": {
+          "#bigint": "1"
+        },
+        "unresolved": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "command": {
+        "tag": "Remove",
+        "value": {
+          "absent": true,
+          "deleted": true,
+          "examined": {
+            "#bigint": "1"
+          },
+          "removed": {
+            "#bigint": "1"
+          },
+          "root": {
+            "#bigint": "0"
+          }
+        }
+      },
+      "evidence": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "examined": {
+                "#bigint": "1"
+              },
+              "outcome": {
+                "tag": "Reclaimed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Uninspected",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "summary": {
+        "absent": {
+          "#bigint": "0"
+        },
+        "cleanupIncomplete": {
+          "#bigint": "0"
+        },
+        "deleteFailed": {
+          "#bigint": "0"
+        },
+        "examined": {
+          "#bigint": "1"
+        },
+        "inspected": {
+          "#bigint": "1"
+        },
+        "omitted": {
+          "#bigint": "1"
+        },
+        "preserved": {
+          "#bigint": "0"
+        },
+        "reclaimed": {
+          "#bigint": "1"
+        },
+        "removed": {
+          "#bigint": "1"
+        },
+        "uninspected": {
+          "#bigint": "1"
+        },
+        "unresolved": {
+          "#bigint": "0"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "command": {
+        "tag": "Inspect",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "evidence": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "examined": {
+                "#bigint": "1"
+              },
+              "outcome": {
+                "tag": "Reclaimed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "summary": {
+        "absent": {
+          "#bigint": "0"
+        },
+        "cleanupIncomplete": {
+          "#bigint": "1"
+        },
+        "deleteFailed": {
+          "#bigint": "0"
+        },
+        "examined": {
+          "#bigint": "1"
+        },
+        "inspected": {
+          "#bigint": "2"
+        },
+        "omitted": {
+          "#bigint": "1"
+        },
+        "preserved": {
+          "#bigint": "0"
+        },
+        "reclaimed": {
+          "#bigint": "1"
+        },
+        "removed": {
+          "#bigint": "1"
+        },
+        "uninspected": {
+          "#bigint": "0"
+        },
+        "unresolved": {
+          "#bigint": "1"
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "command": {
+        "tag": "NoticeAbsence",
+        "value": {
+          "#bigint": "1"
+        }
+      },
+      "evidence": {
+        "#map": [
+          [
+            {
+              "#bigint": "0"
+            },
+            {
+              "examined": {
+                "#bigint": "1"
+              },
+              "outcome": {
+                "tag": "Reclaimed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "1"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "1"
+            },
+            {
+              "examined": {
+                "#bigint": "0"
+              },
+              "outcome": {
+                "tag": "Absent",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "summary": {
+        "absent": {
+          "#bigint": "1"
+        },
+        "cleanupIncomplete": {
+          "#bigint": "0"
+        },
+        "deleteFailed": {
+          "#bigint": "0"
+        },
+        "examined": {
+          "#bigint": "1"
+        },
+        "inspected": {
+          "#bigint": "2"
+        },
+        "omitted": {
+          "#bigint": "1"
+        },
+        "preserved": {
+          "#bigint": "0"
+        },
+        "reclaimed": {
+          "#bigint": "1"
+        },
+        "removed": {
+          "#bigint": "1"
+        },
+        "uninspected": {
+          "#bigint": "0"
+        },
+        "unresolved": {
+          "#bigint": "0"
+        }
+      }
+    }
+  ],
+  "vars": [
+    "evidence",
+    "summary",
+    "command"
+  ]
+}

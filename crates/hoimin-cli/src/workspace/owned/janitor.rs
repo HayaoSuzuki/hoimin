@@ -1,5 +1,78 @@
 use super::{MAX_DIAGNOSTIC_DETAILS, truncate_diagnostic_detail};
 use hoimin_core::{JanitorDetail, JanitorReason, JanitorSummary};
+use std::collections::VecDeque;
+
+#[cfg(test)]
+#[path = "janitor/quint_claim.rs"]
+mod quint_claim;
+#[cfg(test)]
+#[path = "janitor/quint_cursor_recovery.rs"]
+mod quint_cursor_recovery;
+#[cfg(test)]
+#[path = "janitor/quint_diagnostics.rs"]
+mod quint_diagnostics;
+#[cfg(test)]
+#[path = "janitor/quint_eligibility.rs"]
+mod quint_eligibility;
+#[cfg(test)]
+#[path = "janitor/quint_namespace_recovery.rs"]
+mod quint_namespace_recovery;
+#[cfg(test)]
+#[path = "janitor/quint_reclaim.rs"]
+mod quint_reclaim;
+#[cfg(test)]
+#[path = "janitor/quint_removal.rs"]
+mod quint_removal;
+#[cfg(test)]
+#[path = "janitor/quint_retry.rs"]
+mod quint_retry;
+#[cfg(test)]
+#[path = "janitor/quint_selection.rs"]
+mod quint_selection;
+
+// Windows SystemTime represents times in 100-nanosecond intervals.
+#[cfg(test)]
+const STALE_THRESHOLD_TICK: std::time::Duration = std::time::Duration::from_nanos(100);
+
+#[cfg(test)]
+fn quint_cursor_name(rank: u64) -> String {
+    if rank == 0 {
+        String::new()
+    } else {
+        format!(
+            "{}00000000-0000-0000-0000-{rank:012x}",
+            super::ACTIVE_PREFIX
+        )
+    }
+}
+
+/// Visits the roots present at the beginning of each round in FIFO order.
+/// A slice returns its removal count if deferred, or `None` if it reached an outcome.
+pub(super) fn retry_deferred<T>(
+    pending: &mut VecDeque<T>,
+    mut has_time: impl FnMut() -> bool,
+    mut attempt: impl FnMut(&mut T) -> Option<u64>,
+) {
+    while !pending.is_empty() && has_time() {
+        let round_len = pending.len();
+        let mut progressed = false;
+        for _ in 0..round_len {
+            if !has_time() {
+                break;
+            }
+            let mut root = pending
+                .pop_front()
+                .expect("a round retains its unvisited entries");
+            if let Some(removed) = attempt(&mut root) {
+                progressed |= removed > 0;
+                pending.push_back(root);
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
+}
 
 /// One ledger entry per inspected candidate. Pending rounds retain its index.
 #[derive(Default)]

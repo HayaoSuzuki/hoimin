@@ -31,9 +31,157 @@ class Model:
     scenario_steps: int = 12
     # TLC may omit input-history fields that do not affect transitions or Safety.
     verification_step: str = "step"
+    simulation_only: bool = False
+    simulation_mutant_step: str | None = None
 
 
 MODELS = (
+    Model(
+        "janitor_claim.qnt",
+        "JanitorClaim",
+        "janitor_claim",
+        scenarios=(
+            "unixIdentityStep",
+            "windowsIdentityStep",
+            "unixHandoffStep",
+            "windowsHandoffStep",
+            "unixFaultStep",
+            "windowsFaultStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="acceptWrongLeaseStep",
+    ),
+    Model(
+        "janitor_cursor_recovery.qnt",
+        "JanitorCursorRecovery",
+        "janitor_cursor_recovery",
+        scenarios=(
+            "recoverStep",
+            "interruptedWriteStep",
+            "conflictingGenerationStep",
+            "overflowStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="preferOlderStep",
+    ),
+    Model(
+        "janitor_diagnostics.qnt",
+        "JanitorDiagnostics",
+        "janitor_diagnostics",
+        scenarios=("priorityStep", "issueOnlyStep"),
+        simulation_only=True,
+        simulation_mutant_step="truncationLostStep",
+    ),
+    Model(
+        "janitor_eligibility.qnt",
+        "JanitorEligibility",
+        "janitor_eligibility",
+        scenarios=(
+            "priorityStep",
+            "fallbackStep",
+            "leaseEvidenceStep",
+            "candidateStep",
+            "windowsCandidateStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="retentionIgnoredStep",
+    ),
+    Model(
+        "janitor_namespace_recovery.qnt",
+        "JanitorNamespaceRecovery",
+        "janitor_namespace_recovery",
+        scenarios=(
+            "unmarkedStep",
+            "markersStep",
+            "payloadStep",
+            "fallbackStep",
+            "claimFailureStep",
+            "sliceFailureStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="ignoreStagingAgeStep",
+    ),
+    Model(
+        "janitor_reclaim.qnt",
+        "JanitorReclaim",
+        "janitor_reclaim",
+        scenarios=(
+            "acknowledgedStep",
+            "partialStep",
+            "selectedRootsStep",
+            "shellReportStep",
+            "deferredReportStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="acknowledgementLostStep",
+    ),
+    Model(
+        "janitor_removal.qnt",
+        "JanitorRemoval",
+        "janitor_removal",
+        scenarios=(
+            "limitsStep",
+            "finalizationStep",
+            "replacementStep",
+            "consumedReplacementStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="removeLeaseEarlyStep",
+    ),
+    Model(
+        "janitor_retry.qnt",
+        "JanitorRetry",
+        "janitor_retry",
+        scenarios=(
+            "stalledStep",
+            "progressStep",
+            "deadlineStep",
+            "nextRoundDeadlineStep",
+            "filesystemProgressStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="stalledRetryStep",
+    ),
+    Model(
+        "janitor_selection.qnt",
+        "JanitorSelection",
+        "janitor_selection",
+        scenarios=(
+            "wrapStep",
+            "emptyPageStep",
+            "eofDeadlineStep",
+            "persistDeadlineStep",
+            "persistFailureStep",
+            "tornPersistStep",
+            "syncFailureStep",
+            "recoveredCursorStep",
+            "capacityStep",
+            "namespaceLimitStep",
+            "unavailableStep",
+            "startupStopsStep",
+            "enumerationErrorStep",
+        ),
+        scenario_steps=24,
+        simulation_only=True,
+        simulation_mutant_step="prematureCursorStep",
+    ),
+    Model(
+        "janitor_startup.qnt",
+        "JanitorStartup",
+        "janitor_startup",
+        scenarios=(
+            "publishedStep",
+            "cancelledBeforeStep",
+            "cancelledAfterStep",
+            "timedOutAfterStep",
+            "selectionFailureStep",
+            "cursorFailureStep",
+            "cleanupDeadlineStep",
+            "deferredStep",
+        ),
+        simulation_only=True,
+        simulation_mutant_step="publishAfterStopStep",
+    ),
     Model(
         "copy_preflight.qnt",
         "CopyPreflight",
@@ -426,6 +574,34 @@ def canonical_trace(path: Path) -> str:
     return json.dumps(trace, sort_keys=True, indent=2) + "\n"
 
 
+def check_simulation_mutant(
+    specification: Model, build: Path, model: str, step: str
+) -> None:
+    code, output = guarded(
+        [
+            "run",
+            model,
+            "--backend=typescript",
+            f"--main={specification.main}",
+            f"--step={step}",
+            "--invariant=Safety",
+            f"--max-steps={specification.scenario_steps}",
+            "--max-samples=1",
+            "--seed=1172",
+            "--verbosity=1",
+        ],
+        build,
+        f"{specification.main}-{step}-simulation",
+    )
+    if (
+        code != 1
+        or "[violation]" not in output
+        or "error: Invariant violated" not in output
+    ):
+        msg = f"Expected a semantic simulation violation, got exit {code}:\n{output}"
+        raise RuntimeError(msg)
+
+
 def verify_model(
     specification: Model, build: Path, *, update: bool, simulate_only: bool
 ) -> None:
@@ -434,7 +610,11 @@ def verify_model(
         ["typecheck", model], build, f"{specification.main}-typecheck"
     )
     validate_result(code, output, counterexample=False)
-    if not simulate_only:
+    if specification.simulation_mutant_step is not None:
+        check_simulation_mutant(
+            specification, build, model, specification.simulation_mutant_step
+        )
+    if not (simulate_only or specification.simulation_only):
         modules = (specification.main,)
         if specification.mutant is not None:
             modules = (*modules, specification.mutant)

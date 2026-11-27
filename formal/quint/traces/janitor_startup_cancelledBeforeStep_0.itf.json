@@ -1,0 +1,188 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "BeforeStartup",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": false,
+          "cursorDeferred": false,
+          "cursorWrite": {
+            "tag": "Unattempted",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "0"
+          },
+          "selected": [],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Stopped",
+          "value": {
+            "tag": "Cancelled",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": false,
+          "cursorDeferred": false,
+          "cursorWrite": {
+            "tag": "Unattempted",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "0"
+          },
+          "selected": [],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

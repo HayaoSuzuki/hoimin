@@ -1,0 +1,303 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "checked": {
+          "#bigint": "0"
+        },
+        "last": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "checked": {
+          "#bigint": "1"
+        },
+        "last": {
+          "tag": "Evaluated",
+          "value": {
+            "observation": {
+              "age": {
+                "tag": "AtThreshold",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "layout": {
+                "tag": "LeaseWithPayload",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "namespace": {
+                "tag": "Deleting",
+                "value": {
+                  "#tup": []
+                }
+              }
+            },
+            "report": {
+              "details": [
+                {
+                  "tag": "HeartbeatInvalid",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              ],
+              "outcome": {
+                "tag": "Held",
+                "value": {
+                  "tag": "HeartbeatInvalid",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "s": {
+        "checked": {
+          "#bigint": "2"
+        },
+        "last": {
+          "tag": "Evaluated",
+          "value": {
+            "observation": {
+              "age": {
+                "tag": "BeforeThreshold",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "layout": {
+                "tag": "LeaseWithHeartbeat",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "namespace": {
+                "tag": "Deleting",
+                "value": {
+                  "#tup": []
+                }
+              }
+            },
+            "report": {
+              "details": [
+                {
+                  "tag": "Young",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              ],
+              "outcome": {
+                "tag": "Held",
+                "value": {
+                  "tag": "Young",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "s": {
+        "checked": {
+          "#bigint": "3"
+        },
+        "last": {
+          "tag": "Evaluated",
+          "value": {
+            "observation": {
+              "age": {
+                "tag": "AgeReadError",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "layout": {
+                "tag": "LeaseWithHeartbeat",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "namespace": {
+                "tag": "Deleting",
+                "value": {
+                  "#tup": []
+                }
+              }
+            },
+            "report": {
+              "details": [
+                {
+                  "tag": "AgeUnverifiable",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              ],
+              "outcome": {
+                "tag": "Held",
+                "value": {
+                  "tag": "AgeUnverifiable",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "s": {
+        "checked": {
+          "#bigint": "4"
+        },
+        "last": {
+          "tag": "Evaluated",
+          "value": {
+            "observation": {
+              "age": {
+                "tag": "AgeReadError",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "interruption": {
+                "tag": "Uninterrupted",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "layout": {
+                "tag": "LeaseWithHeartbeat",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "namespace": {
+                "tag": "Staging",
+                "value": {
+                  "#tup": []
+                }
+              }
+            },
+            "report": {
+              "details": [
+                {
+                  "tag": "AgeUnverifiable",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              ],
+              "outcome": {
+                "tag": "Held",
+                "value": {
+                  "tag": "AgeUnverifiable",
+                  "value": {
+                    "#tup": []
+                  }
+                }
+              },
+              "placement": {
+                "tag": "OriginalName",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "removed": {
+                "#bigint": "0"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

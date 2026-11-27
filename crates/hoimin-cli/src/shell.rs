@@ -7594,8 +7594,13 @@ mod tests {
         assert!(error.starts_with("workspace.cleanup.failed:"), "{error}");
     }
 
+    #[rstest::rstest]
+    #[case::clean(false)]
+    #[case::recordless_cleanup_failure(true)]
     #[tokio::test]
-    async fn startup_janitor_evidence_survives_recordless_execution_cleanup_failure() {
+    async fn quint_startup_janitor_evidence_reaches_the_published_report(
+        #[case] recordless_cleanup: bool,
+    ) {
         let project = tempfile::tempdir().unwrap();
         std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
         let mut args = vec![
@@ -7619,13 +7624,11 @@ mod tests {
             elapsed: Duration::from_millis(1),
         }));
         let managed_parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
-        let coordinator = ManagedRootCoordinator::open(managed_parent).unwrap();
-        let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
-        // A concurrent fork can retain the lease after the owner's handle closes.
-        preserved.unlock_fixture_lease();
-        drop(preserved);
-        drop(coordinator);
-        control.inject_execution_cleanup_failed_without_record();
+        let [behind_cursor, reclaimed, preserved_path] =
+            quint_janitor_shell_fixture(managed_parent);
+        if recordless_cleanup {
+            control.inject_execution_cleanup_failed_without_record();
+        }
         control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
         let observed = control.clone();
         let stdout = CollectingWriter::default();
@@ -7639,10 +7642,14 @@ mod tests {
             .iter()
             .find(|record| record["root_id"] == "execution")
             .expect("execution cleanup evidence");
-        assert_eq!(
-            execution_cleanup["remaining_root"],
-            observed.managed_root_paths()[0].as_str()
-        );
+        if recordless_cleanup {
+            assert_eq!(
+                execution_cleanup["remaining_root"],
+                observed.managed_root_paths()[0].as_str()
+            );
+        } else {
+            assert_eq!(execution_cleanup["status"], "clean");
+        }
         assert_eq!(
             report["summary"]["disk"]["filesystems"][0]["end_available_bytes"],
             500
@@ -7651,16 +7658,142 @@ mod tests {
             report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
             -500
         );
-        assert_eq!(report["summary"]["disk"]["janitor"]["preserved_roots"], 1);
-        assert_eq!(
-            report["summary"]["disk"]["janitor"]["preserved_by_reason"]["young"],
-            1
-        );
-        let details = report["summary"]["disk"]["janitor"]["details"]
-            .as_array()
-            .unwrap();
+        let janitor = &report["summary"]["disk"]["janitor"];
+        assert_quint_janitor_report(janitor);
+        assert_eq!(janitor["preserved_by_reason"]["young"], 1);
+        let details = janitor["details"].as_array().unwrap();
         assert_eq!(details.len(), 1);
         assert_eq!(details[0]["reason"], "young");
+        assert!(behind_cursor.is_dir());
+        assert!(!reclaimed.exists());
+        assert!(preserved_path.is_dir());
+    }
+
+    fn quint_janitor_shell_fixture(parent: &Utf8Path) -> [Utf8PathBuf; 3] {
+        let coordinator = ManagedRootCoordinator::open(parent).unwrap();
+        let first_id = uuid::Uuid::from_u128(1);
+
+        // Populate the cursor through the real janitor, then rebuild the first name.
+        coordinator.create_empty_deleting_fixture(first_id);
+        let seed = ManagedRunRoot::reclaim_abandoned(&coordinator, std::time::SystemTime::now());
+        assert_eq!(seed.reclaimed_roots, 1);
+        let behind_cursor = coordinator.create_empty_deleting_fixture(first_id);
+        let reclaimed = coordinator.create_empty_deleting_fixture(uuid::Uuid::from_u128(2));
+        let preserved = ManagedRunRoot::create(&coordinator, OwnerKind::PublicExecution).unwrap();
+        let preserved_path = preserved.path().to_owned();
+        preserved.unlock_fixture_lease();
+        [behind_cursor, reclaimed, preserved_path]
+    }
+
+    fn assert_quint_janitor_report(janitor: &serde_json::Value) {
+        use crate::quint_itf::{number, states};
+
+        let trace = states(include_str!(
+            "../../../formal/quint/traces/janitor_startup_publishedStep_0.itf.json"
+        ));
+        let terminal = &trace.last().unwrap()["s"];
+        assert_eq!(terminal["phase"]["tag"], "Published");
+        assert_eq!(terminal["handoff"]["tag"], "Delivered");
+        let delivered = &terminal["handoff"]["value"];
+        let summary = &delivered["summary"];
+        for (field, model) in [
+            ("inspected_roots", "inspected"),
+            ("reclaimed_roots", "reclaimed"),
+            ("absent_roots", "absent"),
+            ("preserved_roots", "preserved"),
+            ("unresolved_roots", "unresolved"),
+            ("examined_entries", "examined"),
+            ("removed_entries", "removed"),
+        ] {
+            assert_eq!(janitor[field], number(&summary[model]), "{field}");
+        }
+        let scan = &janitor["scan"];
+        for (field, model) in [
+            ("uninspected_selected_roots", "uninspected"),
+            ("selection_omitted_observed_entries", "omitted"),
+        ] {
+            assert_eq!(scan[field], number(&summary[model]), "{field}");
+        }
+        let expected_scan = &delivered["scan"];
+        let selected = expected_scan["selected"].as_array().unwrap().len();
+        assert_eq!(scan["selected_roots"], selected);
+        assert_eq!(
+            scan["observed_matching_entries"],
+            number(&expected_scan["observedMatching"])
+        );
+        assert_eq!(scan["directory_scan_complete"], expected_scan["complete"]);
+        assert_eq!(scan["cursor_deferred"], expected_scan["cursorDeferred"]);
+        assert_eq!(expected_scan["stop"]["tag"], "NoScanStop");
+        assert!(scan["stop_reason"].is_null());
+        assert_eq!(delivered["diagnostics"][0]["tag"], "Young");
+        assert_eq!(delivered["diagnostics"].as_array().unwrap().len(), 1);
+    }
+
+    #[rstest::rstest]
+    #[case::before_janitor(ManagedRootSetupBoundary::CoordinatorOpened, ShutdownCause::Cancellation, include_str!("../../../formal/quint/traces/janitor_startup_cancelledBeforeStep_0.itf.json"))]
+    #[case::after_janitor(ManagedRootSetupBoundary::ReclaimFinished, ShutdownCause::Cancellation, include_str!("../../../formal/quint/traces/janitor_startup_cancelledAfterStep_0.itf.json"))]
+    #[case::deadline_after_janitor(ManagedRootSetupBoundary::ReclaimFinished, ShutdownCause::TotalTimeout, include_str!("../../../formal/quint/traces/janitor_startup_timedOutAfterStep_0.itf.json"))]
+    fn quint_startup_janitor_stops_at_handoff(
+        #[case] stop_at: ManagedRootSetupBoundary,
+        #[case] stop_cause: ShutdownCause,
+        #[case] trace: &str,
+    ) {
+        use crate::quint_itf::{number, states};
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap();
+        let _entered = runtime.enter();
+        let control = RunControl::new();
+        let timing = PreparationToken::new(Duration::from_secs(30), control.clone());
+        let parent = Utf8Path::from_path(control.managed_parent.path()).unwrap();
+        let [behind_cursor, reclaimed, preserved] = quint_janitor_shell_fixture(parent);
+        let last = std::cell::Cell::new(None);
+        let result = create_managed_shell_roots_controlled(
+            parent,
+            &|boundary| {
+                last.set(Some(boundary));
+                if boundary == stop_at {
+                    if stop_cause == ShutdownCause::Cancellation {
+                        control.cancel();
+                    } else {
+                        runtime.block_on(tokio::time::advance(Duration::from_secs(30)));
+                    }
+                }
+            },
+            Some(&timing),
+        );
+        assert!(matches!(
+            result,
+            Err(PreparationError::Stopped(actual)) if actual == stop_cause
+        ));
+        assert_eq!(last.get(), Some(stop_at));
+        let history = states(trace);
+        let terminal = &history.last().unwrap()["s"];
+        assert_eq!(terminal["phase"]["tag"], "Stopped");
+        let cause = if stop_cause == ShutdownCause::Cancellation {
+            "Cancelled"
+        } else {
+            "TotalDeadline"
+        };
+        assert_eq!(terminal["phase"]["value"]["tag"], cause);
+        let handoff = &terminal["handoff"];
+        let removals = match handoff["tag"].as_str().unwrap() {
+            "NoReport" => 0,
+            "Ready" => number(&handoff["value"]["summary"]["reclaimed"]),
+            other => panic!("unexpected cancelled handoff {other}"),
+        };
+        assert_eq!(u64::from(!reclaimed.exists()), removals);
+        assert!(behind_cursor.is_dir());
+        assert!(preserved.is_dir());
+        let managed_entries = std::fs::read_dir(behind_cursor.parent().unwrap())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .filter(|name| name != ".hoimin-coordinator")
+            .count();
+        assert_eq!(u64::try_from(managed_entries).unwrap() + removals, 3);
     }
 
     #[tokio::test]

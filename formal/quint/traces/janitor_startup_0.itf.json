@@ -1,0 +1,1231 @@
+{
+  "#meta": {
+    "format": "ITF",
+    "status": "ok"
+  },
+  "states": [
+    {
+      "#meta": {
+        "index": 0
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "BeforeStartup",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": false,
+          "cursorDeferred": false,
+          "cursorWrite": {
+            "tag": "Unattempted",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "0"
+          },
+          "selected": [],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 1
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Selecting",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": false,
+          "cursorDeferred": false,
+          "cursorWrite": {
+            "tag": "Unattempted",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "0"
+          },
+          "selected": [],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "3"
+                },
+                "outcome": {
+                  "tag": "Pending",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "0"
+                },
+                "outcome": {
+                  "tag": "Uninspected",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          }
+        ],
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 4
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "3"
+                },
+                "outcome": {
+                  "tag": "Pending",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "3"
+                },
+                "outcome": {
+                  "tag": "Pending",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          }
+        ],
+        "phase": {
+          "tag": "Cleaning",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 5
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "3"
+                },
+                "outcome": {
+                  "tag": "Pending",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "3"
+                },
+                "outcome": {
+                  "tag": "Pending",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [
+          {
+            "#bigint": "1"
+          },
+          {
+            "#bigint": "2"
+          }
+        ],
+        "phase": {
+          "tag": "Retrying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "2"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "4"
+                },
+                "outcome": {
+                  "tag": "Unresolved",
+                  "value": {
+                    "tag": "DeleteFailed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "3"
+                },
+                "outcome": {
+                  "tag": "Pending",
+                  "value": {
+                    "#tup": []
+                  }
+                },
+                "removed": {
+                  "#bigint": "0"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          },
+          {
+            "tag": "DeleteFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [
+          {
+            "#bigint": "2"
+          }
+        ],
+        "phase": {
+          "tag": "Retrying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "1"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "4"
+                },
+                "outcome": {
+                  "tag": "Unresolved",
+                  "value": {
+                    "tag": "DeleteFailed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "4"
+                },
+                "outcome": {
+                  "tag": "Unresolved",
+                  "value": {
+                    "tag": "DeleteFailed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          },
+          {
+            "tag": "DeleteFailed",
+            "value": {
+              "#tup": []
+            }
+          },
+          {
+            "tag": "DeleteFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "NoReport",
+          "value": {
+            "#tup": []
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Retrying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 8
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "4"
+                },
+                "outcome": {
+                  "tag": "Unresolved",
+                  "value": {
+                    "tag": "DeleteFailed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "4"
+                },
+                "outcome": {
+                  "tag": "Unresolved",
+                  "value": {
+                    "tag": "DeleteFailed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          },
+          {
+            "tag": "DeleteFailed",
+            "value": {
+              "#tup": []
+            }
+          },
+          {
+            "tag": "DeleteFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "Ready",
+          "value": {
+            "diagnostics": [
+              {
+                "tag": "CursorPersistenceFailed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              {
+                "tag": "DeleteFailed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              {
+                "tag": "DeleteFailed",
+                "value": {
+                  "#tup": []
+                }
+              }
+            ],
+            "scan": {
+              "complete": true,
+              "cursorDeferred": true,
+              "cursorWrite": {
+                "tag": "WriteReportedFailure",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "observedMatching": {
+                "#bigint": "3"
+              },
+              "selected": [
+                {
+                  "#bigint": "1"
+                },
+                {
+                  "#bigint": "2"
+                }
+              ],
+              "stop": {
+                "tag": "NoScanStop",
+                "value": {
+                  "#tup": []
+                }
+              }
+            },
+            "summary": {
+              "absent": {
+                "#bigint": "0"
+              },
+              "examined": {
+                "#bigint": "8"
+              },
+              "inspected": {
+                "#bigint": "2"
+              },
+              "omitted": {
+                "#bigint": "1"
+              },
+              "preserved": {
+                "#bigint": "0"
+              },
+              "reclaimed": {
+                "#bigint": "0"
+              },
+              "removed": {
+                "#bigint": "2"
+              },
+              "uninspected": {
+                "#bigint": "0"
+              },
+              "unresolved": {
+                "#bigint": "2"
+              }
+            }
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Finishing",
+          "value": {
+            "#tup": []
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 9
+      },
+      "s": {
+        "candidates": {
+          "#map": [
+            [
+              {
+                "#bigint": "1"
+              },
+              {
+                "examined": {
+                  "#bigint": "4"
+                },
+                "outcome": {
+                  "tag": "Unresolved",
+                  "value": {
+                    "tag": "DeleteFailed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ],
+            [
+              {
+                "#bigint": "2"
+              },
+              {
+                "examined": {
+                  "#bigint": "4"
+                },
+                "outcome": {
+                  "tag": "Unresolved",
+                  "value": {
+                    "tag": "DeleteFailed",
+                    "value": {
+                      "#tup": []
+                    }
+                  }
+                },
+                "removed": {
+                  "#bigint": "1"
+                }
+              }
+            ]
+          ]
+        },
+        "diagnostics": [
+          {
+            "tag": "CursorPersistenceFailed",
+            "value": {
+              "#tup": []
+            }
+          },
+          {
+            "tag": "DeleteFailed",
+            "value": {
+              "#tup": []
+            }
+          },
+          {
+            "tag": "DeleteFailed",
+            "value": {
+              "#tup": []
+            }
+          }
+        ],
+        "handoff": {
+          "tag": "Ready",
+          "value": {
+            "diagnostics": [
+              {
+                "tag": "CursorPersistenceFailed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              {
+                "tag": "DeleteFailed",
+                "value": {
+                  "#tup": []
+                }
+              },
+              {
+                "tag": "DeleteFailed",
+                "value": {
+                  "#tup": []
+                }
+              }
+            ],
+            "scan": {
+              "complete": true,
+              "cursorDeferred": true,
+              "cursorWrite": {
+                "tag": "WriteReportedFailure",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "observedMatching": {
+                "#bigint": "3"
+              },
+              "selected": [
+                {
+                  "#bigint": "1"
+                },
+                {
+                  "#bigint": "2"
+                }
+              ],
+              "stop": {
+                "tag": "NoScanStop",
+                "value": {
+                  "#tup": []
+                }
+              }
+            },
+            "summary": {
+              "absent": {
+                "#bigint": "0"
+              },
+              "examined": {
+                "#bigint": "8"
+              },
+              "inspected": {
+                "#bigint": "2"
+              },
+              "omitted": {
+                "#bigint": "1"
+              },
+              "preserved": {
+                "#bigint": "0"
+              },
+              "reclaimed": {
+                "#bigint": "0"
+              },
+              "removed": {
+                "#bigint": "2"
+              },
+              "uninspected": {
+                "#bigint": "0"
+              },
+              "unresolved": {
+                "#bigint": "2"
+              }
+            }
+          }
+        },
+        "pending": [],
+        "phase": {
+          "tag": "Stopped",
+          "value": {
+            "tag": "TotalDeadline",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "roundProgress": false,
+        "roundRemaining": {
+          "#bigint": "0"
+        },
+        "scan": {
+          "complete": true,
+          "cursorDeferred": true,
+          "cursorWrite": {
+            "tag": "WriteReportedFailure",
+            "value": {
+              "#tup": []
+            }
+          },
+          "observedMatching": {
+            "#bigint": "3"
+          },
+          "selected": [
+            {
+              "#bigint": "1"
+            },
+            {
+              "#bigint": "2"
+            }
+          ],
+          "stop": {
+            "tag": "NoScanStop",
+            "value": {
+              "#tup": []
+            }
+          }
+        }
+      }
+    }
+  ],
+  "vars": [
+    "s"
+  ]
+}

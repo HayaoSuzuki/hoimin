@@ -179,6 +179,360 @@ cargo test --locked -p hoimin-cli --lib shell::finalization::quint
 cargo test --locked -p hoimin-cli --lib session::ownership::quint
 ```
 
+## Startup janitor verification inventory
+
+The startup path runs from `create_managed_shell_roots_controlled` in
+`crates/hoimin-cli/src/shell.rs` through the controlled entry point and the
+selection, claim, and removal functions in `crates/hoimin-cli/src/workspace/owned.rs`.
+The janitor ledger converts observed outcomes to the report contract in
+`crates/hoimin-core/src/report/janitor.rs`. The table records the coverage of
+each boundary.
+
+| Boundary | Model and implementation correspondence |
+| --- | --- |
+| Startup invocation, shared deadline, and report handoff | `janitor_startup.qnt` composes selection, cleanup, retry, report freeze, and shell publication. Rust replays deadline and cancellation boundaries |
+| Candidate enumeration and cursor rotation | `janitor_selection.qnt` replays pages, deadlines, quotas, coordinator contention, cursor read errors, and directory enumeration errors with a fixed input listing per scan. `janitor_reclaim.qnt` checks selected roots at the cleanup handoff |
+| Coordinator cursor publication and recovery | `janitor_cursor_recovery.qnt` checks both slot records, including conflicting equal generations and generation overflow. `janitor_selection.qnt` joins injected write and sync failures to cleanup reporting and the next page |
+| Observed candidate identity and admission | `janitor_eligibility.qnt` covers name and directory validation, identity errors, coordinator contention, the Windows mutation barrier, and lease and marker policy |
+| Startup recovery of staging and deleting roots | `janitor_namespace_recovery.qnt` covers individual roots and interrupted cleanup. A joined Rust replay checks mixed namespaces across two scans and a coordinator reopen |
+| Claim and lease handoff | `janitor_claim.qnt` compares names, directory and lease identities, notification, and the held lease. Namespace recovery checks the consequence of an unlock failure before or after deletion |
+| Bounded removal within a claimed root | `janitor_removal.qnt` replays traversal, limits, partial deletion, and replacement after Windows handle consumption. Lean's `CleanupCapabilityModel` checks retained authority across replacement |
+| Pending rounds and finalization | `janitor_retry.qnt` checks FIFO, progress, and deadline. `janitor_reclaim.qnt` compares the real janitor's finished report after two deferred roots are retried |
+| Outcome reporting | `janitor_reclaim.qnt` and `janitor_diagnostics.qnt` check ledger results and retained diagnostics. `janitor_startup.qnt` checks that the shell publishes the frozen startup report |
+
+Existing host-specific tests remain part of the implementation evidence. Quint
+models use small representative directories and explicit filesystem outcomes
+so that the checks can run on each change.
+The Windows runners exercised the mutation barrier, lease reacquisition,
+pinned deletion handles, and startup report publication through those Rust replays.
+[Windows CI run](https://github.com/HayaoSuzuki/hoimin/actions/runs/45932135570)
+
+## Startup janitor lifecycle and publication
+
+`janitor_startup.qnt` follows one startup with up to three observed matches
+and two selected roots. The selector, ownership checks, and cleanup slices
+supply bounded observations. The model follows each selected root from
+uninspected through inspection and any deferred retry, then freezes the
+finished report for shell publication.
+
+The scheduled histories cover failed enumeration, a failed cursor write that
+keeps the page, a cleanup deadline with an uninspected selection, and a
+completed retry round with one unresolved root. The shell histories distinguish
+successful publication from cancellation before janitor startup, cancellation
+after cleanup, and expiry of the shared preparation deadline before handoff.
+`publishAfterStopStep` must violate `Safety`. The checks exercise the shell
+report both with clean execution cleanup and with a later recordless failure.
+
+The Rust adapter compares the delivered counters, scan status, and typed
+diagnostics with the real startup report. The cancellation and total-deadline
+fixtures also check that the shell returns the matching stop and preserves the
+directory evidence from the janitor phase it reached.
+
+## Startup janitor reclaim evidence
+
+`janitor_reclaim.qnt` models two selected roots from three matching directory
+entry observations. Each transition represents one call to
+`ReclaimLedger::{begin, hold, absent, removal}` in
+`crates/hoimin-cli/src/workspace/owned/janitor.rs`. It follows inspection,
+preservation, absence, and deletion acknowledgement. The scheduled histories
+distinguish a failed deletion with partial progress from an acknowledged deletion
+that also observes absence. Acknowledgement takes precedence over both absence
+and an earlier failure classification. The summary checks the outcome partition,
+acknowledged entry counts, and selection omissions.
+
+The Rust adapter replays each bounded prefix through the real ledger and checks
+its finished summary. A negative control drops the root deletion acknowledgement
+and checks that the same history reports a state mismatch. Measurements and
+filesystem results are injected as observations. The model covers the report
+ledger boundary.
+
+`selectedRootsStep` also runs the real selector and cleanup on three deleting
+directories. One name stays behind the cursor. Of the two selected roots, the
+first is removed in both scenarios. The second remains uninspected if time
+expires, or becomes observed absent if it disappears after selection. The
+replay compares these outcomes against the two corresponding prefixes of
+the same model history. Update the model and regenerate its ITF fixtures
+when the observable classification or summary contract changes.
+
+`shellReportStep` is the ledger projection of the case that keeps the second
+selected root as young. The mixed-namespace replay uses that projection for
+the first scan. `janitor_startup.qnt` supplies the corresponding shell
+publication and cancellation histories.
+
+`deferredReportStep` replays the public janitor entry point with a three-entry
+slice limit. The first root removes one payload in its initial slice and
+finishes in the retry. The second is too deep for both slices and remains
+unresolved with `CleanupIncomplete`. The comparison checks traversal and
+removal counters, the final partition, and the surviving payload.
+
+The registry runs these janitor checks with Quint simulation and checks the ITF
+fixtures for freshness. `acknowledgementLostStep` suppresses the effect of an
+acknowledged removal and must violate `Safety`.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_reclaim
+cargo test --locked -p hoimin-cli --lib shell::tests::quint_startup_janitor
+```
+
+## Startup janitor diagnostic retention
+
+`janitor_diagnostics.qnt` uses two remaining slots and up to six arrivals.
+It selects the earliest issue details, fills the remaining slots with the
+earliest normal details, and retains the arrival order across both classes.
+`priorityStep` covers eviction of the most recently retained normal detail,
+first by an issue that leaves one normal detail and then by an issue that
+displaces that last normal detail. `issueOnlyStep` checks overflow when the
+slots are already occupied by issues. Omission counts include evictions.
+Truncation counts retain the evidence of an admitted detail that was shortened
+and subsequently evicted. An input omitted at admission contributes only to
+its omission count. `Safety` derives the total from each detail's admission
+conditions at its arrival. `truncationLostStep` counts only shortened details
+still retained and must produce a violation once a shortened detail is evicted.
+
+The Rust adapter fills the other 254 slots with earlier issues and calls
+`ReclaimLedger::detail` for each simulated arrival. It compares the retained
+order, exact messages and all omission counts. An oversized UTF-8 message
+exercises truncation across a character boundary. A negative control drops the
+priority issue and detects the changed retained details. The two models use
+simulated observations and keep filesystem operations outside the replay.
+Update the model and its fixtures when detail priority, accounting, or
+observable truncation semantics change.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_diagnostics
+```
+
+## Startup janitor deferred cleanup
+
+`janitor_retry.qnt` starts with two roots deferred by initial cleanup and
+models up to six visits. A round visits its starting queue in order, once per
+root. A root is queued again only when its slice is deferred. A new round needs
+at least one deferred slice that removed an entry. A completed or failed slice
+does not count toward that condition. The deadline stops visits and preserves
+the queue order for incomplete cleanup reporting.
+
+`stalledStep` completes one root and defers the other without progress.
+`progressStep` retries both roots in the following round, and `deadlineStep`
+stops with an unvisited root ahead of the root deferred during that round.
+`nextRoundDeadlineStep` allows the next round's entry check and expires before
+its first visit, so the replay exercises both clock checks.
+`stalledRetryStep` starts a new round despite the absence of progress and
+must violate `Safety`.
+
+The Rust replay invokes `retry_deferred` in
+`crates/hoimin-cli/src/workspace/owned/janitor.rs`, the scheduler used by
+`reclaim_abandoned_with_clock_and_selection` in `owned.rs`. It supplies slice
+results and a monotonic deadline, then checks the sequence of calls and the
+pending queue at exit. The bounded model represents clock observations and
+cleanup results as inputs.
+
+`filesystemProgressStep` drives `reclaim_removal` on two directories already
+in the pending queue. Under a two-entry cap, one root first deletes its payload
+and then completes. The other has a deeper payload and stalls in both rounds.
+The replay checks the order, acknowledged removals, and the remaining tree.
+On Windows, the fixture keeps the claimed root and lease handles across rounds.
+Update the model and regenerate its ITF fixtures when the retry or stop
+policy changes.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_retry
+```
+
+## Startup janitor candidate selection and cursor
+
+`janitor_selection.qnt` assigns a lexical rank to each managed name and runs up
+to three scans of stable listings. The small histories use four names. A scan
+returns up to 256 sorted names strictly after the cursor, wrapping when there
+are no names beyond it. Each published nonempty page stores its last name and
+increases the generation. The model distinguishes enumeration EOF, page
+selection, and cursor persistence.
+
+`wrapStep` covers the exclusive cursor and wraparound. `emptyPageStep` checks
+that an empty scan preserves an existing cursor and generation.
+`eofDeadlineStep` expires as soon as enumeration completes, and
+`persistDeadlineStep` expires after computing the page but before writing the
+cursor. Both preserve the prior cursor and generation. The negative control
+`prematureCursorStep` advances the cursor on the cancelled scan at EOF.
+`persistFailureStep` injects an error before writing the inactive slot.
+The selected page still reaches cleanup, the report records
+`CursorPersistenceFailed`, and the following scan uses the previous cursor.
+`tornPersistStep` leaves an invalid inactive slot and also uses the previous
+cursor on reopening. `syncFailureStep` reports the same diagnostic but reopens
+on a complete, readable new slot and selects the next page from it. The sync
+error checks bytes visible after reopening under fault injection.
+`capacityStep` checks a full page, one excess name, and an excess in the
+wrapped bucket when the selected page contains only a single name.
+`namespaceLimitStep` distinguishes 100,000 raw directory entries from
+100,001 with no matching names. Its Rust replay reuses the existing native
+namespace fixture for both observations.
+`unavailableStep` holds the coordinator lock or injects a cursor read error.
+Both outcomes leave the cursor and inspected-root count unchanged. The
+startup report distinguishes coordinator contention from a selection failure
+and records a diagnostic for the read error.
+`startupStopsStep` contrasts an expired startup deadline with expiry after
+the directory yields its first entry. Both stop before inspection. Only the
+latter produces a selection diagnostic. `enumerationErrorStep` injects an
+I/O failure at open or when reading the end of the listing. Already observed
+matches remain in the report as omissions. No page or cursor is published.
+
+The Rust replay calls `select_reclaim_candidates_locked_until_with_hooks`
+in `crates/hoimin-cli/src/workspace/owned.rs` on small temporary directories.
+It compares returned pages and scan evidence, then reads the actual coordinator
+slot and generation. It also checks that a deadline leaves the coordinator
+file byte-for-byte intact. Update the model and its ITF fixtures when
+candidate ordering or the cursor publication boundary changes.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_selection
+```
+
+## Startup janitor cursor recovery
+
+`janitor_cursor_recovery.qnt` models two slots and up to eight operations.
+Each valid slot contains a generation and cursor rank. A save writes the
+inactive slot and preserves the current slot. Reopening chooses the highest
+valid generation, uses slot zero for the initial identical pair, and rejects
+both an entirely invalid file and a valid pair that disagrees at the same
+generation. `conflictingGenerationStep` checks that the reader and coordinator
+open both reject that conflicting pair without rewriting the file.
+`overflowStep` starts with a readable maximum generation and checks that a
+new save fails without modifying either slot.
+After the newest digest is damaged, recovery
+uses the preceding slot, and the next save increments that recovered generation.
+`preferOlderStep` selects the older slot after a successful save and violates
+`Safety`.
+
+The Rust replay also joins `recoverStep` to the second page of the selection
+model's `recoveredCursorStep`. The real selector uses the recovered cursor,
+returns the expected page, and writes the expected replacement slot.
+
+`interruptedWriteStep` covers a failure before writing, a partial write with
+an invalid digest, and a complete write whose sync reports an error. The last
+case records bytes visible on the next open under the injected fault. Survival
+across actual power loss is outside the model.
+
+The Rust replay uses `persist_coordinator_cursor`, `decode_coordinator_slot`,
+and `ManagedRootCoordinator::open` from
+`crates/hoimin-cli/src/workspace/owned.rs` on a temporary file. It injects
+write and sync errors, checks each slot after every command, and reopens the
+coordinator to check which record it uses. Update the model and regenerate
+its fixtures when cursor write ordering or recovery semantics change.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_cursor_recovery
+```
+
+## Startup janitor reclaim eligibility
+
+`janitor_eligibility.qnt` covers one active-name root. A missing or non-file
+lease, a lock error, and a malformed lease marker each stop admission before
+retention and readiness are considered. `leaseEvidenceStep` combines each
+failure with both markers present to test diagnostic precedence.
+An active lease, a retain marker, and a retain-inspection failure also stop
+admission before cleanup readiness or heartbeat age is considered. Valid
+cleanup-ready evidence permits reclamation. A mismatch or identity inspection
+failure adds a diagnostic and falls back to heartbeat evidence. A matching
+heartbeat is stale at the threshold, including equality.
+
+`candidateStep` checks invalid names, failed directory open and identity
+inspection, and coordinator contention using an otherwise reclaimable root.
+`windowsCandidateStep` checks a named mutation event and an event-inspection
+error. The Windows replay uses a separately held lease and event to distinguish
+their precedence.
+
+The scheduled histories exercise the precedence rules, the exact stale
+boundary, and the ordered diagnostics on fallback. `retentionIgnoredStep`
+permits reclamation despite a retain marker and must violate `Safety`.
+The Rust replay drives `ManagedRunRoot::reclaim_abandoned_with_clock_and_selection`
+in `crates/hoimin-cli/src/workspace/owned.rs`. Each observation uses one
+temporary root with real markers and lease handles, a supplied clock reading,
+and at most one injected I/O failure. The replay compares the root disposition,
+the typed diagnostics, and whether the payload survives. Staging roots and
+already-claimed roots have separate cleanup rules. Update the model and
+regenerate its fixtures when reclaim eligibility or diagnostic precedence changes.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_eligibility
+```
+
+## Startup janitor staging and deleting recovery
+
+`janitor_namespace_recovery.qnt` tests one interrupted root per observation.
+Empty staging requires directory age at or beyond the stale threshold. Staging
+with only a valid lease uses the lease creation time, and staging with a
+heartbeat uses its modification time. Any payload entry prevents staging
+admission. Deleting can resume immediately when empty or when it only
+contains a valid lease. With additional entries it uses ordinary eligibility
+and needs a stale heartbeat in the absence of a cleanup-ready marker.
+
+The Rust replay creates these layouts under the real managed directory and
+compares disposition, ordered diagnostics, acknowledged deletion counts, and
+surviving entries. `claimFailureStep` distinguishes a failed staging rename
+from a failed unlock after rename and an unlock failure after an empty root was
+removed. The last case retains the acknowledgement and records a coordinator
+diagnostic. `sliceFailureStep` covers a failed payload unlink and a deadline
+after one acknowledged unlink. The restart check resumes the remaining
+deleting directory after the injected fault or deadline clears.
+
+The mixed-namespace replay joins the namespace and reclaim histories with
+the real cursor. The first scan removes an empty deleting root and holds an
+empty staging root just before the stale threshold. After reopening the
+coordinator at that threshold, the cursor wraps. The second scan removes the
+root left behind the previous page and the now-stale staging root.
+
+Present markers are valid and no owner holds the lease. `ignoreStagingAgeStep`
+must violate `Safety` by allowing removal of a young empty staging directory.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_namespace_recovery
+```
+
+## Startup janitor claim and lease handoff
+
+`janitor_claim.qnt` models one admitted root before removal. A claim checks
+the observed directory and lease identities, checks the marker, and publishes
+the deleting name. The model covers an absent candidate, fallback to the
+deleting name, identity and marker mismatches, cancellation, and rename failure.
+Windows traces distinguish restoration after a failed rename from reacquisition
+after the deleting name was published. A failure to reacquire leaves the
+namespace move visible and does not grant a lease to the caller.
+
+The Rust replay calls `claim_managed_child` under the coordinator lock, using
+distinct files with the same marker bytes to test identity checks. It compares
+the outcome, notification count, surviving paths, and whether a competing
+handle can lock the expected lease. The Windows replay uses a second handle
+that denies delete sharing to interrupt lease reopening. The coordinator is
+available throughout and the model considers one occupied candidate name at a
+time. `acceptWrongLeaseStep` must violate `Safety`.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_claim
+```
+
+## Startup janitor bounded tree removal
+
+`janitor_removal.qnt` follows a single tree with one nested payload file, its
+parent directory, and two root control markers. The model compares an
+uninterrupted slice with a one-entry cap, an immediate stop, and stops after
+acknowledged payload, branch, or heartbeat deletion. Cleanup removes the
+nested entries before the control markers. Reopening a replaced name must
+preserve both the parked original and the replacement. `removeLeaseEarlyStep`
+must violate `Safety` by removing the lease while payload remains.
+
+The Rust replay drives `remove_claimed_tree_slice_with_capabilities` against
+the claimed name and its original identity. It checks the per-call and
+cumulative removals, the cap when a slice examines one entry, and the actual
+layout after every operation. The replacement scenario exercises reopening by
+name. The native Windows replay also runs the limit and finalization histories
+with pinned root and lease handles. `consumedReplacementStep` installs a
+same-name replacement after the original root has been removed and supplies
+the replacement's own identity. It must survive an attempt through the
+consumed handle.
+
+```sh
+cargo test --locked -p hoimin-cli --lib workspace::owned::janitor::quint_removal
+```
+
 ## SQLite persistence, resume selection and ownership
 
 The SQLite extension adds three domains to the earlier configurations:
