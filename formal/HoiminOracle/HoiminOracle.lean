@@ -126,6 +126,7 @@ import HoiminOracle.PagingModel
 import HoiminOracle.PreparedAnnotationImportModel
 import HoiminOracle.PrivateAnnotationImportModel
 import HoiminOracle.EnvironmentFingerprintModel
+import HoiminOracle.RelativePathModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.OperatorSelectorModel
 

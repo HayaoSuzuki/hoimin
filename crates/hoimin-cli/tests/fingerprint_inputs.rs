@@ -255,7 +255,7 @@ fn glob_and_exact_file_are_deduplicated() {
     let records = resolve(
         &fixture.root,
         &["pyproject.toml".into()],
-        &["./pyproject.toml".into(), "pyproject.toml".into()],
+        &[".//./pyproject.toml//".into(), "pyproject.toml".into()],
     )
     .unwrap();
 

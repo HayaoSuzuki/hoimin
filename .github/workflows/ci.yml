@@ -641,6 +641,8 @@ jobs:
             HoiminOracle.ImportRootCases
             HoiminOracle.OperatorSelectorModel
             HoiminOracle.OperatorSelectorCases
+            HoiminOracle.RelativePathModel
+            HoiminOracle.RelativePathCases
             EnvironmentFingerprintAuditMain
             HoiminOracle.WorkerMetricsModel
             HoiminOracle.WorkerMetricsProofs
@@ -760,6 +762,8 @@ jobs:
             lake exe generate_environment_fingerprint -- --check-import-roots corpus/import-roots.jsonl
           run_guard check-operator-selectors \
             lake exe generate_environment_fingerprint -- --check-operator-selectors corpus/operator-selectors.jsonl
+          run_guard check-relative-path \
+            lake exe generate_environment_fingerprint -- --check-relative-path corpus/relative-path.jsonl
           run_guard check-changed-config \
             lake exe generate_changed_context -- --check-config corpus/changed-config.jsonl
           run_guard check-selector-syntax \

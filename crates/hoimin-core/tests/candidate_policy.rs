@@ -7,6 +7,7 @@ use hoimin_core::{
     validate_candidate_with_context,
 };
 use proptest::prelude::*;
+use std::collections::BTreeSet;
 
 fn descriptor(source: &[u8]) -> CandidateDescriptor {
     CandidateDescriptor {
@@ -24,6 +25,76 @@ fn descriptor(source: &[u8]) -> CandidateDescriptor {
         symbol: Some("compare".into()),
         file_hash: blake3::hash(source).to_hex().to_string(),
     }
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PathOutcome {
+    Accepted,
+    UnsupportedSchema,
+    InvalidPath,
+    HashMismatch,
+}
+
+#[derive(serde::Deserialize)]
+struct CandidateFixture {
+    schema_matches: bool,
+    hash_matches: bool,
+    #[serde(rename = "candidate")]
+    expected: PathOutcome,
+}
+
+#[derive(serde::Deserialize)]
+struct PathFixture {
+    schema: u32,
+    mode: String,
+    id: String,
+    input: String,
+    portable: bool,
+    unix_workspace: bool,
+    #[serde(flatten)]
+    validation: CandidateFixture,
+}
+
+#[test]
+fn relative_path_policies_and_candidate_validation_match_lean() {
+    use hoimin_core::RelativePathPolicy::{Portable, UnixWorkspace};
+
+    let corpus = include_str!("../../../formal/HoiminOracle/corpus/relative-path.jsonl");
+    let source = b"x = 1\nvalue == 2\n";
+    let context = CandidateValidationContext::new(source).unwrap();
+    let mut ids = BTreeSet::new();
+    for row in corpus.lines() {
+        let case: PathFixture = serde_json::from_str(row).unwrap();
+        assert_eq!(case.schema, 1, "{}", case.id);
+        assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+        assert_eq!(Portable.allows(&case.input), case.portable, "{}", case.id);
+        assert_eq!(
+            UnixWorkspace.allows(&case.input),
+            case.unix_workspace,
+            "{}",
+            case.id
+        );
+
+        let mut candidate = descriptor(source);
+        candidate.path = case.input.into();
+        if !case.validation.schema_matches {
+            candidate.schema_version += 1;
+        }
+        if !case.validation.hash_matches {
+            candidate.file_hash.clear();
+        }
+        let observed = match validate_candidate_with_context(&context, &candidate) {
+            Ok(_) => PathOutcome::Accepted,
+            Err(CandidateValidationError::UnsupportedSchema) => PathOutcome::UnsupportedSchema,
+            Err(CandidateValidationError::InvalidPath) => PathOutcome::InvalidPath,
+            Err(CandidateValidationError::FileHashMismatch) => PathOutcome::HashMismatch,
+            Err(error) => panic!("{}: unexpected candidate error: {error}", case.id),
+        };
+        assert_eq!(observed, case.validation.expected, "{}", case.id);
+        assert!(ids.insert(case.id));
+    }
+    assert_eq!(ids.len(), 122);
 }
 
 proptest! {
