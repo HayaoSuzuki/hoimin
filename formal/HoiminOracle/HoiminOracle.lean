@@ -179,6 +179,7 @@ import HoiminOracle.SessionCatalogModel
 import HoiminOracle.SessionConfigurationModel
 import HoiminOracle.StoredResultModel
 import HoiminOracle.ResumeSelectionModel
+import HoiminOracle.ResumeRecheckModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

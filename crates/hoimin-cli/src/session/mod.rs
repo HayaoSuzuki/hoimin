@@ -1,4 +1,6 @@
 mod ownership;
+#[cfg(test)]
+mod resume_recheck_oracle_tests;
 mod schema;
 
 use std::collections::HashMap;

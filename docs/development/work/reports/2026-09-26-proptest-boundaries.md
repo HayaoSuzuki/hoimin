@@ -2225,3 +2225,43 @@ single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_resume_selection -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test session_handler resume_selection_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of resume recheck and ownership
+
+After selecting a run, the loader obtains ownership or uses a lock
+it already holds. An active peer prevents the recheck. The
+conditional update compares the selected run ID, fingerprint,
+incomplete flag, and original budget. A mismatch or zero updated rows
+returns `candidate_changed`. A SQLite update refusal returns the
+database error. These paths preserve the row state and any ownership
+the loader held before the attempt, and release a newly obtained lock.
+Only a successful update publishes new ownership.
+
+The Lean predicate depends on the four compared fields. A budget
+change prevents the update even when the new budget would fit the
+request. Changing only `finished` or the internal SQLite row ID leaves
+the predicate satisfied. A newer run inserted after selection does not
+enter the recheck. A budget change reverted before recheck leaves the
+original value visible to the conditional update.
+
+The 45 cases apply changes from a separate SQLite connection after
+the actual selection and before acquisition. They compare the
+returned result, every run row, the loader's retained ownership,
+and the ability of an independent handler to acquire the selected
+run's lock. Temporary SQLite triggers exercise ignored and rejected
+updates. The row-ID replacement and budget restoration cases use
+explicit fixture edits. The audit examines one recheck after a stable
+set of intervening edits. Six sensitivity variants cover the
+compared fields, previous and provisional locks, and error reporting.
+
+All 45 cases matched on macOS in default and `contracts` builds.
+The session unit suites passed 161 and 173 tests respectively. The
+session handler target passed 104 tests with one existing ignored
+test, and the workflow suite passed 222. Lean used a 2 GiB limit and
+single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_resume_recheck -- --check corpus/resume-recheck.jsonl)
+(cd formal/HoiminOracle && lake exe generate_resume_recheck -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib resume_recheck_matches_lean_oracle -- --test-threads=1
+```
