@@ -1644,6 +1644,11 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             "corpus/review-record.jsonl",
         ),
         (
+            "generate_survivor_review",
+            "--check-review-store-publication",
+            "corpus/review-store-publication.jsonl",
+        ),
+        (
             "generate_progress_input",
             "--check-duplicates",
             "corpus/progress-duplicates.jsonl",

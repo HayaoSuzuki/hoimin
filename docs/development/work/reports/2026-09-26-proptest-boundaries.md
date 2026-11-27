@@ -993,3 +993,48 @@ with one build job under a 3 GiB cap.
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::tests review::store_tests::store_rolls_back_failed_append review::store_tests::store_busy_rejection_leaves_no_history
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
 ```
+
+## Lean model of first review store publication
+
+An initializer builds the database and SQLite journal inside a private
+directory. The five observed private phases are creation, the three
+schema statements, and readiness to publish. Publication can install a
+complete database at an absent path. If the path is occupied, the
+initializer preserves it and validates the public file when reopening.
+A compatible initializer sees the published history. A different
+project or an unrelated file is rejected.
+
+Lean proves that observing a private phase leaves the public file
+unchanged, that publication preserves every already present file, and
+that a returned initialization error or unwind leaves the publication
+unchanged. A compatible reopen appends to the existing history in the
+model.
+
+The 52 internal-fixture schedules contain 555 boundary observations.
+They park a competing initializer at each private phase, alternate
+initializers, sweep returned errors and unwinds at all five phases,
+and introduce an unrelated file before or during initialization.
+They cover compatible and different projects and retry after an
+interruption. The Rust adapter uses the existing initialization hooks
+to coordinate scoped threads. On every successful reopen it appends a
+worker marker through the real store API. At each boundary it compares
+the public database, ordered history, and count of private directories.
+This observes the existing SQLite and filesystem operations at their
+test hooks, including the absence of public journal files at those
+boundaries. The schedules exercise ordinary errors and unwinds.
+
+Seven broken variants expose early publication, overwriting or bypassing
+an existing winner, leaked private state, losing the winner on abort,
+accepting a different project, and accepting an unrelated file.
+
+On macOS all 555 observations matched. The targeted Rust runs passed
+43 unit tests and 44 CLI integration tests, and the CI workflow suite
+passed 222. Lean used a 2 GiB cap with a 20-second timeout per command.
+Single-job Rust peaked at 2,147,840 KiB under a 3 GiB cap.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --check-review-store-publication corpus/review-store-publication.jsonl)
+(cd formal/HoiminOracle && lake exe generate_survivor_review -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib -- --test-threads=2 review::store_tests
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --test review_cli -- --test-threads=2
+```
