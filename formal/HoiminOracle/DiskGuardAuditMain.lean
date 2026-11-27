@@ -190,6 +190,43 @@ private def reportEvidenceSensitivity : Bool :=
   let broken := if projectedPrimaryMatches firstSample laterSample then [] else [laterSample]
   decide (appendReportEvidence firstSample [] laterSample ≠ broken)
 
+private def meterRoots (sameFilesystem : Bool) : List MeterRoot := [
+  { filesystem := 7, available := 90, files := [(0, 4), (1, 0)] },
+  { filesystem := if sameFilesystem then 7 else 8, available := 4, files := [(0, 4), (2, 6)] } ]
+
+private def meterCase (id : String) (roots : List MeterRoot) (maxOwned minFree : Nat) : Lean.Json :=
+  let capacities := meterCapacities roots
+  let pair (item : Nat × Nat) := Lean.Json.arr #[Lean.toJson item.1, Lean.toJson item.2]
+  let expectation uniqueFiles :=
+    let owned := measuredBytes uniqueFiles roots
+    Lean.Json.mkObj [("owned_bytes", Lean.toJson owned),
+      ("reasons", Lean.Json.arr ((meterReasons owned maxOwned minFree capacities).map
+        (Lean.Json.str ∘ stopCode)).toArray)]
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"), ("id", .str id),
+    ("roots", Lean.Json.arr (roots.map fun root => Lean.Json.mkObj [
+      ("filesystem", Lean.toJson root.filesystem), ("available", Lean.toJson root.available),
+      ("files", Lean.Json.arr (root.files.map pair).toArray)]).toArray),
+    ("max_owned", Lean.toJson maxOwned), ("min_free", Lean.toJson minFree),
+    ("expected_capacities", Lean.Json.arr (capacities.map pair).toArray),
+    ("expected_minimum", optionNatJson (minimumCapacity capacities)),
+    ("expected_unix", expectation true), ("expected_windows", expectation false) ]
+
+def renderMeterCorpus : String :=
+  let cases := [true, false].flatMap fun shared => [false, true].flatMap fun reverse =>
+    ([(64, 5), (10, 4), (11, 90)] : List (Nat × Nat)).map fun (owned, free) =>
+      let roots := meterRoots shared
+      meterCase s!"roots_{shared}_{reverse}_{owned}_{free}" (if reverse then roots.reverse else roots)
+        owned free
+  String.join ((meterCase "no_capacity" [] 10 5 :: cases).map fun item => item.compress ++ "\n")
+
+private def meterSensitivity : Bool :=
+  let shared := meterRoots true
+  let split := meterCapacities (meterRoots false)
+  measuredBytes true shared != measuredBytes false shared &&
+    decide (meterCapacities shared ≠ meterCapacities shared.reverse) &&
+    minimumCapacity split != split.head?.map Prod.snd
+
 private def familyEvents : List Event := [
   .dispatch, .observe 9 10 11 10, .processDrainSucceeded, .outputDrained,
   .monitorJoined, .requestCleanup executionRoot, .reportSucceeded, .finish]
@@ -271,7 +308,7 @@ private def ensureAudit : IO (Except UInt32 Unit) := do
   unless rootRenamingCasesPass && payloadSymmetryCasesPass do
     IO.eprintln "disk-guard normalization lacks a finite sample witness"
     return .error 2
-  unless sensitivityPasses && reportEvidenceSensitivity do
+  unless sensitivityPasses && reportEvidenceSensitivity && meterSensitivity do
     IO.eprintln "one or more broken disk-guard families escaped detection"
     return .error 2
   return .ok ()
@@ -344,10 +381,12 @@ def main (args : List String) : IO UInt32 := do
   | ["--check", path] => checkCorpus path renderCorpus
   | ["--output-report-evidence", path] => writeCorpus path renderReportEvidenceCorpus
   | ["--check-report-evidence", path] => checkCorpus path renderReportEvidenceCorpus
+  | ["--output-meter", path] => writeCorpus path renderMeterCorpus
+  | ["--check-meter", path] => checkCorpus path renderMeterCorpus
   | ["--sensitivity"] => printSensitivity
   | ["--stats", path] => printStats path
   | _ =>
-      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
+      IO.eprintln "usage: generate_disk_guard ((--output | --check | --output-report-evidence | --check-report-evidence | --output-meter | --check-meter) PATH | --sensitivity | --stats RESOURCE_GUARD_JSON)"
       return 2
 
 end HoiminOracle.DiskGuard.Executable

@@ -163,6 +163,41 @@ def observationReasons (owned maxOwned free minFree : Nat) : List StopReason :=
   else if owned ≥ maxOwned then [.sizeExceeded]
   else []
 
+structure MeterRoot where
+  filesystem : Nat
+  available : Nat
+  files : List (Nat × Nat) -- physical file identity within the filesystem and logical bytes
+
+structure MeterCount where
+  identities : List (Nat × Nat) := []
+  bytes : Nat := 0
+
+def chargeMeterFile (uniqueFiles : Bool) (count : MeterCount) (filesystem : Nat)
+    (file : Nat × Nat) : MeterCount :=
+  let identity := (filesystem, file.1)
+  if uniqueFiles && count.identities.contains identity then count
+  else { identities := identity :: count.identities, bytes := count.bytes + file.2 }
+
+def measuredBytes (uniqueFiles : Bool) (roots : List MeterRoot) : Nat :=
+  let count := roots.foldl (fun count root =>
+    root.files.foldl (fun count file => chargeMeterFile uniqueFiles count root.filesystem file) count)
+    ({} : MeterCount)
+  count.bytes
+
+def recordCapacity (seen : List (Nat × Nat)) (root : MeterRoot) : List (Nat × Nat) :=
+  if seen.any (fun capacity => capacity.1 == root.filesystem) then seen
+  else seen ++ [(root.filesystem, root.available)]
+
+def meterCapacities (roots : List MeterRoot) : List (Nat × Nat) := roots.foldl recordCapacity []
+
+def minimumCapacity (capacities : List (Nat × Nat)) : Option Nat :=
+  (capacities.map Prod.snd).min?
+
+def meterReasons (owned maxOwned minFree : Nat) (capacities : List (Nat × Nat)) : List StopReason :=
+  match minimumCapacity capacities with
+  | none => [.measurementFailed]
+  | some free => observationReasons owned maxOwned free minFree
+
 def allSafetySucceeded (state : State) : Bool :=
   state.processDrain == .succeeded && state.outputDrain == .succeeded &&
     state.monitorJoin == .succeeded

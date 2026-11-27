@@ -289,4 +289,28 @@ theorem replayed_report_evidence_does_not_duplicate (primary item : ReportEviden
   by_cases duplicate : item = primary ∨ item ∈ existing <;>
     simp [appendReportEvidence, duplicate]
 
+theorem a_known_physical_file_adds_no_bytes (count : MeterCount) (filesystem id bytes : Nat)
+    (seen : (filesystem, id) ∈ count.identities) :
+    chargeMeterFile true count filesystem (id, bytes) = count := by
+  simp [chargeMeterFile, seen]
+
+theorem a_sampled_filesystem_keeps_its_first_capacity (seen : List (Nat × Nat))
+    (root : MeterRoot) (sampled : seen.any (fun capacity => capacity.1 == root.filesystem) = true) :
+    recordCapacity seen root = seen := by
+  simp [recordCapacity, sampled]
+
+theorem any_capacity_at_reserve_stops (capacities : List (Nat × Nat))
+    (filesystem free owned maxOwned minFree : Nat) (present : (filesystem, free) ∈ capacities)
+    (reserve : free ≤ minFree) :
+    (meterReasons owned maxOwned minFree capacities).head? = some .reserveReached := by
+  have member : free ∈ capacities.map Prod.snd := List.mem_map_of_mem present
+  cases minimum : minimumCapacity capacities with
+  | none =>
+    have empty := List.min?_eq_none_iff.mp minimum
+    simp [empty] at member
+  | some lowest =>
+    have least := (List.min?_eq_some_iff.mp minimum).2 free member
+    have reached := Nat.le_trans least reserve
+    by_cases size : owned ≥ maxOwned <;> simp [meterReasons, minimum, observationReasons, reached, size]
+
 end HoiminOracle.DiskGuard

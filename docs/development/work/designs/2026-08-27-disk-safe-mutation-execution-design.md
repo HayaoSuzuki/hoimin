@@ -1144,3 +1144,26 @@ cd ../..
 cargo test --locked -p hoimin-cli --test lean_disk_shutdown_oracle
 cargo test --locked -p hoimin-cli --lib deferred_execution_cleanup_is_incomplete_without_output_ack_or_outer_retry
 ```
+
+## Disk metering across roots
+
+The Lean metering model counts physical identities on Unix and directory
+entries in Windows conservative accounting. It keeps the first capacity
+observation for each filesystem and supplies their minimum to the stop policy.
+The proofs cover repeated physical file identities, repeated filesystem
+observations, and a reserve violation on any observed filesystem. The model
+also supplies a measurement failure when the list of capacities is empty.
+
+Thirteen `internal-fixture` cases cover both root orders, same and distinct
+filesystem keys, three threshold combinations, and empty measurement. The
+Rust replay creates actual ordinary files and hard links, injects filesystem
+keys and capacity observations, and drives both the native walker and the
+monitor's stop policy. The injected keys exercise aggregation with controlled
+values. Native traversal uses the host filesystem.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-meter corpus/disk-meter.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib native_disk_meter_and_stop_policy_match_lean
+```
