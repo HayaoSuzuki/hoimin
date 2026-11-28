@@ -792,6 +792,9 @@ jobs:
             HoiminOracle.ProcessGroupModel
             HoiminOracle.ProcessGroupCases
             ProcessGroupAuditMain
+            HoiminOracle.CgroupCleanupModel
+            HoiminOracle.CgroupCleanupCases
+            CgroupCleanupAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -905,6 +908,7 @@ jobs:
             'generate_persist_transaction|corpus/persist-transaction.jsonl|sensitivity'
             'generate_session_dispatch|corpus/session-dispatch.jsonl|sensitivity'
             'generate_process_group|corpus/process-group.jsonl|sensitivity'
+            'generate_cgroup_cleanup|corpus/cgroup-cleanup.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

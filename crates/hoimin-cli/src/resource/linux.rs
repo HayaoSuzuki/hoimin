@@ -2347,6 +2347,9 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
 }
 
 #[cfg(test)]
+mod cleanup_oracle_tests;
+
+#[cfg(test)]
 mod tests {
     use std::cell::Cell;
     use std::ffi::OsString;

@@ -185,6 +185,7 @@ import HoiminOracle.BeginTransactionModel
 import HoiminOracle.PersistTransactionModel
 import HoiminOracle.SessionDispatchModel
 import HoiminOracle.ProcessGroupModel
+import HoiminOracle.CgroupCleanupModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

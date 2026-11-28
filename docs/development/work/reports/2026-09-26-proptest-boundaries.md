@@ -2438,3 +2438,33 @@ and single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_process_group -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib unix_process_group_histories_match_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of cgroup cleanup strategy and retries
+
+Cleanup starts with the recursive kernel operation. After success the
+retry loop only inspects the tree and waits. Failure selects a verified
+group signal followed by a membership scan while the root is owned,
+or just the membership scan after reap. Subsequent passes inspect the
+tree before scanning or waiting. Lean proves that the loop requires an
+empty-tree observation to succeed and that the fallback cannot issue a
+group signal after reap.
+
+The 384 cases vary startup, the accounting result, and lists of tree
+observations, scan failures, and wait failures. Rust calls the production
+startup, loop, and accounting functions with scripted callbacks. The
+replay compares the selected strategy, every call in order, and the
+typed cleanup and accounting errors. Both errors are preserved when
+both operations fail. Eight sensitivity variants exercise fallback
+authorization, repeated scans, error precedence, and accounting.
+The callbacks model the kernel and filesystem observations.
+
+All 384 cases matched on macOS in default and `contracts` builds.
+The resource unit suite passed 123 tests in each build with one
+existing ignored test, and the workflow suite passed 222. Lean used
+a 2 GiB limit and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_cgroup_cleanup -- --check corpus/cgroup-cleanup.jsonl)
+(cd formal/HoiminOracle && lake exe generate_cgroup_cleanup -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cgroup_cleanup_protocol_matches_lean_oracle -- --test-threads=1
+```
