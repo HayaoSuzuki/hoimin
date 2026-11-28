@@ -167,6 +167,7 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_session_dispatch": "corpus/session-dispatch.jsonl",
     "generate_process_group": "corpus/process-group.jsonl",
     "generate_cgroup_cleanup": "corpus/cgroup-cleanup.jsonl",
+    "generate_cgroup_member": "corpus/cgroup-member.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",

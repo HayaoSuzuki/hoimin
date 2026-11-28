@@ -359,6 +359,10 @@ name = "generate_cgroup_cleanup"
 root = "CgroupCleanupAuditMain"
 
 [[lean_exe]]
+name = "generate_cgroup_member"
+root = "CgroupMemberAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

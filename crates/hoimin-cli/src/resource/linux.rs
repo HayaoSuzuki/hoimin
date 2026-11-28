@@ -1,4 +1,8 @@
 use std::ffi::OsString;
+#[cfg(any(target_os = "linux", all(test, unix)))]
+use std::io;
+#[cfg(any(target_os = "linux", all(test, unix)))]
+use std::path::Path;
 #[cfg(any(target_os = "linux", test))]
 use std::path::PathBuf;
 
@@ -390,6 +394,58 @@ where
     }
 }
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn signal_verified_member<Handle, OpenPidfd, ReadMembership, SendSignal>(
+    cgroup: &Path,
+    pid: u32,
+    open_pidfd: OpenPidfd,
+    read_membership: ReadMembership,
+    send_signal: SendSignal,
+) -> Result<(), ResourceError>
+where
+    OpenPidfd: FnOnce(i32) -> io::Result<Handle>,
+    ReadMembership: FnOnce(&Path) -> Result<Vec<u32>, ResourceError>,
+    SendSignal: FnOnce(&Handle) -> io::Result<()>,
+{
+    let numeric_pid = i32::try_from(pid)
+        .map_err(|_| cleanup_error(cgroup, io::Error::other("cgroup pid overflow")))?;
+    let handle = match open_pidfd(numeric_pid) {
+        Ok(handle) => handle,
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return Ok(()),
+        Err(error) => return Err(cleanup_error(cgroup, error)),
+    };
+    if !read_membership(cgroup)?.contains(&pid) {
+        return Ok(());
+    }
+    match send_signal(&handle) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+        Err(error) => Err(cleanup_error(cgroup, error)),
+    }
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn parse_member_pids(procs: &[u8]) -> Result<Vec<u32>, ResourceError> {
+    procs
+        .split(u8::is_ascii_whitespace)
+        .filter(|raw| !raw.is_empty())
+        .map(|raw| {
+            std::str::from_utf8(raw)
+                .ok()
+                .and_then(|raw| raw.parse::<u32>().ok())
+                .ok_or_else(|| ResourceError::InvalidCgroupData("invalid cgroup.procs pid".into()))
+        })
+        .collect()
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn cleanup_error(path: &Path, source: io::Error) -> ResourceError {
+    ResourceError::CgroupCleanup {
+        path: path.to_owned(),
+        source,
+    }
+}
+
 #[cfg(any(target_os = "linux", test))]
 fn unescape_mount_field(input: &[u8]) -> Result<Vec<u8>, ResourceError> {
     let mut output = Vec::with_capacity(input.len());
@@ -461,10 +517,10 @@ mod platform {
 
     use super::{
         CgroupCapabilities, CgroupEventCounters, INTERNAL_LAUNCHER_ARG,
-        begin_cgroup_member_cleanup, classify_violations, find_unified_mounts,
+        begin_cgroup_member_cleanup, classify_violations, cleanup_error, find_unified_mounts,
         finish_cgroup_member_cleanup, normalized_memory_limit, parse_cgroup_event_counters,
-        path_from_bytes, remove_cgroup_dir, resolve_unified_cgroup, run_cleanup_after_accounting,
-        violations_since, wrap_launcher_argv,
+        parse_member_pids, path_from_bytes, remove_cgroup_dir, resolve_unified_cgroup,
+        run_cleanup_after_accounting, signal_verified_member, violations_since, wrap_launcher_argv,
     };
     use crate::resource::{ProcessSupervisor, ResourceError};
 
@@ -1552,35 +1608,6 @@ mod platform {
         Ok(())
     }
 
-    fn signal_verified_member<Handle, OpenPidfd, ReadMembership, SendSignal>(
-        cgroup: &Path,
-        pid: u32,
-        open_pidfd: OpenPidfd,
-        read_membership: ReadMembership,
-        send_signal: SendSignal,
-    ) -> Result<(), ResourceError>
-    where
-        OpenPidfd: FnOnce(i32) -> io::Result<Handle>,
-        ReadMembership: FnOnce(&Path) -> Result<Vec<u32>, ResourceError>,
-        SendSignal: FnOnce(&Handle) -> io::Result<()>,
-    {
-        let numeric_pid = i32::try_from(pid)
-            .map_err(|_| cleanup_error(cgroup, io::Error::other("cgroup pid overflow")))?;
-        let handle = match open_pidfd(numeric_pid) {
-            Ok(handle) => handle,
-            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return Ok(()),
-            Err(error) => return Err(cleanup_error(cgroup, error)),
-        };
-        if !read_membership(cgroup)?.contains(&pid) {
-            return Ok(());
-        }
-        match send_signal(&handle) {
-            Ok(()) => Ok(()),
-            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
-            Err(error) => Err(cleanup_error(cgroup, error)),
-        }
-    }
-
     fn open_pidfd(pid: i32) -> io::Result<std::os::fd::OwnedFd> {
         use std::os::fd::FromRawFd;
 
@@ -1646,21 +1673,6 @@ mod platform {
         Ok(())
     }
 
-    fn parse_member_pids(procs: &[u8]) -> Result<Vec<u32>, ResourceError> {
-        procs
-            .split(u8::is_ascii_whitespace)
-            .filter(|raw| !raw.is_empty())
-            .map(|raw| {
-                std::str::from_utf8(raw)
-                    .ok()
-                    .and_then(|raw| raw.parse::<u32>().ok())
-                    .ok_or_else(|| {
-                        ResourceError::InvalidCgroupData("invalid cgroup.procs pid".into())
-                    })
-            })
-            .collect()
-    }
-
     fn cgroup_tree_empty(path: &Path) -> Result<bool, ResourceError> {
         for cgroup in cgroup_tree(path)? {
             let procs = fs::read(cgroup.join("cgroup.procs"))
@@ -1715,13 +1727,6 @@ mod platform {
             index += 1;
         }
         Ok(tree)
-    }
-
-    fn cleanup_error(path: &Path, source: io::Error) -> ResourceError {
-        ResourceError::CgroupCleanup {
-            path: path.to_owned(),
-            source,
-        }
     }
 
     #[cfg(test)]
@@ -2348,6 +2353,9 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
 
 #[cfg(test)]
 mod cleanup_oracle_tests;
+
+#[cfg(all(test, unix))]
+mod member_oracle_tests;
 
 #[cfg(test)]
 mod tests {

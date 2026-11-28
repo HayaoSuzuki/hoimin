@@ -2468,3 +2468,34 @@ a 2 GiB limit and single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_cgroup_cleanup -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cgroup_cleanup_protocol_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of cgroup member revalidation
+
+The membership fallback converts an enumerated PID to the kernel's
+signed range, opens a pidfd, then rereads `cgroup.procs`. Lean proves
+that every signal uses the acquired handle and follows a successful
+membership check. It also proves that every acquired handle is
+released. `ESRCH` at open or send is benign. Failed reads, malformed
+membership data, and other syscall errors preserve their error.
+
+The 39 cases cover the PID bounds, handle identity and drop order,
+loss of membership, malformed data after valid entries, and both
+syscall boundaries. The Rust functions were moved to a scope shared
+by the Linux backend and Unix tests. Formatting the three moved
+functions independently confirmed identical bodies. Eight sensitivity
+variants check order, identity, overflow, disappearance, and release.
+
+The 39 cases matched on macOS in default and `contracts` builds.
+The resource suite passed 124 tests in each build with one existing
+ignored test, and the workflow suite passed 222. A standalone Linux
+smoke compiled the production function bodies with the locked
+`libc` version and Rust `1.99.0-nightly` from an existing container.
+It checked that an absent recheck left an owned child alive, then read
+the container's actual `cgroup.procs` and used a real pidfd to signal
+that child. The repository's pinned toolchain ran the macOS tests.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_cgroup_member -- --check corpus/cgroup-member.jsonl)
+(cd formal/HoiminOracle && lake exe generate_cgroup_member -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cgroup_member_recheck_matches_lean_oracle -- --test-threads=1
+```
