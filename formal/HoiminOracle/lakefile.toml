@@ -347,6 +347,10 @@ name = "generate_persist_transaction"
 root = "PersistTransactionAuditMain"
 
 [[lean_exe]]
+name = "generate_session_dispatch"
+root = "SessionDispatchAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

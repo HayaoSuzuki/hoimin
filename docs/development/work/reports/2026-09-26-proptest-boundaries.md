@@ -2372,3 +2372,37 @@ single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_persist_transaction -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib persist_transaction_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of asynchronous session begin and resume
+
+An unpolled dispatcher call leaves the database and ownership
+unchanged. Once the blocking task has been scheduled, dropping the
+waiting future leaves it free to finish. This includes a task waiting
+to enter the handler mutex. A successful task leaves the run locked
+while the dispatcher stays alive. Dropping the last dispatcher while
+the task is paused still lets the task finish and releases the lock
+when the worker drops its handler.
+
+The 25 cases vary the lifetime of the waiter and dispatcher, normal
+completion, database errors, and a budget change after resume
+selection. The Rust replay calls the actual dispatcher. It uses a
+test-only pause before the begin commit and the existing pause after
+resume selection. At each pause, a second SQLite connection checks
+row visibility and probes the OS lock. During begin, the lock is held
+and the row is still invisible. During resume selection, the prior
+budget is visible and the lock is available. The replay checks the
+stored budget and lock after the worker settles and after the last
+dispatcher drops. Eight sensitivity variants exercise cancellation,
+lock lifetime, visibility, and resume recheck.
+
+All 25 cases matched on macOS in default and `contracts` builds.
+The session unit suites passed 165 and 177 tests respectively. The
+session handler target passed 104 tests with one existing ignored
+test, and the workflow suite passed 222. Lean used a 2 GiB limit and
+single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_session_dispatch -- --check corpus/session-dispatch.jsonl)
+(cd formal/HoiminOracle && lake exe generate_session_dispatch -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cancelled_begin_and_resume_match_lean_oracle -- --test-threads=1
+```

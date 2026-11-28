@@ -8,6 +8,8 @@ mod persist_transaction_oracle_tests;
 #[cfg(test)]
 mod resume_recheck_oracle_tests;
 mod schema;
+#[cfg(test)]
+mod session_dispatch_oracle_tests;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -145,6 +147,8 @@ pub struct SessionHandler {
     #[cfg(test)]
     resume_after_candidate: Option<ResumeCandidateHook>,
     #[cfg(test)]
+    begin_before_commit: Option<SessionHook>,
+    #[cfg(test)]
     finish_before_commit: Option<SessionHook>,
     #[cfg(test)]
     persist_before_commit: Option<SessionHook>,
@@ -197,6 +201,8 @@ impl SessionHandler {
             persist_after_reads: None,
             #[cfg(test)]
             resume_after_candidate: None,
+            #[cfg(test)]
+            begin_before_commit: None,
             #[cfg(test)]
             finish_before_commit: None,
             #[cfg(test)]
@@ -450,6 +456,8 @@ impl SessionHandler {
                 )
             })
             .map_err(|error| failed(id, "session.begin", "insert run", &error))?;
+        #[cfg(test)]
+        run_session_hook(self.begin_before_commit.take());
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit run", &error))?;
