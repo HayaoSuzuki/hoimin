@@ -3,7 +3,8 @@ module ProcessResultModel {
   const IGNORE_OUTPUT_TIMEOUT: bool
   type Phase = Running | Persisting | Finishing | Reset | Reading | Verifying
   type Termination = NoTermination | ExitZero | ExitOne | TimedOut | MemoryExhausted
-  type Status = Unclassified | Survived | Killed | Timeout | OutOfMemory | Error
+    | ProcessCountExhausted | CancelledProcess
+  type Status = Unclassified | Survived | Killed | Timeout | OutOfMemory | ProcessLimit | NotRun | Error
   type Slot = Absent | Pending | Completed | Retired
   type Identity = Correct | WrongRunId | WrongMutantId
   type Result = Accepted | RunMismatch | MutantMismatch | Duplicate | Late
@@ -24,7 +25,7 @@ module ProcessResultModel {
     if (snapshot.cancelled) 130
     else if (snapshot.counted == 0) 0
     else if (snapshot.status == Error) 2
-    else if (snapshot.status == Timeout or snapshot.status == OutOfMemory) 4
+    else if (Set(Timeout, OutOfMemory, ProcessLimit, NotRun).contains(snapshot.status)) 4
     else 0
 
   action publish(following:Snapshot, command:Command):bool = all {
@@ -39,6 +40,8 @@ module ProcessResultModel {
       | ExitOne => Killed
       | TimedOut => Timeout
       | MemoryExhausted => OutOfMemory
+      | ProcessCountExhausted => ProcessLimit
+      | CancelledProcess => NotRun
       | NoTermination => Unclassified
     }
 
@@ -78,7 +81,8 @@ module ProcessResultModel {
 
   action idle = publish(s, Idle)
   action step = any {
-    nondet termination = Set(ExitZero, ExitOne, TimedOut, MemoryExhausted).oneOf()
+    nondet termination = Set(ExitZero, ExitOne, TimedOut, MemoryExhausted,
+      ProcessCountExhausted, CancelledProcess).oneOf()
     nondet closeTimedOut = Bool.oneOf()
     finish(termination, closeTimedOut),
     nondet identity = Set(Correct, WrongRunId, WrongMutantId).oneOf()
@@ -98,6 +102,10 @@ module ProcessResultModel {
   action outputTimeoutStep = regular(TimedOut, true)
   action processTimeoutStep = regular(TimedOut, false)
   action memoryStep = regular(MemoryExhausted, false)
+  action processLimitStep = regular(ProcessCountExhausted, false)
+  action processLimitOutputTimeoutStep = regular(ProcessCountExhausted, true)
+  action processCancelledStep = regular(CancelledProcess, false)
+  action processCancelledOutputTimeoutStep = regular(CancelledProcess, true)
   action identitiesStep =
     if (s.phase == Running) finish(ExitOne, false)
     else if (s.phase == Persisting and s.result == Accepted) persist(WrongRunId)
@@ -105,10 +113,12 @@ module ProcessResultModel {
     else if (s.phase == Persisting) persist(Correct)
     else if (dispatch == Persist(Correct) and s.result == Accepted) persist(Correct)
     else drain
-  action cancelPersistStep =
-    if (s.phase == Running) finish(TimedOut, true)
+  action cancelDuringPersist(termination:Termination, closeTimedOut:bool):bool =
+    if (s.phase == Running) finish(termination, closeTimedOut)
     else if (s.phase == Persisting) cancel
     else if (dispatch == Cancel) persist(Correct) else drain
+  action cancelPersistStep = cancelDuringPersist(TimedOut, true)
+  action processCancelledThenStopStep = cancelDuringPersist(CancelledProcess, false)
   action cancelFinishStep =
     if (s.phase == Running) finish(ExitZero, true)
     else if (s.phase == Persisting) persist(Correct)
@@ -117,12 +127,18 @@ module ProcessResultModel {
 
   val Safety = all {
     s.evidence.closeTimedOut implies s.status == Error,
+    (s.evidence.termination == ProcessCountExhausted and not(s.evidence.closeTimedOut))
+      implies s.status == ProcessLimit,
+    (s.evidence.termination == CancelledProcess and not(s.evidence.closeTimedOut))
+      implies s.status == NotRun,
     s.counted <= 1,
     s.persistence == Pending implies s.phase == Persisting and s.counted == 0,
     (s.persistence == Completed or s.persistence == Retired) implies s.counted == 1,
     s.persistence == Retired implies s.cancelled,
     s.cancelled implies s.exit == 130 and s.phase != Reset,
     s.counted == 1 and not(s.cancelled) and s.evidence.closeTimedOut implies s.exit == 2,
+    (s.counted == 1 and not(s.cancelled) and Set(ProcessLimit, NotRun).contains(s.status))
+      implies s.exit == 4,
   }
 }
 

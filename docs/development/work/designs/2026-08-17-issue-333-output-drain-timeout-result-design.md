@@ -138,3 +138,55 @@ from the process termination, or stopping subsequent mutants.
   complete/empty defaults remain omitted when it is serialized again.
 - Run focused mutation testing over the combiner and machine classification,
   then the full Rust, Python, lint, and wheel suites.
+
+## Output drain failure precedence
+
+When stdout reached the close deadline first, the handler could discard a
+completed stderr read failure and return a recoverable mutant close timeout.
+The handler now observes the remaining tasks using the same deadline and gives
+definite failures precedence over close timeouts. Failures of the same kind
+retain the stdout, stderr, collector order. A definite stdout failure already
+determines the result, so the handler still cancels stderr in that case.
+
+The Lean drain model proves that a definite failure among the observed outcomes
+precludes choosing a close timeout. Its 27 rows cover completion, close
+timeout, and definite failure for each of stdout, stderr, and the collector.
+The Rust selector checks the error class and source for all rows. A separate
+Rust test with a paused clock exercises the wait path with a pending stdout
+task and a failed stderr task, then checks that the mutant result is fatal.
+
+The decision table now covers all 63 combinations of baseline, mutant, and
+probe execution with the process and output outcomes. The Lean theorem gives
+the process failure precedence for every execution kind. In fatal cases the
+Rust adapter compares the full error selected by the handler.
+
+## SQLite resume correspondence
+
+The process-output table feeds the Lean session model for all 12 mutant
+completions. The model saves each result, closes and reopens an incomplete
+session, reads the result, and attempts to replace it with a survived result.
+The Lean theorem covers every known termination with a close timeout. It
+predicts a stored `Error`, rerun on resume, and acceptance of the replacement.
+
+The Rust adapter runs each case through the real SQLite handler in a separate
+database. It checks the status and resume decision after reopening, the
+replacement verdict, and the stored termination, spool metadata, and
+diagnostics before and after the replacement attempt. The session is finished
+as incomplete in every case so a determinate result can exercise reuse and
+replacement rejection as part of a resumable run.
+
+Before attempting a successful replacement, the replay installs a temporary
+SQLite trigger on result insertion. Its deferred foreign-key violation fails the
+commit after the new result is written in the transaction. Lean proves that
+rolling back a staged replacement preserves the durable rows. The replay
+checks that the trigger's row was rolled back, then reopens the database and
+compares the complete old result and its diagnostics. The temporary trigger
+ends with the connection, so the new connection can retry. The two determinate
+cases reject replacement before the injected commit failure can occur.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_process_output -- --check-resume corpus/process-output-resume.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib reopened_process_results_and_replacement_match_lean
+```

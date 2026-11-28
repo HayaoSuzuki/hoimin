@@ -22,6 +22,7 @@ struct CorpusCase {
     process: String,
     output: String,
     expected_fatal: bool,
+    expected_failure_source: Option<String>,
     expected_status: Option<String>,
     expected_termination: Option<String>,
     expected_output_incomplete: bool,
@@ -35,19 +36,22 @@ fn parse_cases() -> Vec<CorpusCase> {
         .lines()
         .map(|line| serde_json::from_str::<CorpusCase>(line).unwrap())
         .collect::<Vec<_>>();
-    assert_eq!(cases.len(), 42);
+    assert_eq!(cases.len(), 63);
     assert_eq!(
         cases
             .iter()
             .map(|case| case.id.as_str())
             .collect::<BTreeSet<_>>()
             .len(),
-        42
+        63
     );
     for case in &cases {
-        assert_eq!(case.schema, 1);
+        assert_eq!(case.schema, 2);
         assert_eq!(case.mode, "strict");
-        assert!(matches!(case.execution.as_str(), "baseline" | "mutant"));
+        assert!(matches!(
+            case.execution.as_str(),
+            "baseline" | "mutant" | "probe"
+        ));
         assert!(matches!(
             case.process.as_str(),
             "known_exit_success"
@@ -63,6 +67,14 @@ fn parse_cases() -> Vec<CorpusCase> {
             "complete" | "close_timed_out" | "failed"
         ));
         assert_eq!(case.expected_continue, !case.expected_fatal);
+        assert_eq!(
+            case.expected_failure_source.as_deref(),
+            match (case.expected_fatal, case.process.as_str()) {
+                (true, "failed") => Some("process"),
+                (true, _) => Some("output"),
+                (false, _) => None,
+            }
+        );
         assert_eq!(
             case.expected_output_incomplete,
             case.execution == "mutant"

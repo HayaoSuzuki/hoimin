@@ -3,6 +3,10 @@ use super::{source_delimiters::DelimiterDepth, source_text};
 #[path = "formatted_conversions/specification.rs"]
 mod specification;
 
+#[cfg(test)]
+#[path = "formatted_conversions/oracle_tests.rs"]
+mod oracle_tests;
+
 use hoimin_core::{MutationOperator, MutationOperatorSelection};
 use ruff_python_ast::token::{TokenKind, Tokens};
 use ruff_python_ast::{

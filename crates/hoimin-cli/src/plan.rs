@@ -21,12 +21,18 @@ use crate::shell;
 use crate::target::TargetHandler;
 use hoimin_python::{AnalyzerDiagnostic, AnalyzerDiagnosticCode};
 
+#[cfg(test)]
+#[path = "plan/discovery_budget_oracle_tests.rs"]
+mod discovery_budget_oracle_tests;
 mod preview;
 pub use preview::VerifyPreview;
 
 mod ranking;
 #[cfg(test)]
 mod ranking_tests;
+#[cfg(test)]
+#[path = "plan/records_oracle_tests.rs"]
+mod records_oracle_tests;
 #[cfg(test)]
 mod review_tests;
 mod sampling;
@@ -39,6 +45,9 @@ mod selection_tests;
 mod source;
 #[cfg(test)]
 mod validation_tests;
+#[cfg(test)]
+#[path = "plan/verify_oracle_tests.rs"]
+mod verify_oracle_tests;
 
 use ranking::{RANKING_RULE_VERSION, rank_candidates, validate_ranking, validate_ranking_against};
 pub use ranking::{RankedPlanCandidate, RankingReason, RankingReasonCode};

@@ -1,8 +1,14 @@
 use super::*;
-use hoimin_core::{ByteSpan, MutationCandidate, RunFingerprint};
+use hoimin_core::{
+    ByteSpan, MutationCandidate, OutputSpoolRef, PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
+    ProcessOutputState, ProcessTermination, ResumeDecision, ReusedMutationStatus, RunFingerprint,
+    resume_policy,
+};
+use serde::Deserialize;
 use std::num::NonZeroUsize;
+use std::time::Duration;
 
-fn begin_request() -> BeginSession {
+pub(super) fn begin_request() -> BeginSession {
     BeginSession {
         id: EffectId(1),
         run_id: "coverage-run".into(),
@@ -19,7 +25,7 @@ fn load_request() -> LoadSession {
     }
 }
 
-fn persist_request() -> PersistResult {
+pub(super) fn persist_request() -> PersistResult {
     PersistResult {
         id: EffectId(3),
         worker: 0,
@@ -71,11 +77,11 @@ fn reject_write(handler: &SessionHandler, event: &str, table: &str) {
     )).unwrap();
 }
 
-fn reject_commit(handler: &SessionHandler, event: &str, table: &str) {
+pub(super) fn reject_commit(handler: &SessionHandler, event: &str, table: &str) {
     handler.connection.execute_batch(&format!(
-        "CREATE TABLE fault_parent(id INTEGER PRIMARY KEY);
-         CREATE TABLE deferred_fault(parent INTEGER REFERENCES fault_parent(id) DEFERRABLE INITIALLY DEFERRED);
-         CREATE TRIGGER reject_commit AFTER {event} ON {table} BEGIN INSERT INTO deferred_fault VALUES(42); END;"
+        "CREATE TEMP TABLE fault_parent(id INTEGER PRIMARY KEY);
+         CREATE TEMP TABLE deferred_fault(parent INTEGER REFERENCES fault_parent(id) DEFERRABLE INITIALLY DEFERRED);
+         CREATE TEMP TRIGGER reject_commit AFTER {event} ON main.{table} BEGIN INSERT INTO deferred_fault VALUES(42); END;"
     )).unwrap();
 }
 
@@ -181,6 +187,235 @@ fn ignored_resume_update_reports_candidate_changed() {
     assert_eq!(
         actual,
         SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::CandidateChanged)
+    );
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LoadRecheckCase {
+    schema: u64,
+    mode: String,
+    finish_before_acquire: Option<bool>,
+    expected_status: String,
+    expected_loader_owns: bool,
+    expected_lock_held: bool,
+    expected_run_finished: Option<bool>,
+    expected_run_complete: Option<bool>,
+}
+
+#[test]
+fn resume_candidate_interleaving_matches_lean() {
+    let cases: Vec<LoadRecheckCase> =
+        include_str!("../../../../formal/HoiminOracle/corpus/session-load-recheck.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+    let candidates: std::collections::BTreeSet<_> = cases
+        .iter()
+        .map(|case| case.finish_before_acquire)
+        .collect();
+    assert_eq!(candidates, [None, Some(false), Some(true)].into());
+    assert_eq!(cases.len(), candidates.len());
+    for case in &cases {
+        assert_eq!(case.schema, 1);
+        assert_eq!(case.mode, "internal-fixture");
+        check_resume_interleaving(case);
+    }
+}
+
+fn check_resume_interleaving(case: &LoadRecheckCase) {
+    let (directory, mut owner) = fixture();
+    let begin = begin_request();
+    let run_id = begin.run_id.clone();
+    owner.begin(begin).unwrap();
+    let path = directory.path().join("session.sqlite3");
+    let mut loader = SessionHandler::open(&path).unwrap();
+    let mut owner = Some(owner);
+    let finish = case
+        .finish_before_acquire
+        .map(|complete| (owner.take().unwrap(), complete));
+    let selected_run = run_id.clone();
+    loader.resume_after_candidate = Some(Box::new(move |candidate| {
+        assert_eq!(candidate, selected_run);
+        if let Some((mut owner, complete)) = finish {
+            owner
+                .finish(FinishSession {
+                    id: EffectId(5),
+                    run_id: selected_run,
+                    complete,
+                })
+                .unwrap();
+        }
+    }));
+
+    let actual = loader.load(&load_request());
+    assert!(loader.resume_after_candidate.is_none(), "{case:?}");
+    assert_eq!(
+        load_outcome_name(&actual, &run_id),
+        case.expected_status,
+        "{case:?}"
+    );
+    assert_eq!(
+        loader.ownerships.contains_key(&run_id),
+        case.expected_loader_owns,
+        "{case:?}"
+    );
+
+    let observer = SessionHandler::open(path).unwrap();
+    let probe = observer.acquire_ownership(EffectId(6), &run_id, "inspect lock after load");
+    if case.expected_lock_held {
+        assert_eq!(
+            probe.err().unwrap().failure.code(),
+            "session.resume.active",
+            "{case:?}"
+        );
+    } else {
+        drop(probe.unwrap());
+    }
+    drop(owner);
+    let row: Option<(bool, bool)> = observer
+        .connection
+        .query_row(
+            "SELECT finished, complete FROM runs WHERE run_id=?1",
+            [&run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()
+        .unwrap();
+    assert_eq!(row.map(|row| row.0), case.expected_run_finished, "{case:?}");
+    assert_eq!(row.map(|row| row.1), case.expected_run_complete, "{case:?}");
+}
+
+fn load_outcome_name<'a>(actual: &'a Result<SessionLoaded, EffectFailed>, run_id: &str) -> &'a str {
+    match actual {
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Resumed(resume),
+            ..
+        }) => {
+            assert_eq!(resume.run_id, run_id);
+            "resumed"
+        }
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Fresh(reason),
+            ..
+        }) => reason.code(),
+        Err(error) => error.failure.code(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ResumeBudgetRecheckCase {
+    schema: u8,
+    mode: String,
+    observed_budget: NonZeroUsize,
+    intervening_budget: NonZeroUsize,
+    requested_budget: NonZeroUsize,
+    expected_first: String,
+    expected_after_first: u64,
+    expected_retry: String,
+    expected_after_retry: u64,
+}
+
+#[test]
+fn resume_budget_recheck_and_retry_match_lean() {
+    let cases: Vec<ResumeBudgetRecheckCase> =
+        include_str!("../../../../formal/HoiminOracle/corpus/resume-budget-recheck.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+    assert_eq!(cases.len(), 12);
+    let mut seen = std::collections::BTreeSet::new();
+    for case in &cases {
+        assert_eq!(case.schema, 1);
+        assert_eq!(case.mode, "internal-fixture");
+        assert!(seen.insert((
+            case.observed_budget,
+            case.intervening_budget,
+            case.requested_budget
+        )));
+        check_resume_budget_recheck(case);
+    }
+}
+
+fn saved_mutant_budget(handler: &SessionHandler, run_id: &str) -> u64 {
+    let bytes: Vec<u8> = handler
+        .connection
+        .query_row(
+            "SELECT max_mutants FROM runs WHERE run_id=?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    u64::from_be_bytes(bytes.try_into().unwrap())
+}
+
+fn check_resume_budget_recheck(case: &ResumeBudgetRecheckCase) {
+    let (directory, mut owner) = fixture();
+    let mut begin = begin_request();
+    begin.max_mutants = case.observed_budget;
+    let run_id = begin.run_id.clone();
+    owner.begin(begin).unwrap();
+    assert_eq!(
+        saved_mutant_budget(&owner, &run_id),
+        case.observed_budget.get() as u64
+    );
+    let path = directory.path().join("session.sqlite3");
+    let mut loader = SessionHandler::open(&path).unwrap();
+    let mut intervening = load_request();
+    intervening.max_mutants = case.intervening_budget;
+    let selected_run = run_id.clone();
+    loader.resume_after_candidate = Some(Box::new(move |candidate| {
+        assert_eq!(candidate, selected_run);
+        assert_eq!(
+            load_outcome_name(&owner.load(&intervening), candidate),
+            "resumed"
+        );
+        assert_eq!(
+            saved_mutant_budget(&owner, candidate),
+            intervening.max_mutants.get() as u64
+        );
+        owner
+            .finish(FinishSession {
+                id: EffectId(5),
+                run_id: selected_run,
+                complete: false,
+            })
+            .unwrap();
+    }));
+
+    let mut request = load_request();
+    request.max_mutants = case.requested_budget;
+    let first = loader.load(&request);
+    assert!(loader.resume_after_candidate.is_none(), "{case:?}");
+    assert_eq!(
+        load_outcome_name(&first, &run_id),
+        case.expected_first,
+        "{case:?}"
+    );
+    assert_eq!(
+        saved_mutant_budget(&loader, &run_id),
+        case.expected_after_first,
+        "{case:?}"
+    );
+    let mut retry = SessionHandler::open(path).unwrap();
+    if case.expected_first == "candidate_changed" {
+        drop(
+            retry
+                .acquire_ownership(EffectId(6), &run_id, "inspect stale budget lock")
+                .unwrap(),
+        );
+    }
+    drop(loader);
+    assert_eq!(
+        load_outcome_name(&retry.load(&request), &run_id),
+        case.expected_retry,
+        "{case:?}"
+    );
+    assert_eq!(
+        saved_mutant_budget(&retry, &run_id),
+        case.expected_after_retry,
+        "{case:?}"
     );
 }
 
@@ -519,6 +754,222 @@ fn finish_rejects_an_externally_completed_owned_run_and_keeps_ownership_for_retr
     assert!(released_after_retry);
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FinishWaiter {
+    Awaited,
+    Cancelled,
+    DriverDropped,
+}
+
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FinishResumeProbe {
+    #[serde(rename = "session.resume.active")]
+    Active,
+    Resumed,
+    MatchingRunComplete,
+}
+
+#[derive(Debug, Eq, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishWaitSnapshot {
+    finished: bool,
+    complete: bool,
+    resume: FinishResumeProbe,
+    result_count: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FinishWaitCase {
+    schema: u8,
+    mode: String,
+    id: String,
+    waiter: FinishWaiter,
+    prior_finished: bool,
+    complete: bool,
+    commit: bool,
+    pending: FinishWaitSnapshot,
+    settled: FinishWaitSnapshot,
+    reply: Option<bool>,
+}
+
+fn observe_finish_wait(probe: &mut SessionHandler, run_id: &str) -> FinishWaitSnapshot {
+    let (finished, complete) = probe
+        .connection
+        .query_row(
+            "SELECT finished, complete FROM runs WHERE run_id=?1",
+            [run_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    let result_count = probe
+        .connection
+        .query_row(
+            "SELECT count(*) FROM results WHERE run_id=?1",
+            [run_id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let resume = match probe.load(&load_request()) {
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Resumed(result),
+            ..
+        }) => {
+            assert_eq!(result.run_id, run_id);
+            FinishResumeProbe::Resumed
+        }
+        Ok(SessionLoaded {
+            outcome: SessionLoadOutcome::Fresh(hoimin_core::ResumeFreshReason::MatchingRunComplete),
+            ..
+        }) => FinishResumeProbe::MatchingRunComplete,
+        Err(EffectFailed {
+            failure: EffectFailure::SessionDatabase { code, .. },
+            ..
+        }) if code == "session.resume.active" => FinishResumeProbe::Active,
+        result => panic!("unexpected resume probe: {result:?}"),
+    };
+    FinishWaitSnapshot {
+        finished,
+        complete,
+        resume,
+        result_count,
+    }
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn finish_commit_and_ownership_after_waiter_cancellation_match_lean() {
+    let mut ids = std::collections::BTreeSet::new();
+    for line in
+        include_str!("../../../../formal/HoiminOracle/corpus/session-finish-wait.jsonl").lines()
+    {
+        let case: FinishWaitCase = serde_json::from_str(line).unwrap();
+        assert_eq!(case.schema, 1, "{}", case.id);
+        assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+        assert!(ids.insert(case.id.clone()));
+        replay_finish_wait(case).await;
+    }
+    assert_eq!(ids.len(), 24);
+}
+
+fn seed_finish_wait(
+    owner: &mut SessionHandler,
+    case: &FinishWaitCase,
+) -> (FinishSession, MutantResult) {
+    let begin = begin_request();
+    let request = FinishSession {
+        id: EffectId(30),
+        run_id: begin.run_id.clone(),
+        complete: case.complete,
+    };
+    owner.begin(begin).unwrap();
+    let persisted = persist_request();
+    owner.persist(&persisted).unwrap();
+    let saved = owner
+        .read_result(&request.run_id, &persisted.result.candidate.id)
+        .unwrap();
+    if case.prior_finished {
+        owner
+            .finish(FinishSession {
+                complete: false,
+                ..request.clone()
+            })
+            .unwrap();
+        assert!(matches!(
+            owner.load(&load_request()).unwrap().outcome,
+            SessionLoadOutcome::Resumed(_)
+        ));
+    }
+    if !case.commit {
+        reject_commit(owner, "UPDATE", "runs");
+    }
+    (request, saved)
+}
+
+async fn replay_finish_wait(case: FinishWaitCase) {
+    let id = &case.id;
+    let (directory, mut owner) = fixture();
+    let (request, saved) = seed_finish_wait(&mut owner, &case);
+    let run = &request.run_id;
+    let mutant = &saved.candidate.id;
+    let mut probe = SessionHandler::open(directory.path().join("session.sqlite3")).unwrap();
+    let (entered, ready) = tokio::sync::oneshot::channel();
+    let (release, hold) = std::sync::mpsc::channel();
+    owner.finish_before_commit = Some(Box::new(move || {
+        entered.send(()).unwrap();
+        hold.recv_timeout(Duration::from_secs(3)).unwrap();
+    }));
+    let dispatcher = SessionDispatcher {
+        handler: Arc::new(Mutex::new(owner)),
+    };
+    let handler = Arc::downgrade(&dispatcher.handler);
+    let mut finish = Box::pin(dispatcher.finish(request.clone()));
+    tokio::select! {
+        result = &mut finish => panic!("{id}: finish returned before the commit gate: {result:?}"),
+        before_commit = ready => before_commit.unwrap(),
+    }
+
+    let mut check_pending = || {
+        assert!(handler.upgrade().is_some(), "{id}: worker lost its handler");
+        assert_eq!(
+            observe_finish_wait(&mut probe, run),
+            case.pending,
+            "{id}: pending"
+        );
+        assert_eq!(
+            probe.read_result(run, mutant).unwrap(),
+            saved,
+            "{id}: pending result"
+        );
+        release.send(()).unwrap();
+    };
+    let reply = match case.waiter {
+        FinishWaiter::Awaited => {
+            check_pending();
+            match finish.await {
+                Ok(reply) => {
+                    assert_eq!(
+                        (reply.id, reply.run_id.as_str(), reply.complete),
+                        (request.id, request.run_id.as_str(), request.complete)
+                    );
+                    Some(true)
+                }
+                Err(error) => {
+                    assert_eq!(error.id, request.id);
+                    assert_database_error(error, "commit run finish");
+                    Some(false)
+                }
+            }
+        }
+        FinishWaiter::Cancelled => {
+            drop(finish);
+            check_pending();
+            // The serialized dispatcher lock is held until the finish operation returns.
+            dispatcher.call(EffectId(31), |_| Ok(())).await.unwrap();
+            None
+        }
+        FinishWaiter::DriverDropped => {
+            drop(finish);
+            drop(dispatcher);
+            check_pending();
+            SessionDispatcher::wait_for_session_worker_drop(&handler).await;
+            None
+        }
+    };
+    assert_eq!(reply, case.reply, "{id}");
+    assert_eq!(
+        observe_finish_wait(&mut probe, run),
+        case.settled,
+        "{id}: settled"
+    );
+    assert_eq!(
+        probe.read_result(run, mutant).unwrap(),
+        saved,
+        "{id}: settled result"
+    );
+}
+
 #[cfg(feature = "contracts")]
 unsafe extern "C" fn restrict_diagnostic_bindings(
     database: *mut std::ffi::c_void,
@@ -645,4 +1096,213 @@ fn beginning_again_after_external_row_removal_retains_the_existing_finish_author
 
     assert_eq!(ownerships_before_finish, 1);
     assert!(released_after_finish);
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProcessResumeCase {
+    schema: u64,
+    id: String,
+    termination: String,
+    close_timed_out: bool,
+    expected_stored: Option<String>,
+    expected_reused: Option<String>,
+    expected_fault_error: String,
+    expected_stored_after_fault: Option<String>,
+    expected_replacement_error: Option<String>,
+    expected_stored_after_replacement: Option<String>,
+}
+
+pub(super) fn executed_outcome(
+    termination: ProcessTermination,
+    timed_out: bool,
+    token: &str,
+) -> MutationOutcome {
+    let (output_state, retained, observed) = if timed_out {
+        (ProcessOutputState::CloseTimedOut, 0, 0)
+    } else {
+        (ProcessOutputState::Complete, 3, 8)
+    };
+    MutationOutcome::Executed {
+        termination,
+        output_state,
+        output: OutputSpoolRef {
+            token: token.to_owned(),
+            retained,
+            observed,
+        },
+        elapsed: Duration::from_millis(5),
+    }
+}
+
+#[test]
+fn reopened_process_results_and_replacement_match_lean() {
+    let cases: Vec<ProcessResumeCase> =
+        include_str!("../../../../formal/HoiminOracle/corpus/process-output-resume.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+    assert_eq!(cases.len(), 12);
+    let mut seen = std::collections::BTreeSet::new();
+    for case in &cases {
+        assert_eq!(case.schema, 2);
+        assert!(seen.insert((&case.termination, case.close_timed_out)));
+        check_process_resume(case);
+    }
+}
+
+fn check_process_resume(case: &ProcessResumeCase) {
+    let termination = match case.termination.as_str() {
+        "exit_success" => ProcessTermination::Exit(0),
+        "exit_failure" => ProcessTermination::Exit(7),
+        "timeout" => ProcessTermination::Timeout,
+        "out_of_memory" => ProcessTermination::OutOfMemory,
+        "process_limit" => ProcessTermination::ProcessLimit,
+        "cancelled" => ProcessTermination::Cancelled,
+        other => panic!("unknown process termination {other}"),
+    };
+
+    let (directory, mut handler) = fixture();
+    handler.begin(begin_request()).unwrap();
+    let mut request = persist_request();
+    request.result.outcome = executed_outcome(termination, case.close_timed_out, "capture");
+    request.result.diagnostics.clear();
+    if case.close_timed_out {
+        request.result.diagnostics.push(SessionDiagnostic {
+            mutant_id: request.result.candidate.id.clone(),
+            level: "error".to_owned(),
+            code: PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE.to_owned(),
+            message: "capture timed out".to_owned(),
+        });
+    }
+    handler.persist(&request).unwrap();
+    let lookup = LookupStoredResult {
+        id: EffectId(5),
+        worker: request.worker,
+        run_id: request.result.run_id.clone(),
+        mutant_id: request.result.candidate.id.clone(),
+    };
+    handler
+        .finish(FinishSession {
+            id: EffectId(4),
+            run_id: lookup.run_id.clone(),
+            complete: false,
+        })
+        .unwrap();
+    drop(handler);
+
+    let path = directory.path().join("session.sqlite3");
+    let mut handler = reopen_process_session(&path, &lookup.run_id, &case.id);
+    let stored = handler.lookup(&lookup).unwrap().result.unwrap();
+    assert_eq!(stored.mutant_id, lookup.mutant_id, "{}", case.id);
+    assert_eq!(
+        Some(stored.status.as_str()),
+        case.expected_stored.as_deref(),
+        "{}",
+        case.id
+    );
+    let reused = match resume_policy(Some(&stored)) {
+        ResumeDecision::Rerun => None,
+        ResumeDecision::Reuse(ReusedMutationStatus::Killed) => Some("killed"),
+        ResumeDecision::Reuse(ReusedMutationStatus::Survived) => Some("survived"),
+    };
+    assert_eq!(reused, case.expected_reused.as_deref(), "{}", case.id);
+    assert_eq!(
+        handler
+            .read_result(&lookup.run_id, &lookup.mutant_id)
+            .unwrap(),
+        request.result,
+        "{}",
+        case.id
+    );
+
+    check_process_replacement(case, &path, handler, &request, &lookup);
+}
+
+fn reopen_process_session(path: &Path, run_id: &str, case: &str) -> SessionHandler {
+    let mut handler = SessionHandler::open(path).unwrap();
+    let loaded = handler.load(&load_request()).unwrap();
+    let SessionLoadOutcome::Resumed(resume) = loaded.outcome else {
+        panic!("{case}: expected the stored run to resume");
+    };
+    assert_eq!(resume.run_id, run_id, "{case}");
+    handler
+}
+
+fn check_process_replacement(
+    case: &ProcessResumeCase,
+    path: &Path,
+    mut handler: SessionHandler,
+    request: &PersistResult,
+    lookup: &LookupStoredResult,
+) {
+    let mut replacement = request.clone();
+    replacement.id = EffectId(6);
+    replacement.result.outcome = executed_outcome(ProcessTermination::Exit(0), false, "rerun");
+    replacement.result.diagnostics.clear();
+    reject_commit(&handler, "INSERT", "results");
+    let failed = handler.persist(&replacement).unwrap_err();
+    assert_eq!(
+        failed.failure.code(),
+        case.expected_fault_error,
+        "{}",
+        case.id
+    );
+    if case.expected_fault_error == "session.commit" {
+        assert_database_error(failed, "commit mutant result");
+    }
+    assert!(handler.connection.is_autocommit());
+    let fault_rows: i64 = handler
+        .connection
+        .query_row("SELECT count(*) FROM temp.deferred_fault", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(fault_rows, 0, "{}", case.id);
+    drop(handler);
+
+    let mut handler = reopen_process_session(path, &lookup.run_id, &case.id);
+    let stored = handler.lookup(lookup).unwrap().result.unwrap();
+    assert_eq!(
+        Some(stored.status.as_str()),
+        case.expected_stored_after_fault.as_deref(),
+        "{}",
+        case.id
+    );
+    assert_eq!(
+        handler
+            .read_result(&lookup.run_id, &lookup.mutant_id)
+            .unwrap(),
+        request.result,
+        "{}",
+        case.id
+    );
+    replacement.id = EffectId(7);
+    let error = handler.persist(&replacement).err();
+    assert_eq!(
+        error.as_ref().map(|error| error.failure.code()),
+        case.expected_replacement_error.as_deref(),
+        "{}",
+        case.id
+    );
+    let stored = handler.lookup(lookup).unwrap().result.unwrap();
+    assert_eq!(
+        Some(stored.status.as_str()),
+        case.expected_stored_after_replacement.as_deref(),
+        "{}",
+        case.id
+    );
+    let expected_result = if case.expected_replacement_error.is_some() {
+        &request.result
+    } else {
+        &replacement.result
+    };
+    assert_eq!(
+        &handler
+            .read_result(&lookup.run_id, &lookup.mutant_id)
+            .unwrap(),
+        expected_result,
+        "{}",
+        case.id
+    );
 }

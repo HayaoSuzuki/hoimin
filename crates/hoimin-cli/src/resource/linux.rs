@@ -1,4 +1,8 @@
 use std::ffi::OsString;
+#[cfg(any(target_os = "linux", all(test, unix)))]
+use std::io;
+#[cfg(any(target_os = "linux", all(test, unix)))]
+use std::path::Path;
 #[cfg(any(target_os = "linux", test))]
 use std::path::PathBuf;
 
@@ -390,6 +394,58 @@ where
     }
 }
 
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn signal_verified_member<Handle, OpenPidfd, ReadMembership, SendSignal>(
+    cgroup: &Path,
+    pid: u32,
+    open_pidfd: OpenPidfd,
+    read_membership: ReadMembership,
+    send_signal: SendSignal,
+) -> Result<(), ResourceError>
+where
+    OpenPidfd: FnOnce(i32) -> io::Result<Handle>,
+    ReadMembership: FnOnce(&Path) -> Result<Vec<u32>, ResourceError>,
+    SendSignal: FnOnce(&Handle) -> io::Result<()>,
+{
+    let numeric_pid = i32::try_from(pid)
+        .map_err(|_| cleanup_error(cgroup, io::Error::other("cgroup pid overflow")))?;
+    let handle = match open_pidfd(numeric_pid) {
+        Ok(handle) => handle,
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return Ok(()),
+        Err(error) => return Err(cleanup_error(cgroup, error)),
+    };
+    if !read_membership(cgroup)?.contains(&pid) {
+        return Ok(());
+    }
+    match send_signal(&handle) {
+        Ok(()) => Ok(()),
+        Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
+        Err(error) => Err(cleanup_error(cgroup, error)),
+    }
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn parse_member_pids(procs: &[u8]) -> Result<Vec<u32>, ResourceError> {
+    procs
+        .split(u8::is_ascii_whitespace)
+        .filter(|raw| !raw.is_empty())
+        .map(|raw| {
+            std::str::from_utf8(raw)
+                .ok()
+                .and_then(|raw| raw.parse::<u32>().ok())
+                .ok_or_else(|| ResourceError::InvalidCgroupData("invalid cgroup.procs pid".into()))
+        })
+        .collect()
+}
+
+#[cfg(any(target_os = "linux", all(test, unix)))]
+fn cleanup_error(path: &Path, source: io::Error) -> ResourceError {
+    ResourceError::CgroupCleanup {
+        path: path.to_owned(),
+        source,
+    }
+}
+
 #[cfg(any(target_os = "linux", test))]
 fn unescape_mount_field(input: &[u8]) -> Result<Vec<u8>, ResourceError> {
     let mut output = Vec::with_capacity(input.len());
@@ -442,16 +498,18 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
     Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
 
+#[cfg(any(target_os = "linux", test))]
+mod lifecycle;
+
 #[cfg(target_os = "linux")]
 mod platform {
-    use std::collections::HashMap;
     use std::ffi::{OsStr, OsString};
     use std::fs;
     use std::io;
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::process::CommandExt;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicU8, Ordering};
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
@@ -459,12 +517,16 @@ mod platform {
     use tokio::process::{Child, Command};
     use uuid::Uuid;
 
+    #[cfg(test)]
+    use super::CgroupEventCounters;
+    #[cfg(test)]
+    use super::lifecycle::RootEntry;
+    use super::lifecycle::{LinuxRunCgroup, RootCgroup, RootSignal, RunState};
     use super::{
-        CgroupCapabilities, CgroupEventCounters, INTERNAL_LAUNCHER_ARG,
-        begin_cgroup_member_cleanup, classify_violations, find_unified_mounts,
-        finish_cgroup_member_cleanup, normalized_memory_limit, parse_cgroup_event_counters,
-        path_from_bytes, remove_cgroup_dir, resolve_unified_cgroup, run_cleanup_after_accounting,
-        violations_since, wrap_launcher_argv,
+        CgroupCapabilities, INTERNAL_LAUNCHER_ARG, begin_cgroup_member_cleanup,
+        classify_violations, cleanup_error, find_unified_mounts, finish_cgroup_member_cleanup,
+        normalized_memory_limit, parse_member_pids, path_from_bytes, remove_cgroup_dir,
+        resolve_unified_cgroup, signal_verified_member, wrap_launcher_argv,
     };
     use crate::resource::{ProcessSupervisor, ResourceError};
 
@@ -704,84 +766,19 @@ mod platform {
         }
     }
 
-    #[derive(Debug)]
-    struct LinuxRunCgroup {
-        path: PathBuf,
-        diagnostics: Vec<String>,
-        state: Mutex<RunState>,
-        close_gate: Mutex<()>,
-    }
-
-    #[derive(Debug, Default)]
-    struct RunState {
-        closed: bool,
-        cleaned: bool,
-        roots: HashMap<Uuid, RootEntry>,
-    }
-
-    #[derive(Debug)]
-    struct RootEntry {
-        root: Arc<RootCgroup>,
-        signal: Arc<RootSignal>,
-        active: bool,
-        counters: CgroupEventCounters,
-    }
-
-    #[derive(Debug)]
-    struct RootCgroup {
-        id: Uuid,
-        path: PathBuf,
-        cleanup_gate: Mutex<()>,
-    }
-
-    #[derive(Debug, Default)]
-    struct RootSignal {
-        violations: AtomicU8,
-    }
-
     impl LinuxRunCgroup {
         fn prepare_root(
             self: &Arc<Self>,
             limits: ProcessLimits,
         ) -> Result<ProcessSupervisor, ResourceError> {
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if state.closed {
-                return Err(ResourceError::RunClosed);
-            }
-            // Reject invalid limits before creating a root cgroup or launching a child.
-            system_memory_limit(limits.max_memory_bytes)?;
-            Self::refresh_events(&mut state)?;
-            let path = create_unique_child(&self.path, "root")?;
             let mut diagnostics = Vec::new();
-            write_memory_limit(
-                &path.join("memory.max"),
-                limits.max_memory_bytes,
-                &mut diagnostics,
+            let (root, signal) = self.prepare_root_with(
+                limits.max_processes,
+                || system_memory_limit(limits.max_memory_bytes).map(|_| ()),
+                |parent| create_unique_child(parent, "root"),
+                |path| write_memory_limit(path, limits.max_memory_bytes, &mut diagnostics),
+                write_exact_limit,
             )?;
-            write_exact_limit(
-                &path.join("pids.max"),
-                limits.max_processes.to_string().as_bytes(),
-            )?;
-            write_exact_limit(&path.join("memory.oom.group"), b"1")?;
-            let counters = read_events(&path)?;
-            let root = Arc::new(RootCgroup {
-                id: Uuid::new_v4(),
-                path,
-                cleanup_gate: Mutex::new(()),
-            });
-            let signal = Arc::new(RootSignal::default());
-            state.roots.insert(
-                root.id,
-                RootEntry {
-                    root: Arc::clone(&root),
-                    signal: Arc::clone(&signal),
-                    active: false,
-                    counters,
-                },
-            );
             Ok(ProcessSupervisor::Linux(LinuxSupervisor {
                 run: Arc::clone(self),
                 root,
@@ -797,32 +794,26 @@ mod platform {
             signal: &Arc<RootSignal>,
             child: &Child,
         ) -> Result<i32, ResourceError> {
-            let pid = i32::try_from(child.id().ok_or(ResourceError::MissingProcessId)?)
-                .map_err(|_| ResourceError::InvalidCgroupData("child pid overflow".into()))?;
-            wait_for_launcher_stop(pid)?;
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if state.closed {
-                return Err(ResourceError::RunClosed);
-            }
-            Self::refresh_events(&mut state)?;
-            fs::write(root.path.join("cgroup.procs"), pid.to_string())
-                .map_err(|error| ResourceError::io("attach stopped root to cgroup", error))?;
-            let entry = state.roots.get_mut(&root.id).ok_or_else(|| {
-                ResourceError::InvalidCgroupData("prepared root cgroup is missing".into())
-            })?;
-            entry.active = true;
-            debug_assert!(Arc::ptr_eq(&entry.signal, signal));
-            // SAFETY: pid is the stopped launcher child owned by this supervisor.
-            if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
-                return Err(ResourceError::io(
-                    "continue attached cgroup launcher",
-                    io::Error::last_os_error(),
-                ));
-            }
-            Ok(pid)
+            self.attach_root_with(
+                root,
+                signal,
+                child.id(),
+                wait_for_launcher_stop,
+                |path, pid| {
+                    fs::write(path, pid.to_string())
+                        .map_err(|error| ResourceError::io("attach stopped root to cgroup", error))
+                },
+                |pid| {
+                    // SAFETY: pid is the stopped launcher child owned by this supervisor.
+                    if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
+                        return Err(ResourceError::io(
+                            "continue attached cgroup launcher",
+                            io::Error::last_os_error(),
+                        ));
+                    }
+                    Ok(())
+                },
+            )
         }
 
         fn classify_root(
@@ -849,143 +840,8 @@ mod platform {
             self.terminate_root_with(root, live_root_pid, cleanup_cgroup)
         }
 
-        fn terminate_root_with(
-            &self,
-            root: &RootCgroup,
-            live_root_pid: Option<i32>,
-            cleanup: impl FnOnce(&Path, Option<i32>) -> Result<(), ResourceError>,
-        ) -> Result<(), ResourceError> {
-            let _cleanup_guard = root
-                .cleanup_gate
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let accounting = (!state.cleaned)
-                .then(|| Self::refresh_events(&mut state).err())
-                .flatten();
-            let Some(entry) = state.roots.get_mut(&root.id) else {
-                return accounting.map_or(Ok(()), Err);
-            };
-            let was_active = entry.active;
-            entry.active = false;
-            drop(state);
-            let mut cleaned = false;
-            let result = run_cleanup_after_accounting(accounting, || {
-                let result = cleanup(&root.path, live_root_pid);
-                cleaned = result.is_ok();
-                result
-            });
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if cleaned {
-                state.roots.remove(&root.id);
-            } else if let Some(entry) = state.roots.get_mut(&root.id) {
-                entry.active = was_active;
-            }
-            result
-        }
-
-        fn refresh_events(state: &mut RunState) -> Result<(), ResourceError> {
-            for entry in state.roots.values_mut().filter(|entry| entry.active) {
-                let next = read_events(&entry.root.path)?;
-                let violations = violations_since(entry.counters, next);
-                entry.counters = next;
-                if violations != 0 {
-                    entry
-                        .signal
-                        .violations
-                        .fetch_or(violations, Ordering::AcqRel);
-                }
-            }
-            Ok(())
-        }
-
         fn close(&self) -> Result<(), ResourceError> {
             self.close_with(cleanup_cgroup)
-        }
-
-        fn close_with(
-            &self,
-            mut cleanup: impl FnMut(&Path, Option<i32>) -> Result<(), ResourceError>,
-        ) -> Result<(), ResourceError> {
-            let _close_guard = self
-                .close_gate
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            state.closed = true;
-            if state.cleaned {
-                return Ok(());
-            }
-            let mut roots: Vec<_> = state
-                .roots
-                .values()
-                .map(|entry| Arc::clone(&entry.root))
-                .collect();
-            drop(state);
-            roots.sort_by_key(|root| root.id);
-            let _root_guards: Vec<_> = roots
-                .iter()
-                .map(|root| {
-                    root.cleanup_gate
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                })
-                .collect();
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let accounting = Self::refresh_events(&mut state).err();
-            let active_roots: Vec<_> = state
-                .roots
-                .iter_mut()
-                .filter_map(|(id, entry)| {
-                    let was_active = entry.active;
-                    entry.active = false;
-                    was_active.then_some(*id)
-                })
-                .collect();
-            drop(state);
-            let mut first_error = None;
-            for root in &roots {
-                match cleanup(&root.path, None) {
-                    Ok(()) => {
-                        self.state
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .roots
-                            .remove(&root.id);
-                    }
-                    Err(error) if first_error.is_none() => first_error = Some(error),
-                    Err(_) => {}
-                }
-            }
-            let run_cleanup = cleanup(&self.path, None);
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if run_cleanup.is_ok() {
-                state.roots.clear();
-                state.cleaned = true;
-            } else {
-                for id in active_roots {
-                    if let Some(entry) = state.roots.get_mut(&id) {
-                        entry.active = true;
-                    }
-                }
-            }
-            let cleanup = first_error.map_or(run_cleanup, Err);
-            run_cleanup_after_accounting(accounting, || cleanup)
         }
     }
 
@@ -1289,14 +1145,6 @@ mod platform {
         Ok(())
     }
 
-    fn read_events(path: &Path) -> Result<CgroupEventCounters, ResourceError> {
-        let memory = fs::read(path.join("memory.events"))
-            .map_err(|error| ResourceError::io("read cgroup memory events", error))?;
-        let pids = fs::read(path.join("pids.events"))
-            .map_err(|error| ResourceError::io("read cgroup process events", error))?;
-        parse_cgroup_event_counters(&memory, &pids)
-    }
-
     fn verify_migration(run_path: &Path, launcher: &OsStr) -> Result<(), ResourceError> {
         let probe_path = create_unique_child(run_path, "probe")?;
         let child = match std::process::Command::new(launcher)
@@ -1552,35 +1400,6 @@ mod platform {
         Ok(())
     }
 
-    fn signal_verified_member<Handle, OpenPidfd, ReadMembership, SendSignal>(
-        cgroup: &Path,
-        pid: u32,
-        open_pidfd: OpenPidfd,
-        read_membership: ReadMembership,
-        send_signal: SendSignal,
-    ) -> Result<(), ResourceError>
-    where
-        OpenPidfd: FnOnce(i32) -> io::Result<Handle>,
-        ReadMembership: FnOnce(&Path) -> Result<Vec<u32>, ResourceError>,
-        SendSignal: FnOnce(&Handle) -> io::Result<()>,
-    {
-        let numeric_pid = i32::try_from(pid)
-            .map_err(|_| cleanup_error(cgroup, io::Error::other("cgroup pid overflow")))?;
-        let handle = match open_pidfd(numeric_pid) {
-            Ok(handle) => handle,
-            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => return Ok(()),
-            Err(error) => return Err(cleanup_error(cgroup, error)),
-        };
-        if !read_membership(cgroup)?.contains(&pid) {
-            return Ok(());
-        }
-        match send_signal(&handle) {
-            Ok(()) => Ok(()),
-            Err(error) if error.raw_os_error() == Some(libc::ESRCH) => Ok(()),
-            Err(error) => Err(cleanup_error(cgroup, error)),
-        }
-    }
-
     fn open_pidfd(pid: i32) -> io::Result<std::os::fd::OwnedFd> {
         use std::os::fd::FromRawFd;
 
@@ -1646,21 +1465,6 @@ mod platform {
         Ok(())
     }
 
-    fn parse_member_pids(procs: &[u8]) -> Result<Vec<u32>, ResourceError> {
-        procs
-            .split(u8::is_ascii_whitespace)
-            .filter(|raw| !raw.is_empty())
-            .map(|raw| {
-                std::str::from_utf8(raw)
-                    .ok()
-                    .and_then(|raw| raw.parse::<u32>().ok())
-                    .ok_or_else(|| {
-                        ResourceError::InvalidCgroupData("invalid cgroup.procs pid".into())
-                    })
-            })
-            .collect()
-    }
-
     fn cgroup_tree_empty(path: &Path) -> Result<bool, ResourceError> {
         for cgroup in cgroup_tree(path)? {
             let procs = fs::read(cgroup.join("cgroup.procs"))
@@ -1715,13 +1519,6 @@ mod platform {
             index += 1;
         }
         Ok(tree)
-    }
-
-    fn cleanup_error(path: &Path, source: io::Error) -> ResourceError {
-        ResourceError::CgroupCleanup {
-            path: path.to_owned(),
-            source,
-        }
     }
 
     #[cfg(test)]
@@ -2345,6 +2142,18 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
         .map(PathBuf::from)
         .map_err(|_| ResourceError::InvalidCgroupData("non-UTF-8 cgroup mount path".into()))
 }
+
+#[cfg(test)]
+mod cleanup_oracle_tests;
+
+#[cfg(test)]
+mod lifecycle_oracle_tests;
+
+#[cfg(test)]
+mod startup_oracle_tests;
+
+#[cfg(all(test, unix))]
+mod member_oracle_tests;
 
 #[cfg(test)]
 mod tests {

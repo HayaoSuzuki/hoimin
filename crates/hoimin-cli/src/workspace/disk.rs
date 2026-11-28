@@ -1178,6 +1178,9 @@ fn should_count_unix_stat(metadata: &rustix::fs::Stat, state: &mut WalkState) ->
 mod stats_tests;
 
 #[cfg(test)]
+mod aggregation_tests;
+
+#[cfg(test)]
 mod native_name_tests;
 
 #[cfg(all(test, windows))]

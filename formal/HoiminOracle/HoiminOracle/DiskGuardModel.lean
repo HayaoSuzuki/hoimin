@@ -133,6 +133,37 @@ def TransitionInvariant (start candidate : State) : Bool :=
 def addUnique [BEq α] (value : α) (values : List α) : List α :=
   if values.contains value then values else values ++ [value]
 
+inductive ReportEvidence where
+  | observation (reason : StopReason) (owned available nanos : Nat)
+  | error (reason : StopReason) (message : String)
+  deriving DecidableEq, Repr
+
+def appendReportEvidence (primary : ReportEvidence) (existing : List ReportEvidence)
+    (item : ReportEvidence) : List ReportEvidence :=
+  if item = primary ∨ item ∈ existing then existing else existing ++ [item]
+
+abbrev FinalizationError := String × String
+
+structure FinalizationReport where
+  complete : Bool
+  exitCode : Int
+  primary : Option (String × Option String)
+  errors : List FinalizationError
+  deriving DecidableEq
+
+def recordFinalizationError (report : FinalizationReport) (error : FinalizationError) :
+    FinalizationReport :=
+  let incomplete := { report with
+    complete := false, exitCode := if report.exitCode = 0 then 2 else report.exitCode }
+  let primary := (error.1, some error.2)
+  if report.primary.isNone then { incomplete with primary := some primary }
+  else if report.primary = some primary ∨ error ∈ report.errors then incomplete
+  else { incomplete with errors := report.errors ++ [error] }
+
+def recordFinalizationErrors (report : FinalizationReport) (errors : List FinalizationError) :
+    FinalizationReport :=
+  errors.foldl recordFinalizationError report
+
 def removeRoot (root : RootId) (roots : List RootId) : List RootId :=
   roots.filter (· != root)
 
@@ -153,6 +184,196 @@ def observationReasons (owned maxOwned free minFree : Nat) : List StopReason :=
     if owned ≥ maxOwned then [.reserveReached, .sizeExceeded] else [.reserveReached]
   else if owned ≥ maxOwned then [.sizeExceeded]
   else []
+
+structure MeterRoot where
+  filesystem : Nat
+  available : Nat
+  files : List (Nat × Nat) -- physical file identity within the filesystem and logical bytes
+
+structure MeterCount where
+  identities : List (Nat × Nat) := []
+  bytes : Nat := 0
+
+def chargeMeterFile (uniqueFiles : Bool) (count : MeterCount) (filesystem : Nat)
+    (file : Nat × Nat) : MeterCount :=
+  let identity := (filesystem, file.1)
+  if uniqueFiles && count.identities.contains identity then count
+  else { identities := identity :: count.identities, bytes := count.bytes + file.2 }
+
+def measuredBytes (uniqueFiles : Bool) (roots : List MeterRoot) : Nat :=
+  let count := roots.foldl (fun count root =>
+    root.files.foldl (fun count file => chargeMeterFile uniqueFiles count root.filesystem file) count)
+    ({} : MeterCount)
+  count.bytes
+
+def recordCapacity (seen : List (Nat × Nat)) (root : MeterRoot) : List (Nat × Nat) :=
+  if seen.any (fun capacity => capacity.1 == root.filesystem) then seen
+  else seen ++ [(root.filesystem, root.available)]
+
+def meterCapacities (roots : List MeterRoot) : List (Nat × Nat) := roots.foldl recordCapacity []
+
+def minimumCapacity (capacities : List (Nat × Nat)) : Option Nat :=
+  (capacities.map Prod.snd).min?
+
+def meterReasons (owned maxOwned minFree : Nat) (capacities : List (Nat × Nat)) : List StopReason :=
+  match minimumCapacity capacities with
+  | none => [.measurementFailed]
+  | some free => observationReasons owned maxOwned free minFree
+
+structure StatsReading where
+  owned : Nat
+  elapsedMs : Nat
+  capacities : List (Nat × Nat)
+  deriving DecidableEq
+
+inductive StatsSample where
+  | reading (value : StatsReading)
+  | measurementFailed
+  | refreshFailed
+
+def recordStats (history : List StatsReading) (sample : StatsSample) : List StatsReading :=
+  match sample with
+  | .reading value => if value.capacities.isEmpty then history else history ++ [value]
+  | .measurementFailed | .refreshFailed => history
+
+def historicalCapacities (history : List StatsReading) : List (Nat × Nat) :=
+  history.flatMap StatsReading.capacities
+
+def endCapacity (query : Option (List (Nat × Nat))) (key : Nat) : Option Nat := do
+  let values ← query
+  let (_, bytes) ← values.find? fun entry => entry.1 == key
+  return bytes
+
+def capacityChange (start : Nat) (finish : Option Nat) : Option Int :=
+  finish.map fun bytes => Int.ofNat bytes - Int.ofNat start
+
+structure FinalCapacity where
+  key : Nat
+  start : Nat
+  finish : Option Nat
+  change : Option Int
+  deriving DecidableEq
+
+def finalCapacities (starts : List (Nat × Nat)) (query : Option (List (Nat × Nat))) :
+    List FinalCapacity :=
+  starts.map fun (key, start) =>
+    let finish := endCapacity query key
+    ⟨key, start, finish, capacityChange start finish⟩
+
+structure DeliveryEvidence where
+  capacity : Bool
+  write : Bool
+  flush : Bool
+  cleanup : Bool
+
+inductive DeliveryError where
+  | capacity | write | flush | cleanup
+  deriving BEq, DecidableEq
+
+inductive DeliveryEvent where
+  | written | cleanupRequested | rootAbsent | acknowledged
+  deriving BEq, DecidableEq
+
+def deliveryErrorOrder : List DeliveryError :=
+  [.capacity, .write, .flush, .cleanup]
+
+def deliveryErrors (evidence : DeliveryEvidence) : List DeliveryError :=
+  deliveryErrorOrder.filter fun stage => !match stage with
+    | .capacity => evidence.capacity
+    | .write => evidence.write
+    | .flush => evidence.flush
+    | .cleanup => evidence.cleanup
+
+def deliveryEvents (evidence : DeliveryEvidence) : List DeliveryEvent :=
+  (if evidence.write then [.written] else []) ++ [.cleanupRequested] ++
+    (if evidence.cleanup then [.rootAbsent] else []) ++
+    if (deliveryErrors evidence).isEmpty then [.acknowledged] else []
+
+structure SessionDelivery where
+  reportComplete : Option Bool
+  finishRequested : Bool
+  finished : Bool
+  complete : Bool
+  exitCode : Option Nat
+
+def deliverSession (evidence : DeliveryEvidence) (runComplete commit : Bool) : SessionDelivery :=
+  let delivered := (deliveryErrors evidence).isEmpty
+  let runExit := if runComplete then 0 else 4
+  { reportComplete := if evidence.write then some (runComplete && evidence.capacity) else none
+    finishRequested := delivered
+    finished := delivered && commit
+    complete := delivered && commit && runComplete
+    exitCode := if delivered then some (if commit then runExit else 2) else none }
+
+structure SessionResumeAfterDelivery where
+  resumesPrior : Bool
+  executesMore : Bool
+
+-- One matching history row, unchanged sources, and enough budget for all candidates.
+def resumeAfterDelivery (session : SessionDelivery) (priorExecutedAll : Bool) :
+    SessionResumeAfterDelivery :=
+  { resumesPrior := !session.complete
+    executesMore := session.complete || !priorExecutedAll }
+
+inductive ReportTask where
+  | queued | active | refused | returned
+  deriving BEq, DecidableEq
+
+structure ReportAdmissionState where
+  now : Nat := 0
+  deadline : Option Nat := none
+  driverAlive : Bool := true
+  task : ReportTask := .queued
+  deriving DecidableEq
+
+inductive ReportAdmissionEvent where
+  | restrict (deadline : Nat)
+  | advance (duration : Nat)
+  | abandon
+  | start
+  | finish
+
+def reportMayStart (state : ReportAdmissionState) : Bool :=
+  state.driverAlive && (state.deadline.map (fun deadline => decide (state.now < deadline))).getD true
+
+def reportOwnerHeld (state : ReportAdmissionState) : Bool :=
+  state.driverAlive || state.task == .queued || state.task == .active
+
+def reportAdmissionStep (state : ReportAdmissionState) :
+    ReportAdmissionEvent → ReportAdmissionState
+  | .restrict deadline =>
+      { state with deadline := some ((state.deadline.map (min deadline)).getD deadline) }
+  | .advance duration => { state with now := state.now + duration }
+  | .abandon => { state with driverAlive := false }
+  | .start =>
+      if state.task = .queued then
+        { state with task := if reportMayStart state then .active else .refused }
+      else state
+  | .finish => if state.task = .active then { state with task := .returned } else state
+
+inductive ReportIoResult where
+  | succeeded | ioFailed | panicked
+  deriving BEq, DecidableEq
+
+inductive ReportRecoveryResult where
+  | flushed | ioFailed | expired | missingHandler | flushPanicked
+  deriving BEq, DecidableEq
+
+def recoverReport (emit : ReportIoResult) (flush : Option ReportIoResult) :
+    ReportRecoveryResult :=
+  match emit, flush with
+  | .panicked, _ => .missingHandler
+  | _, none => .expired
+  | _, some .succeeded => .flushed
+  | _, some .ioFailed => .ioFailed
+  | _, some .panicked => .flushPanicked
+
+def recoveryFlushEntered (emit : ReportIoResult) (flush : Option ReportIoResult) : Bool :=
+  emit != .panicked && flush.isSome
+
+def reportRecoveryQuiescent : ReportRecoveryResult → Bool
+  | .missingHandler | .flushPanicked => false
+  | _ => true
 
 def allSafetySucceeded (state : State) : Bool :=
   state.processDrain == .succeeded && state.outputDrain == .succeeded &&

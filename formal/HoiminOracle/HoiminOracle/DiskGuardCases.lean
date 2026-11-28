@@ -231,29 +231,90 @@ def fixedCases : List OracleCase := [
         finished := true } }
 ]
 
+private inductive CleanupResult where
+  | clean | failed | deferred | retained
+  deriving BEq, DecidableEq, Repr
+
+private def cleanupResults : List CleanupResult := [.clean, .failed, .deferred, .retained]
+
+private def CleanupResult.name : CleanupResult → String
+  | .clean => "clean"
+  | .failed => "failed"
+  | .deferred => "deferred"
+  | .retained => "retained"
+
+private def CleanupResult.event (result : CleanupResult) (root : RootId) : Event :=
+  match result with
+  | .clean => .cleanupSucceeded root
+  | .failed => .cleanupFailed root
+  | .deferred => .cleanupDeferred root
+  | .retained => .cleanupRetained root
+
+private def drainSchedules : List (String × List Event) := [
+  ("drained", [.processDrainSucceeded, .outputDrained, .monitorJoined]),
+  ("process_failed", [.processDrainFailed, .outputDrained, .monitorJoined]),
+  ("output_failed", [.processDrainSucceeded, .outputDrainFailed, .monitorJoined]),
+  ("monitor_failed", [.processDrainSucceeded, .outputDrained, .monitorJoinFailed]) ]
+
+private def generatedRuntimeCase (id : String) (initial : State) (events : List Event) : OracleCase :=
+  { id, mode := .internalFixture, layer := .runtime, implementationTargets := rustOnly,
+    initial, events, expected := observeExecution (execute initial events) }
+
+private def cleanupFinishCases : List (OracleCase × Bool) :=
+  drainSchedules.flatMap fun (drain, settlement) => cleanupResults.flatMap fun execution =>
+    (none :: cleanupResults.map some).map fun delivery =>
+      let initial := if delivery.isSome then State.initial [executionRoot, deliveryRoot] [deliveryRoot]
+        else State.initial [executionRoot]
+      let afterExecution := settlement ++ [
+        .requestCleanup executionRoot, execution.event executionRoot, .reportSucceeded ]
+      let beforeFinish := match delivery with
+        | none => afterExecution
+        | some outcome => afterExecution ++ [.requestCleanup deliveryRoot, outcome.event deliveryRoot]
+      let deliveryName := (delivery.map CleanupResult.name).getD "absent"
+      let id := s!"cleanup_finish_{drain}_{execution.name}_{deliveryName}"
+      let mayFinish := match delivery with
+        | none => execution == .retained || (drain == "drained" && execution != .deferred)
+        | some outcome => drain == "drained" && execution != .deferred && outcome == .clean
+      (generatedRuntimeCase id initial (beforeFinish ++ [.finish]), mayFinish)
+
+private def cleanupRepeatCases : List OracleCase :=
+  ([.deferred, .retained] : List CleanupResult).flatMap fun first =>
+    cleanupResults.map fun later =>
+      generatedRuntimeCase s!"cleanup_repeat_{first.name}_{later.name}" (State.initial [executionRoot])
+        [.processDrainSucceeded, .outputDrained, .monitorJoined, .requestCleanup executionRoot,
+          first.event executionRoot, later.event executionRoot]
+
+def oracleCases : List OracleCase :=
+  fixedCases ++ cleanupFinishCases.map Prod.fst ++ cleanupRepeatCases
+
 def casesPass : Bool :=
-  fixedCases.all fun item => observeExecution (execute item.initial item.events) == item.expected
+  (fixedCases.all fun item => observeExecution (execute item.initial item.events) == item.expected) &&
+  cleanupFinishCases.length == 80 &&
+  (cleanupFinishCases.all fun (item, admitsFinish) =>
+    item.expected.accepted == admitsFinish && item.expected.finished == admitsFinish) &&
+  cleanupRepeatCases.length == 8 &&
+  (cleanupRepeatCases.all fun item => item.expected.rejectedAt == some 5)
 
 def caseContractValid (item : OracleCase) : Bool :=
   item.schema == 1 && !item.id.isEmpty && !item.implementationTargets.isEmpty &&
     decide item.implementationTargets.Nodup && item.events.length ≤ 16
 
 def corpusContractValid : Bool :=
-  fixedCases.all caseContractValid &&
-    decide (fixedCases.map OracleCase.id).Nodup
+  oracleCases.all caseContractValid &&
+    decide (oracleCases.map OracleCase.id).Nodup
 
 inductive BrokenFamily where
   | strictSize | reserveDirection | simultaneousSecondary | overwritePrimary
   | postStopDispatch | postDrainDispatch | duplicateCleanup | cleanOnCleanupError | earlyFinish
   | cleanupBeforeSettlement | destructiveAfterFailure | finishAfterReportFailure
-  | finishAfterDeliveryFailure
+  | finishAfterDeliveryFailure | finishAfterDeferred | finishAfterDeliveryRetained | rewriteDeferred
   deriving BEq, DecidableEq, Repr
 
 def allBrokenFamilies : List BrokenFamily := [
   .strictSize, .reserveDirection, .simultaneousSecondary, .overwritePrimary,
   .postStopDispatch, .postDrainDispatch, .duplicateCleanup, .cleanOnCleanupError, .earlyFinish,
   .cleanupBeforeSettlement, .destructiveAfterFailure, .finishAfterReportFailure,
-  .finishAfterDeliveryFailure]
+  .finishAfterDeliveryFailure, .finishAfterDeferred, .finishAfterDeliveryRetained, .rewriteDeferred]
 
 def brokenStep (family : BrokenFamily) (state : State) (event : Event) : Option State :=
   match family, event with
@@ -305,6 +366,19 @@ def brokenStep (family : BrokenFamily) (state : State) (event : Event) : Option 
       if state.deliveryRoots.any fun root => state.cleanupFailed.contains root then
         some { state with finished := true }
       else step state event
+  | .finishAfterDeferred, .finish =>
+      if !state.cleanupDeferred.isEmpty then some { state with finished := true }
+      else step state event
+  | .finishAfterDeliveryRetained, .finish =>
+      if state.deliveryRoots.any fun root => state.cleanupRetained.contains root then
+        some { state with finished := true }
+      else step state event
+  | .rewriteDeferred, .cleanupRetained root =>
+      if state.cleanupDeferred.contains root then
+        some { state with
+          cleanupDeferred := removeRoot root state.cleanupDeferred
+          cleanupRetained := addUnique root state.cleanupRetained }
+      else step state event
   | _, _ => step state event
 
 def executeWith (next : State → Event → Option State) (start : State)
@@ -348,6 +422,17 @@ def brokenWitness : BrokenFamily → State × List Event
           .requestCleanup executionRoot, .cleanupSucceeded executionRoot,
           .reportSucceeded, .requestCleanup deliveryRoot,
           .cleanupFailed deliveryRoot, .finish])
+  | .finishAfterDeferred =>
+      (State.initial [executionRoot], [.processDrainSucceeded, .outputDrained, .monitorJoined,
+        .requestCleanup executionRoot, .cleanupDeferred executionRoot, .reportSucceeded, .finish])
+  | .finishAfterDeliveryRetained =>
+      (State.initial [executionRoot, deliveryRoot] [deliveryRoot],
+        [.processDrainSucceeded, .outputDrained, .monitorJoined,
+          .requestCleanup executionRoot, .cleanupSucceeded executionRoot,
+          .reportSucceeded, .requestCleanup deliveryRoot, .cleanupRetained deliveryRoot, .finish])
+  | .rewriteDeferred =>
+      (State.initial [executionRoot], [.processDrainSucceeded, .outputDrained, .monitorJoined,
+        .requestCleanup executionRoot, .cleanupDeferred executionRoot, .cleanupRetained executionRoot])
 
 def brokenDetected (family : BrokenFamily) : Bool :=
   let witness := brokenWitness family

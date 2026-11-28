@@ -427,6 +427,43 @@ fn build_override(root: &Utf8Path, pattern: &str) -> Result<Override, Fingerprin
 mod tests {
     use super::*;
 
+    #[derive(serde::Deserialize)]
+    struct PathFixture {
+        schema: u32,
+        mode: String,
+        id: String,
+        input: String,
+        exact_unix: Option<String>,
+        exact_windows: Option<String>,
+    }
+
+    #[test]
+    fn exact_fingerprint_path_normalization_matches_lean() {
+        let corpus = include_str!("../../../formal/HoiminOracle/corpus/relative-path.jsonl");
+        let mut ids = BTreeSet::new();
+        for row in corpus.lines() {
+            let case: PathFixture = serde_json::from_str(row).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            let actual = match normalize_exact_path(&case.input) {
+                Ok(path) => Some(path.into_string()),
+                Err(FingerprintInputError::InvalidPath(input)) => {
+                    assert_eq!(input, case.input, "{}", case.id);
+                    None
+                }
+                Err(error) => panic!("{}: unexpected fingerprint error: {error}", case.id),
+            };
+            let expected = if cfg!(windows) {
+                case.exact_windows
+            } else {
+                case.exact_unix
+            };
+            assert_eq!(actual, expected, "{}", case.id);
+            assert!(ids.insert(case.id));
+        }
+        assert_eq!(ids.len(), 122);
+    }
+
     fn prepared_config(original_root: &Utf8Path, worker_root: &Utf8Path) -> hoimin_core::RunConfig {
         for root in [original_root, worker_root] {
             std::fs::write(root.join("settings.toml"), "value = 1\n").unwrap();

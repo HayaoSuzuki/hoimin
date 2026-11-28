@@ -2148,7 +2148,7 @@ fn selection_entry_stream_io_error_preserves_the_coordinator_cursor() {
         now + Duration::from_secs(1),
         &|| now,
         &<() as Default>::default,
-        &<() as Default>::default,
+        &|_| {},
     )
     .unwrap_err();
     let fault_was_triggered = fault.triggered();
@@ -2164,7 +2164,7 @@ fn selection_entry_stream_io_error_preserves_the_coordinator_cursor() {
             now + Duration::from_secs(1),
             &|| now,
             &<() as Default>::default,
-            &<() as Default>::default
+            &|_| {},
         )
         .unwrap(),
         (Vec::new(), None)
@@ -2230,7 +2230,7 @@ fn selection_entry_open_io_error_preserves_the_coordinator_cursor() {
         now + Duration::from_secs(1),
         &|| now,
         &<() as Default>::default,
-        &<() as Default>::default,
+        &|_| {},
     )
     .unwrap_err();
     let fault_was_triggered = fault.triggered();
@@ -2246,7 +2246,7 @@ fn selection_entry_open_io_error_preserves_the_coordinator_cursor() {
             now + Duration::from_secs(1),
             &|| now,
             &<() as Default>::default,
-            &<() as Default>::default
+            &|_| {},
         )
         .unwrap(),
         (Vec::new(), None)

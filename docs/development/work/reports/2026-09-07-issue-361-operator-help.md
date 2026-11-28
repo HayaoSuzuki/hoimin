@@ -53,3 +53,31 @@ The macOS workspace test used a temporary `.venv` link to the repository's
 existing development environment; the link was removed after verification.
 No Linux or Windows execution was performed. Independent review found no
 semantic issue; its formatting observation was resolved with `cargo fmt`.
+
+## Lean correspondence for operator selection
+
+The oracle reads the published operator index in the CLI reference for IDs,
+default membership, and family membership. Lean expands repeated and
+comma-delimited selectors, resolves the included set before the excluded
+set, and rejects an empty result. The proofs establish that every selected
+member was included and that exclusion removes an operator even when it
+appears more than once in the inclusion arguments.
+
+The corpus has 310 cases. It selects all 173 documented operators and all
+12 families, exercises every pair of families, and checks unknown names,
+empty comma fields, whitespace, and exclusions that empty the set.
+The Rust adapter exercises both CLI parsers and compares selected membership
+and typed configuration errors. For accepted inputs, it serializes and
+reloads the normalized run or plan configuration and compares the original
+operator order after restoration. The Lean projection uses alphabetical
+membership from the reference. Rust persistence keeps its declaration order.
+
+The sensitivity check detects adding defaults to explicit choices, checking
+excluded names before included names, omitting exclusions, and trimming
+selector tokens.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_environment_fingerprint -- --check-operator-selectors corpus/operator-selectors.jsonl)
+(cd formal/HoiminOracle && lake exe generate_environment_fingerprint -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test cli_config operator_selection_matches_lean
+```

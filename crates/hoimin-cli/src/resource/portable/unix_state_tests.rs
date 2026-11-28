@@ -6,8 +6,10 @@ use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use proptest::prelude::*;
+use serde::Deserialize;
 
 use super::PortableSupervisor;
+use crate::resource::ResourceError;
 
 #[derive(Default)]
 struct FakeOs {
@@ -336,4 +338,228 @@ proptest! {
         drop(supervisor);
         prop_assert_eq!(os.calls(), expected_calls);
     }
+}
+
+const PROCESS_GROUP_CORPUS: &str =
+    include_str!("../../../../../formal/HoiminOracle/corpus/process-group.jsonl");
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Case {
+    schema: u64,
+    mode: String,
+    id: String,
+    attached: bool,
+    steps: Vec<Step>,
+    drop: DropCheck,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Step {
+    command: Command,
+    after: State,
+    reply: Reply,
+    call: Option<Call>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DropCheck {
+    os: OsResult,
+    fail: bool,
+    call: Option<Call>,
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+enum Command {
+    Reap,
+    TerminateLive { os: OsResult, fail: bool },
+    TerminateReaped { os: OsResult, fail: bool },
+    Refresh { os: OsResult },
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum OsResult {
+    Ok,
+    Absent,
+    Denied,
+    IoError,
+}
+
+impl OsResult {
+    fn errno(&self) -> Option<i32> {
+        match self {
+            Self::Ok => None,
+            Self::Absent => Some(libc::ESRCH),
+            Self::Denied => Some(libc::EPERM),
+            Self::IoError => Some(libc::EIO),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[serde(deny_unknown_fields)]
+struct State {
+    authority: Authority,
+    terminated: bool,
+    quiescent: bool,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum Authority {
+    Missing,
+    Signalable,
+    ProbeOnly,
+}
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum Reply {
+    #[serde(rename = "no_reply")]
+    Recorded,
+    NotQuiescent,
+    Quiescent,
+    ProbeError,
+    SignalError,
+    TerminationError,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Call {
+    Probe,
+    Signal,
+}
+
+impl Call {
+    fn syscall(self) -> (i32, i32) {
+        match self {
+            Self::Probe => (41, 0),
+            Self::Signal => (41, libc::SIGKILL),
+        }
+    }
+}
+
+fn observed_state(supervisor: &PortableSupervisor) -> State {
+    let authority = match supervisor.process_group {
+        super::ProcessGroup::None => Authority::Missing,
+        super::ProcessGroup::Signalable(group) => {
+            assert_eq!(group, 41);
+            Authority::Signalable
+        }
+        super::ProcessGroup::ProbeOnly(group) => {
+            assert_eq!(group, 41);
+            Authority::ProbeOnly
+        }
+    };
+    State {
+        authority,
+        terminated: supervisor.terminated,
+        quiescent: supervisor.tree_quiescent,
+    }
+}
+
+fn replay_command(supervisor: &mut PortableSupervisor, fake: &OsGuard, command: &Command) -> Reply {
+    // Fixtures select the response for this command independently of previous calls.
+    let inject = |fail: bool| {
+        supervisor
+            .termination_failures
+            .store(u8::from(fail), Ordering::Release);
+    };
+    let result = match command {
+        Command::Reap => {
+            supervisor.record_root_reaped();
+            return Reply::Recorded;
+        }
+        Command::TerminateLive { os, fail } => {
+            inject(*fail);
+            fake.signal_errno(os.errno());
+            supervisor.terminate(true)
+        }
+        Command::TerminateReaped { os, fail } => {
+            inject(*fail);
+            fake.probe_errno(os.errno());
+            supervisor.terminate(false)
+        }
+        Command::Refresh { os } => {
+            fake.probe_errno(os.errno());
+            supervisor.refresh_tree_quiescence_after_root_reap()
+        }
+    };
+    match result {
+        Ok(true) => Reply::Quiescent,
+        Ok(false) => Reply::NotQuiescent,
+        Err(ResourceError::Io {
+            operation: "probe portable process group",
+            ..
+        }) => Reply::ProbeError,
+        Err(ResourceError::Io {
+            operation: "terminate process group",
+            ..
+        }) => Reply::SignalError,
+        Err(ResourceError::Io {
+            operation: "terminate portable supervisor",
+            ..
+        }) => Reply::TerminationError,
+        Err(error) => panic!("unexpected process group error: {error:?}"),
+    }
+}
+
+fn assert_calls(fake: &OsGuard, cursor: &mut usize, expected: Option<Call>, id: &str) {
+    let calls = fake.calls();
+    assert_eq!(
+        &calls[*cursor..],
+        expected.map(Call::syscall).as_slice(),
+        "{id}"
+    );
+    *cursor = calls.len();
+}
+
+fn replay(case: &Case) {
+    let fake = OsGuard::install();
+    let mut supervisor = if case.attached {
+        supervisor()
+    } else {
+        PortableSupervisor::new(Arc::default(), Arc::default()).unwrap()
+    };
+    let mut cursor = 0;
+    for (index, step) in case.steps.iter().enumerate() {
+        let id = format!("{}: step {index}", case.id);
+        assert_eq!(
+            replay_command(&mut supervisor, &fake, &step.command),
+            step.reply,
+            "{id}"
+        );
+        assert_eq!(observed_state(&supervisor), step.after, "{id}");
+        assert_calls(&fake, &mut cursor, step.call, &id);
+    }
+
+    fake.signal_errno(case.drop.os.errno());
+    supervisor
+        .termination_failures
+        .store(u8::from(case.drop.fail), Ordering::Release);
+    drop(supervisor);
+    assert_calls(
+        &fake,
+        &mut cursor,
+        case.drop.call,
+        &format!("{}: drop", case.id),
+    );
+}
+
+#[test]
+fn unix_process_group_histories_match_lean_oracle() {
+    let mut ids = std::collections::BTreeSet::new();
+    for line in PROCESS_GROUP_CORPUS.lines() {
+        let case: Case = serde_json::from_str(line).unwrap();
+        assert_eq!(case.schema, 1, "{}", case.id);
+        assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+        replay(&case);
+        assert!(ids.insert(case.id));
+    }
+    assert_eq!(ids.len(), 290);
 }

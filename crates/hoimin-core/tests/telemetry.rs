@@ -3,6 +3,9 @@ use hoimin_core::{
     METRICS_SCHEMA_VERSION, MetricsValidationError, RunMetrics, StageMetric, WorkerMetric,
 };
 
+#[path = "support/metrics_validation_oracle.rs"]
+mod metrics_validation_oracle;
+
 fn validation_message(metrics: &RunMetrics) -> String {
     metrics.validate().unwrap_err().to_string()
 }

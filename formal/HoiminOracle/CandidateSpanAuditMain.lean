@@ -1,4 +1,16 @@
 import HoiminOracle.CandidateSpanCases
+import HoiminOracle.SourceCoordinatesCases
+import HoiminOracle.SourceDeclarationCases
+import HoiminOracle.DelimiterDepthCases
+import HoiminOracle.SourceEscapeCases
+import HoiminOracle.RegexLiteralSpanCases
+import HoiminOracle.FormatSpecCases
+import HoiminOracle.FormatRemovalCases
+import HoiminOracle.AstDepthCases
+import HoiminOracle.SymbolCatalogCases
+import HoiminOracle.CandidateSelectionCases
+import HoiminOracle.SourceLocationCases
+import HoiminOracle.AnalyzerSourceAdmissionCases
 import Lean.Data.Json
 
 open HoiminOracle.CandidateSpan
@@ -99,15 +111,105 @@ def main (args : List String) : IO UInt32 := do
   match args with
   | ["--output", path] => writeCorpus path
   | ["--check", path] => checkCorpus path
+  | ["--check-source-coordinates", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.SourceCoordinates.corpus then pure 0
+      else IO.eprintln "source coordinates corpus is stale" *> pure 1
+  | ["--output-source-coordinates", path] =>
+      IO.FS.writeFile path HoiminOracle.SourceCoordinates.corpus *> pure 0
+  | ["--check-source-declaration", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.SourceDeclaration.corpus then pure 0
+      else IO.eprintln "source declaration corpus is stale" *> pure 1
+  | ["--output-source-declaration", path] =>
+      IO.FS.writeFile path HoiminOracle.SourceDeclaration.corpus *> pure 0
+  | ["--check-delimiter-depth", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.DelimiterDepth.corpus then pure 0
+      else IO.eprintln "delimiter depth corpus is stale" *> pure 1
+  | ["--output-delimiter-depth", path] =>
+      IO.FS.writeFile path HoiminOracle.DelimiterDepth.corpus *> pure 0
+  | ["--check-source-escape", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.SourceEscape.corpus then pure 0
+      else IO.eprintln "source escape corpus is stale" *> pure 1
+  | ["--output-source-escape", path] =>
+      IO.FS.writeFile path HoiminOracle.SourceEscape.corpus *> pure 0
+  | ["--check-regex-literal-span", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.RegexLiteralSpan.corpus then pure 0
+      else IO.eprintln "regex literal span corpus is stale" *> pure 1
+  | ["--output-regex-literal-span", path] =>
+      IO.FS.writeFile path HoiminOracle.RegexLiteralSpan.corpus *> pure 0
+  | ["--check-format-spec", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.FormatSpec.corpus then pure 0
+      else IO.eprintln "format spec corpus is stale" *> pure 1
+  | ["--output-format-spec", path] =>
+      IO.FS.writeFile path HoiminOracle.FormatSpec.corpus *> pure 0
+  | ["--check-format-removal", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.FormatRemoval.corpus then pure 0
+      else IO.eprintln "format removal corpus is stale" *> pure 1
+  | ["--output-format-removal", path] =>
+      IO.FS.writeFile path HoiminOracle.FormatRemoval.corpus *> pure 0
+  | ["--check-ast-depth", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.AstDepth.corpus then pure 0
+      else IO.eprintln "AST depth corpus is stale" *> pure 1
+  | ["--output-ast-depth", path] =>
+      IO.FS.writeFile path HoiminOracle.AstDepth.corpus *> pure 0
+  | ["--check-symbol-catalog", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.SymbolCatalog.corpus then pure 0
+      else IO.eprintln "symbol catalog corpus is stale" *> pure 1
+  | ["--output-symbol-catalog", path] =>
+      IO.FS.writeFile path HoiminOracle.SymbolCatalog.corpus *> pure 0
+  | ["--check-candidate-selection", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.CandidateSelection.corpus then pure 0
+      else IO.eprintln "candidate selection corpus is stale" *> pure 1
+  | ["--output-candidate-selection", path] =>
+      IO.FS.writeFile path HoiminOracle.CandidateSelection.corpus *> pure 0
+  | ["--check-source-locations", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.SourceLocation.locationCorpus then pure 0
+      else IO.eprintln "source locations corpus is stale" *> pure 1
+  | ["--output-source-locations", path] =>
+      IO.FS.writeFile path HoiminOracle.SourceLocation.locationCorpus *> pure 0
+  | ["--check-candidate-locations", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.SourceLocation.candidateCorpus then pure 0
+      else IO.eprintln "candidate locations corpus is stale" *> pure 1
+  | ["--output-candidate-locations", path] =>
+      IO.FS.writeFile path HoiminOracle.SourceLocation.candidateCorpus *> pure 0
+  | ["--check-analyzer-source-admission", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.AnalyzerSourceAdmission.corpus then pure 0
+      else IO.eprintln "analyzer source admission corpus is stale" *> pure 1
+  | ["--output-analyzer-source-admission", path] =>
+      IO.FS.writeFile path HoiminOracle.AnalyzerSourceAdmission.corpus *> pure 0
   | ["--cases"] => printCases
-  | ["--sensitivity"] => printSensitivity
+  | ["--sensitivity"] =>
+      let status ← printSensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.SourceCoordinates.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.SourceDeclaration.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.DelimiterDepth.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.SourceEscape.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.RegexLiteralSpan.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.FormatSpec.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.FormatRemoval.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.AstDepth.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.SymbolCatalog.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.CandidateSelection.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.SourceLocation.sensitivity
+      if status != 0 then return status
+      HoiminOracle.AnalyzerSourceAdmission.sensitivity
   | ["--stats"] =>
       IO.println s!"fixed_cases={cases.length}"
       IO.println "sensitivity_families=12"
       IO.println "strict_cases=3"
       return 0
   | _ =>
-      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --cases | --sensitivity | --stats"
+      IO.eprintln "usage: generate_candidate_span --output PATH | --check PATH | --output-source-coordinates PATH | --check-source-coordinates PATH | --output-source-declaration PATH | --check-source-declaration PATH | --output-delimiter-depth PATH | --check-delimiter-depth PATH | --output-source-escape PATH | --check-source-escape PATH | --output-regex-literal-span PATH | --check-regex-literal-span PATH | --output-format-spec PATH | --check-format-spec PATH | --output-format-removal PATH | --check-format-removal PATH | --output-ast-depth PATH | --check-ast-depth PATH | --output-symbol-catalog PATH | --check-symbol-catalog PATH | --output-candidate-selection PATH | --check-candidate-selection PATH | --output-source-locations PATH | --check-source-locations PATH | --output-candidate-locations PATH | --check-candidate-locations PATH | --output-analyzer-source-admission PATH | --check-analyzer-source-admission PATH | --cases | --sensitivity | --stats"
       return 2
 
 end HoiminOracle.CandidateSpan.Executable

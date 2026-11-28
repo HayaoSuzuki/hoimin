@@ -8,6 +8,21 @@ inductive Version
   | fresh | v1 | v2 | v3 | v4 | current | future
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
 
+inductive Catalog
+  | empty | canonical | foreign
+  deriving DecidableEq, BEq
+
+inductive Admission
+  | initialize | reopen | invalidIdentity | unsupportedVersion
+  deriving DecidableEq, BEq
+
+-- Admission compares observations taken from a single committed snapshot.
+def admitSnapshot (version : Version) (applicationId : Int) (catalog : Catalog) : Admission :=
+  match version with
+  | .fresh => if applicationId = 0 ∧ catalog = .empty then .initialize else .invalidIdentity
+  | .current => if applicationId = 0 ∧ catalog = .canonical then .reopen else .invalidIdentity
+  | _ => .unsupportedVersion
+
 inductive Actor
   | left | right
   deriving Repr, DecidableEq, BEq, ReflBEq, LawfulBEq
@@ -117,5 +132,16 @@ def run : State → List Event → State
 def Invariant (state : State) : Prop :=
   (state.leftPhase = .succeeded → state.version = .current) ∧
   (state.rightPhase = .succeeded → state.version = .current)
+
+-- These are SQLite's ASCII whitespace characters at a token boundary. Catalog
+-- comparison groups text by separators, without parsing arbitrary SQL syntax.
+def sqliteSchemaSpace (character : Char) : Bool :=
+  character.isWhitespace || character == Char.ofNat 12
+
+def schemaWords (isSpace : Char → Bool) (sql : List Char) : List (List Char) :=
+  (sql.splitOnP isSpace).filter (fun word => !word.isEmpty)
+
+def normalizeSchemaSql (isSpace : Char → Bool) (sql : List Char) : List Char :=
+  [' '].intercalateTR (schemaWords isSpace sql)
 
 end HoiminOracle.SchemaMigration

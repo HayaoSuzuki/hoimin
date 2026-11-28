@@ -53,3 +53,101 @@ Before main integration, `cargo test --locked --workspace` passed 2,333 tests wi
 The unpublished two-commit branch rebased cleanly onto main `421f5ef`, excluding the merged 632 parent `f114508`. Final integration reran target_handler plus all three changed-selection oracle suites: 61 tests passed, including the new public plan/run/verify and BOM/Latin-1 cases. Both exact Clippy gates, both formatting gates, all 40 Python CI registry tests, and diff whitespace checks passed on the integrated tree. Root explicitly requested focused integration after the clean rebase rather than an unconditional duplicate full-suite run; no production conflict or unresolved integration concern remained. Logs: `612-rebased-focused.log`, `612-rebased-clippy.log`, `612-rebased-clippy-vendor.log`, `612-rebased-ci-contract.log`.
 
 After PR #650 initially passed all CI, main `195773a` was merged into the published branch without rewriting history. Only the two Lean CI build-module lists conflicted; both ChangedLines and GlobSelection entries were retained. Generator/lake/Python registry order merged consistently. Five target/oracle integration suites (63 tests), 40 Python CI contract tests, both exact Clippy gates, both formatting gates and whitespace checks passed after this merge. Lean models/corpora were unchanged. Evidence: `612-main-merge-*.log`.
+
+## Raw byte row conversion
+
+The row model tokenizes CRLF as a single delimiter, then partitions the same
+token stream in two ways. Git rows end at LF or CRLF. Python rows also end at
+a standalone CR. Delimiters belong to the row they end, so a terminal newline
+does not create an additional empty row. A Git range maps to the first Python
+row in its starting Git row and the last Python row in its ending Git row.
+The conversion counts skipped Git rows when locating a later range.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Current source | Raw bytes classified as payload, CR, or LF | Bytes passed unchanged to `physical_line_count` and `translate` |
+| Requested Git rows | Ordered list of one-based inclusive intervals | Typed `LineRange` values at the existing cursor seam |
+| Complete outcome | Count, translated intervals, or first diagnostic | Rust count and ordered range list or exact `TargetError::GitFailed` |
+
+Lean proves a general partition theorem. When one delimiter set includes the
+other, cutting each outer row with the larger set yields the same rows as a
+single cut over the input. Applied here, each Git row contains at least one
+Python row, and their counts sum to the physical line count. Prefix counts are
+monotone, so disjoint ordered Git ranges translate to disjoint ordered Python
+ranges. A valid nonempty Git range always maps to a nonempty span within the
+physical line count. These theorems have no bound on the number of bytes or rows.
+
+The 374 `internal-fixture` cases include every byte sequence of length zero
+through five over payload, CR, and LF. For each, the corpus checks the empty
+query, all single intervals with endpoints from zero through one past the last
+Git row, and every pair of valid ordered disjoint intervals. The total is 8,139
+queries. Ten additional cases include skipped standalone CRs, overlaps, rewinds,
+`u32::MAX` endpoints, competing diagnostics, and bytes outside the three-symbol
+domain. The owned cursor rejects malformed intervals and ranges beyond the
+current bytes. Overlaps and rewinds exercise the internal seam. Public target
+resolution supplies normalized ranges. The existing public changed-line oracle
+also covers candidate selection from real Git repositories.
+
+Six sensitivity witnesses detect counting LF only, double-counting CRLF,
+adding a phantom trailing row, losing CRs in skipped rows, allowing the cursor
+to rewind, and clipping intervals to EOF.
+
+Rust matched all 374 source counts and all 8,139 query results. On macOS,
+113 Git unit tests and 43 integration tests passed. The final Lean checks ran
+serially with a 20-second timeout and 2 GiB RSS ceiling and peaked at
+1,288,032 KiB. The single-job Rust checks peaked at 2,160,880 KiB under a
+3 GiB ceiling.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-physical-rows corpus/git-physical-rows.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --physical-rows-stats)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test lean_changed_lines_oracle
+```
+
+## Current worktree collection
+
+The collector for untracked paths and the unborn index first decodes the whole
+NUL-delimited inventory. An empty explicit scope still validates its encoding
+and then skips opening the repository root. A scoped target authorizes a read
+when its path appears in the inventory and it includes at least one positive
+line. A target without explicit lines authorizes the whole file. Each regular,
+nonempty file without NUL bytes contributes its complete physical row range.
+The final target intersection applies explicit line restrictions after collection.
+
+| Premise or observation | Lean representation | Rust correspondence |
+| --- | --- | --- |
+| Inventory and scope | Typed path records and optional target slices | Exact bytes and target slices passed to `collect_current_worktree_paths` |
+| Current root and paths | Available or absent root, and path entries for contents, directory or blocked parent | Isolated temporary filesystem and real `PortableFileReader` |
+| Success | Existing changes followed by complete physical spans for collected files | Complete ordered range vectors in the resulting map |
+| Failure | First diagnostic and original changes | Stable operation and path from `TargetError::GitFailed` and the full map |
+
+Lean proves that an empty scope still validates the inventory, a regular
+nonempty file with no NUL contributes its full physical span, and a fatal read
+after any successful prefix returns that failure with the original change map.
+The five sensitivity checks detect skipping validation for empty scope, skipping scope,
+intersecting ranges at read time, including NUL-bearing content, and publishing
+partial results as files are read.
+
+The 134 `internal-fixture` cases include 120 combinations of scope, path lists,
+and file states, plus 14 named cases for validation order, root availability,
+and failure atomicity. Three cases use a regular file in place of a parent
+directory to reproduce a fatal parent-open error on Unix. Their Rust adapter
+runs on Unix. The remaining cases use portable fixtures. Git inventory
+production, platform case aliases, and concurrent source edits fall outside
+this model. The public integration suites exercise real Git inventories and
+their subsequent target intersection.
+
+On macOS, all 125 success cases and nine failure cases matched Rust. The Git
+unit suite passed 114 tests, and the three integration suites passed 57 tests.
+Lean commands ran serially under a 20-second deadline and 2 GiB RSS limit and
+peaked at 1,237,760 KiB. The single-job Rust checks peaked at 2,316,336 KiB under
+a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --check-git-worktree corpus/git-worktree.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_lines -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --lib target::git
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test changed_git_scope --test changed_excluded_paths --test lean_changed_lines_oracle
+```

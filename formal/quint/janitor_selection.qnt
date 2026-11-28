@@ -216,6 +216,14 @@ module JanitorSelection {
       publish({ ...scan, phase: EnumerationInterrupted }, saved)
     else advanceScenario
 
+  action stopAfterFirstMatch(phase: Phase): bool =
+    if (scan.phase == Scanning and scan.scans == 2 and scan.seen.size() == 1)
+      publish({ ...scan, phase: phase }, saved)
+    else advanceScenario
+
+  action partialEnumerationStep = stopAfterFirstMatch(EnumerationInterrupted)
+  action partialDeadlineStep = stopAfterFirstMatch(ExpiredDuringEnumeration)
+
   val publishedAfterCursor = scan.phase == Published and scan.cursorDeferred
   val wrapped = scan.phase == Published and scan.chosen.length() > 0 and
     scan.chosen.select(name => name <= startCursor.name).length() > 0
@@ -247,7 +255,7 @@ module JanitorSelection {
     scan.rawEntries >= scan.seen.size(),
     (scan.phase == NamespaceLimited) == (scan.rawEntries > namespaceLimit),
     scan.rawEntries <= namespaceLimit + 1,
-    Set(ExpiredStartup, ExpiredDuringEnumeration, CoordinatorBusy, SelectionReadFailed,
+    Set(ExpiredStartup, CoordinatorBusy, SelectionReadFailed,
       EnumerationFailed).contains(scan.phase) implies scan.rawEntries == 0,
     scan.complete == Set(Eof, BeforePersist, Published, PersistFailed, PersistTorn, PersistSyncFailed,
       ExpiredEof, ExpiredPersist).contains(scan.phase),

@@ -426,6 +426,69 @@ def stopHandler (state : State) (handler : Handler) : Verdict :=
   let next := clearPendingFor (releaseHandler state handler) handler
   accept (setHandler next handler .closed)
 
+structure PendingFinishWait where
+  session : State
+  waiterAlive : Bool := true
+  driverAlive : Bool := true
+
+def cancelFinishWait (pending : PendingFinishWait) : PendingFinishWait :=
+  { pending with waiterAlive := false }
+
+def dropFinishDriver (pending : PendingFinishWait) : PendingFinishWait :=
+  { cancelFinishWait pending with driverAlive := false }
+
+structure SettledFinishWait where
+  session : State
+  reply : Option Bool
+
+def settleFinishWait (pending : PendingFinishWait) (handler : Handler) (runId : Run)
+    (complete commit : Bool) : SettledFinishWait :=
+  let committed := if commit then (finishRun pending.session handler runId complete).state
+    else pending.session
+  { session := if pending.driverAlive then committed else (stopHandler committed handler).state
+    reply := if pending.waiterAlive then some commit else none }
+
+inductive FinishRelease where
+  | beforeDeadline | withinGrace | afterGrace
+  deriving DecidableEq
+
+structure FinishShutdown where
+  atReturn : State
+  settled : State
+  exitCode : Option Nat
+  sessionAcknowledged : Bool
+  commitFailureObserved : Bool
+
+-- The final output was already acknowledged and the finish transaction is pending.
+def finishAcrossShutdown (pending : PendingFinishWait) (handler : Handler) (runId : Run)
+    (release : FinishRelease) (complete commit : Bool) : FinishShutdown :=
+  let expired := decide (release = .afterGrace)
+  let waiting := if expired then dropFinishDriver pending else pending
+  let final := settleFinishWait waiting handler runId complete commit
+  { atReturn := if expired then pending.session else final.session
+    settled := final.session
+    exitCode := if expired then none else some (if commit then (if complete then 0 else 4) else 2)
+    sessionAcknowledged := !expired && commit
+    commitFailureObserved := !expired && !commit }
+
+structure PersistShutdown where
+  atReturn : State
+  settled : State
+  reported : Option Status
+  exitCode : Option Nat
+
+-- The fixture stops after at most one execution. SQLite and reporting settle separately.
+def persistAcrossShutdown (state : State) (handler : Handler) (runId : Run)
+    (mutant : Mutant) (status : Status) (release : FinishRelease) (commit : Bool) :
+    PersistShutdown :=
+  let expired := decide (release = .afterGrace)
+  let stored := if commit then (persistResult state handler runId mutant status .p1 .valid).state
+    else state
+  { atReturn := if expired then state else stored
+    settled := stored
+    reported := if expired then none else some status
+    exitCode := if expired then none else some (if commit && status != .error then 4 else 2) }
+
 def readLoadCandidate (state : State) (handler : Handler)
     (fingerprint : Fingerprint) : Verdict :=
   if !handlerLive state handler then

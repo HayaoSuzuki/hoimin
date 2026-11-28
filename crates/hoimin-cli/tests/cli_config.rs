@@ -7,6 +7,17 @@ use hoimin_cli::cli::{
 };
 use hoimin_core::{MutationOperator, MutationOperatorSelection, MutationProfile};
 
+#[path = "support/changed_config_oracle.rs"]
+mod changed_config_oracle;
+#[path = "support/import_root_oracle.rs"]
+mod import_root_oracle;
+#[path = "support/operator_selector_oracle.rs"]
+mod operator_selector_oracle;
+#[path = "support/resource_size_oracle.rs"]
+mod resource_size_oracle;
+#[path = "support/selector_syntax_oracle.rs"]
+mod selector_syntax_oracle;
+
 type ConfigParser = fn(
     &[&str],
 ) -> Result<

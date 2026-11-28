@@ -13,7 +13,7 @@ use crate::quint_itf::{number, set, states};
 use camino::Utf8Path;
 use hoimin_core::{JanitorReason, JanitorScan, JanitorSummary};
 use serde_json::Value;
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant, SystemTime};
 
@@ -83,7 +83,7 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
         deadline,
         &clock,
         &|| after_eof.set(Some(0)),
-        &|| {},
+        &|_| {},
     );
     guard.unlock(&coordinator.path).unwrap();
     assert_eq!(
@@ -136,6 +136,8 @@ pub(super) fn check_scan(coordinator: &ManagedRootCoordinator, expected: &Value)
 #[case::unavailable(include_str!("../../../../../../formal/quint/traces/janitor_selection_unavailableStep_0.itf.json"))]
 #[case::startup_stop(include_str!("../../../../../../formal/quint/traces/janitor_selection_startupStopsStep_0.itf.json"))]
 #[case::enumeration_failure(include_str!("../../../../../../formal/quint/traces/janitor_selection_enumerationErrorStep_0.itf.json"))]
+#[case::partial_enumeration(include_str!("../../../../../../formal/quint/traces/janitor_selection_partialEnumerationStep_0.itf.json"))]
+#[case::partial_deadline(include_str!("../../../../../../formal/quint/traces/janitor_selection_partialDeadlineStep_0.itf.json"))]
 fn quint_history_matches_candidate_selection(#[case] trace: &str) {
     replay_selection(trace);
 }
@@ -170,6 +172,12 @@ fn replay_selection(trace: &str) {
         update_listing(&coordinator, &mut previous, &scan["listing"]);
         assert_cursor(&coordinator, &row["startCursor"]);
         match phase {
+            "EnumerationInterrupted" | "ExpiredDuringEnumeration"
+                if !set(&scan["seen"]).is_empty()
+                    && set(&scan["seen"]).len() < set(&scan["listing"]).len() =>
+            {
+                check_partial_enumeration(&coordinator, scan, phase == "ExpiredDuringEnumeration");
+            }
             "PersistFailed" | "PersistTorn" | "PersistSyncFailed" => {
                 check_cursor_failure_handoff(&coordinator, scan, phase);
                 drop(coordinator);
@@ -237,6 +245,80 @@ fn check_unavailable(coordinator: &ManagedRootCoordinator, phase: &str, expected
     if let Some(guard) = guard {
         guard.unlock(&coordinator.path).unwrap();
     }
+    assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
+}
+
+fn check_partial_enumeration(
+    coordinator: &ManagedRootCoordinator,
+    expected: &Value,
+    expires: bool,
+) {
+    let expected_observed = set(&expected["seen"]).len();
+    let matching_names: BTreeSet<_> = set(&expected["listing"])
+        .iter()
+        .map(|rank| name(number(rank)))
+        .collect();
+    let before = coordinator.dir.read(COORDINATOR_FILE).unwrap();
+    let start = Instant::now();
+    let deadline = start + Duration::from_secs(1);
+    let check_after_entry = Cell::new(None);
+    let observed = Cell::new(0);
+    let fault = RefCell::new(None);
+    let report = ManagedRunRoot::reclaim_abandoned_with_clock_and_selection(
+        coordinator,
+        SystemTime::now(),
+        start,
+        &|_| Duration::ZERO,
+        &|scan| {
+            let guard = CoordinatorLockGuard::acquire(coordinator).unwrap();
+            let result = select_reclaim_candidates_locked_until_with_hooks(
+                coordinator,
+                scan,
+                deadline,
+                &|| match check_after_entry.get() {
+                    None => start,
+                    Some(false) => {
+                        check_after_entry.set(Some(true));
+                        start
+                    }
+                    Some(true) => deadline,
+                },
+                &|| {},
+                &|entry| {
+                    if entry
+                        .to_str()
+                        .is_some_and(|name| matching_names.contains(name))
+                    {
+                        observed.set(observed.get() + 1);
+                        if observed.get() == expected_observed {
+                            if expires {
+                                // Count this entry, then expire before fetching the next one.
+                                check_after_entry.set(Some(false));
+                            } else {
+                                fault.replace(Some(io_faults::arm("janitor.selection_next")));
+                            }
+                        }
+                    }
+                },
+            );
+            guard.unlock(&coordinator.path).unwrap();
+            result
+        },
+    );
+    let reason = if expires {
+        assert_eq!(check_after_entry.get(), Some(true));
+        JanitorReason::SelectionDeadline
+    } else {
+        assert!(fault.into_inner().unwrap().triggered());
+        JanitorReason::SelectionFailed
+    };
+    assert_eq!(observed.get(), expected_observed);
+    assert_scan_stopped(
+        &report,
+        reason,
+        &[reason],
+        u64::try_from(expected_observed).unwrap(),
+    );
     assert_eq!(coordinator.dir.read(COORDINATOR_FILE).unwrap(), before);
 }
 

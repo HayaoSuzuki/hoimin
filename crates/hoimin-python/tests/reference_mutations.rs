@@ -5,6 +5,12 @@ use hoimin_python::{
 };
 use proptest::prelude::*;
 
+#[path = "support/format_removal_oracle.rs"]
+mod format_removal_oracle;
+
+#[path = "support/symbol_catalog_oracle.rs"]
+mod symbol_catalog_oracle;
+
 const SITES: &[(MutationOperator, &str)] = &[
     (MutationOperator::FloatLiteralNeighbor, "value = 1.5\n"),
     (MutationOperator::BytesLiteralEmpty, "value = b'payload'\n"),

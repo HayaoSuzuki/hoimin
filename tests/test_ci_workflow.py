@@ -135,9 +135,45 @@ LEAN_CORPUS_BY_EXECUTABLE = {
     "generate_private_annotation_import": "corpus/private-annotation-import.jsonl",
     "generate_environment_fingerprint": "corpus/environment-fingerprint.jsonl",
     "generate_resume_diagnostic": "corpus/resume-diagnostic.jsonl",
+    "generate_run_fingerprint": "corpus/run-fingerprint.jsonl",
+    "generate_plan_records": "corpus/plan-records.jsonl",
+    "generate_plan_verify": "corpus/plan-verify.jsonl",
+    "generate_plan_discovery_budget": "corpus/plan-discovery-budget.jsonl",
+    "generate_verify_selection_flow": "corpus/verify-selection-flow.jsonl",
+    "generate_workspace_integrity": "corpus/workspace-integrity.jsonl",
+    "generate_workspace_restore": "corpus/workspace-restore.jsonl",
+    "generate_worker_recovery": "corpus/worker-recovery.jsonl",
+    "generate_workspace_capacity": "corpus/workspace-capacity.jsonl",
+    "generate_worker_grant_publication": "corpus/worker-grant-publication.jsonl",
+    "generate_workspace_mutation": "corpus/workspace-mutation.jsonl",
+    "generate_workspace_mutation_write": "corpus/workspace-mutation-write.jsonl",
+    "generate_worker_environment": "corpus/worker-environment.jsonl",
+    "generate_workspace_selection": "corpus/workspace-selection.jsonl",
+    "generate_fingerprint_preflight": "corpus/fingerprint-preflight.jsonl",
+    "generate_session_artifacts": "corpus/session-artifacts.jsonl",
+    "generate_session_admission": "corpus/session-admission.jsonl",
+    "generate_session_wal_admission": "corpus/session-wal-admission.jsonl",
+    "generate_session_wal_retry": "corpus/session-wal-retry.jsonl",
+    "generate_session_uri": "corpus/session-uri.jsonl",
+    "generate_session_header": "corpus/session-header.jsonl",
+    "generate_session_catalog": "corpus/session-catalog.jsonl",
+    "generate_session_configuration": "corpus/session-configuration.jsonl",
+    "generate_stored_result": "corpus/stored-result.jsonl",
+    "generate_resume_selection": "corpus/resume-selection.jsonl",
+    "generate_resume_recheck": "corpus/resume-recheck.jsonl",
+    "generate_finish_transaction": "corpus/finish-transaction.jsonl",
+    "generate_begin_transaction": "corpus/begin-transaction.jsonl",
+    "generate_persist_transaction": "corpus/persist-transaction.jsonl",
+    "generate_session_dispatch": "corpus/session-dispatch.jsonl",
+    "generate_process_group": "corpus/process-group.jsonl",
+    "generate_cgroup_cleanup": "corpus/cgroup-cleanup.jsonl",
+    "generate_cgroup_member": "corpus/cgroup-member.jsonl",
+    "generate_cgroup_lifecycle": "corpus/cgroup-lifecycle.jsonl",
+    "generate_cgroup_startup": "corpus/cgroup-startup.jsonl",
     "generate_exception_hierarchy": "corpus/exception-hierarchy.jsonl",
     "generate_sampling": "corpus/sampling.jsonl",
     "generate_reduce_spec": "corpus/reduce-spec.jsonl",
+    "generate_worker_metrics": "corpus/worker-metrics.jsonl",
 }
 LEAN_SENSITIVITY_EXECUTABLES = {
     name
@@ -1571,6 +1607,277 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
             for selected in (executable,)
             if selected in LEAN_SENSITIVITY_EXECUTABLES
         )
+    process_companions = {
+        "--check-drain": "corpus/process-output-drain.jsonl",
+        "--check-resume": "corpus/process-output-resume.jsonl",
+    }
+    expected_remaining.extend(
+        ["lake", "exe", "generate_process_output", "--", flag, corpus]
+        for flag, corpus in process_companions.items()
+    )
+    session_companions = {
+        "--check-load-recheck": "corpus/session-load-recheck.jsonl",
+        "--check-finish-wait": "corpus/session-finish-wait.jsonl",
+        "--check-finish-deadline": "corpus/session-finish-deadline.jsonl",
+        "--check-persist-deadline": "corpus/session-persist-deadline.jsonl",
+    }
+    expected_remaining.extend(
+        ["lake", "exe", "generate_session", "--", "--depth", "4", flag, corpus]
+        for flag, corpus in session_companions.items()
+    )
+    finalization_companions = [
+        ("generate_shutdown", "--check-metrics", "corpus/shutdown-metrics.jsonl"),
+        ("generate_worker_metrics", "--check-stages", "corpus/stage-metrics.jsonl"),
+        (
+            "generate_worker_metrics",
+            "--check-stages-cli",
+            "corpus/stage-metrics-cli.jsonl",
+        ),
+        (
+            "generate_worker_metrics",
+            "--check-validation",
+            "corpus/metrics-validation.jsonl",
+        ),
+        (
+            "generate_timeout_limit",
+            "--check-resource-sizes",
+            "corpus/resource-sizes.jsonl",
+        ),
+        (
+            "generate_timeout_limit",
+            "--check-snapshot-reads",
+            "corpus/snapshot-reads.jsonl",
+        ),
+        (
+            "generate_timeout_limit",
+            "--check-bounded-file-reads",
+            "corpus/bounded-file-reads.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-sources",
+            "corpus/review-sources.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-report-admission",
+            "corpus/review-report-admission.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-store-destination",
+            "corpus/review-store-destination.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-listing",
+            "corpus/review-listing.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-record",
+            "corpus/review-record.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-store-publication",
+            "corpus/review-store-publication.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-store-admission",
+            "corpus/review-store-admission.jsonl",
+        ),
+        (
+            "generate_survivor_review",
+            "--check-review-store-snapshot",
+            "corpus/review-store-snapshot.jsonl",
+        ),
+        (
+            "generate_progress_input",
+            "--check-duplicates",
+            "corpus/progress-duplicates.jsonl",
+        ),
+        (
+            "generate_progress_input",
+            "--check-buffered-comparison",
+            "corpus/progress-buffered-comparison.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-source-coordinates",
+            "corpus/source-coordinates.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-source-declaration",
+            "corpus/source-declaration.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-delimiter-depth",
+            "corpus/delimiter-depth.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-source-escape",
+            "corpus/source-escape.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-regex-literal-span",
+            "corpus/regex-literal-span.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-format-spec",
+            "corpus/format-spec.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-format-removal",
+            "corpus/format-removal.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-ast-depth",
+            "corpus/ast-depth.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-symbol-catalog",
+            "corpus/symbol-catalog.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-candidate-selection",
+            "corpus/candidate-selection.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-source-locations",
+            "corpus/source-locations.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-candidate-locations",
+            "corpus/candidate-locations.jsonl",
+        ),
+        (
+            "generate_candidate_span",
+            "--check-analyzer-source-admission",
+            "corpus/analyzer-source-admission.jsonl",
+        ),
+        (
+            "generate_exception_hierarchy",
+            "--check-acquisition",
+            "corpus/exception-acquisition.jsonl",
+        ),
+        (
+            "generate_environment_fingerprint",
+            "--check-import-roots",
+            "corpus/import-roots.jsonl",
+        ),
+        (
+            "generate_environment_fingerprint",
+            "--check-operator-selectors",
+            "corpus/operator-selectors.jsonl",
+        ),
+        (
+            "generate_environment_fingerprint",
+            "--check-relative-path",
+            "corpus/relative-path.jsonl",
+        ),
+        (
+            "generate_environment_fingerprint",
+            "--check-target-path",
+            "corpus/target-path.jsonl",
+        ),
+        ("generate_changed_context", "--check-config", "corpus/changed-config.jsonl"),
+        (
+            "generate_changed_context",
+            "--check-selector-syntax",
+            "corpus/selector-syntax.jsonl",
+        ),
+        (
+            "generate_changed_context",
+            "--check-symbol-resolution",
+            "corpus/symbol-resolution.jsonl",
+        ),
+        (
+            "generate_changed_context",
+            "--check-discovery-scope",
+            "corpus/discovery-scope.jsonl",
+        ),
+        (
+            "generate_changed_context",
+            "--check-bounded-file-discovery",
+            "corpus/bounded-file-discovery.jsonl",
+        ),
+        (
+            "generate_changed_context",
+            "--check-line-coverage",
+            "corpus/line-coverage.jsonl",
+        ),
+        (
+            "generate_changed_context",
+            "--check-git-inventory",
+            "corpus/git-inventory.jsonl",
+        ),
+        ("generate_changed_context", "--check-git-patch", "corpus/git-patch.jsonl"),
+        ("generate_changed_context", "--check-git-quote", "corpus/git-quote.jsonl"),
+        ("generate_changed_context", "--check-git-numstat", "corpus/git-numstat.jsonl"),
+        (
+            "generate_changed_lines",
+            "--check-physical-rows",
+            "corpus/git-physical-rows.jsonl",
+        ),
+        ("generate_changed_lines", "--check-git-worktree", "corpus/git-worktree.jsonl"),
+        (
+            "generate_changed_lines",
+            "--check-git-tracked-rows",
+            "corpus/git-tracked-rows.jsonl",
+        ),
+        (
+            "generate_changed_lines",
+            "--check-git-resolution",
+            "corpus/git-resolution.jsonl",
+        ),
+        ("generate_changed_lines", "--check-git-capture", "corpus/git-capture.jsonl"),
+        (
+            "generate_changed_lines",
+            "--check-git-lifecycle",
+            "corpus/git-lifecycle.jsonl",
+        ),
+        (
+            "generate_changed_lines",
+            "--check-git-admission",
+            "corpus/git-admission.jsonl",
+        ),
+        (
+            "generate_resume_budget",
+            "--check-recheck",
+            "corpus/resume-budget-recheck.jsonl",
+        ),
+    ]
+    expected_remaining.extend(
+        ["lake", "exe", executable, "--", flag, corpus]
+        for executable, flag, corpus in finalization_companions
+    )
+    disk_companions = {
+        "--check-report-evidence": "corpus/disk-report-evidence.jsonl",
+        "--check-finalization-errors": "corpus/disk-finalization-errors.jsonl",
+        "--check-meter": "corpus/disk-meter.jsonl",
+        "--check-statistics": "corpus/disk-statistics.jsonl",
+        "--check-final-capacity": "corpus/disk-final-capacity.jsonl",
+        "--check-delivery": "corpus/disk-delivery.jsonl",
+        "--check-report-admission": "corpus/report-admission.jsonl",
+        "--check-report-recovery": "corpus/report-recovery.jsonl",
+    }
+    expected_remaining.extend(
+        ["lake", "exe", "generate_disk_guard", "--", flag, corpus]
+        for flag, corpus in disk_companions.items()
+    )
     corpus_paths = {
         path.relative_to(LEAN_ORACLE).as_posix()
         for path in (LEAN_ORACLE / "corpus").glob("*.jsonl")
@@ -1606,7 +1913,14 @@ def test_bounded_audit_covers_every_module_and_generator(tmp_path: Path) -> None
     ), "dependencies must be built before their importers"
     assert executable_names == list(LEAN_CORPUS_BY_EXECUTABLE)
     assert guarded_commands[module_count:] == expected_remaining
-    assert set(LEAN_CORPUS_BY_EXECUTABLE.values()) == corpus_paths
+    assert (
+        set(LEAN_CORPUS_BY_EXECUTABLE.values())
+        | set(process_companions.values())
+        | set(disk_companions.values())
+        | set(session_companions.values())
+        | {corpus for _, _, corpus in finalization_companions}
+        == corpus_paths
+    )
 
 
 def test_bounded_audit_stops_after_the_first_failed_gate(tmp_path: Path) -> None:

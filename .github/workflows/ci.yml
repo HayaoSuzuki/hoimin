@@ -427,6 +427,22 @@ jobs:
             HoiminOracle.SurvivorReviewModel
             HoiminOracle.SurvivorReviewProofs
             HoiminOracle.SurvivorReviewCases
+            HoiminOracle.ReviewSourceModel
+            HoiminOracle.ReviewSourceCases
+            HoiminOracle.ReviewReportAdmissionModel
+            HoiminOracle.ReviewReportAdmissionCases
+            HoiminOracle.ReviewStoreDestinationModel
+            HoiminOracle.ReviewStoreDestinationCases
+            HoiminOracle.ReviewListingModel
+            HoiminOracle.ReviewListingCases
+            HoiminOracle.ReviewRecordModel
+            HoiminOracle.ReviewRecordCases
+            HoiminOracle.ReviewStorePublicationModel
+            HoiminOracle.ReviewStorePublicationCases
+            HoiminOracle.ReviewStoreAdmissionModel
+            HoiminOracle.ReviewStoreAdmissionCases
+            HoiminOracle.ReviewStoreSnapshotModel
+            HoiminOracle.ReviewStoreSnapshotCases
             SurvivorReviewAuditMain
             HoiminOracle.SamplingModel
             HoiminOracle.BindingFlowModel
@@ -513,12 +529,12 @@ jobs:
             HoiminOracle.NestedMatchExitModel
             HoiminOracle.NestedTryFlowProofs
             HoiminOracle.OutputRetentionCases
-            HoiminOracle.ProcessOutputCases
             HoiminOracle.ProgressDecisionCases
             HoiminOracle.ReportSequenceCases
             HoiminOracle.ResultLifecycleCases
             HoiminOracle.SchemaMigrationCases
             HoiminOracle.SessionCases
+            HoiminOracle.ProcessOutputCases
             HoiminOracle.ShutdownCases
             HoiminOracle.TimeoutLimitCases
             HoiminOracle.TopBudgetProjectionCases
@@ -533,8 +549,13 @@ jobs:
             ResumeBudgetAuditMain
             HoiminOracle.ResumeDiagnosticModel
             ResumeDiagnosticAuditMain
+            HoiminOracle.RunFingerprintModel
+            HoiminOracle.RunFingerprintCases
+            RunFingerprintAuditMain
             HoiminOracle.ExceptionHierarchyModel
             HoiminOracle.ExceptionHierarchyProofs
+            HoiminOracle.ExceptionAcquisitionModel
+            HoiminOracle.ExceptionAcquisitionCases
             ExceptionHierarchyAuditMain
             CandidateRankingAuditMain
             PagingAuditMain
@@ -542,9 +563,69 @@ jobs:
             MethodCallRemoveAuditMain
             FunctionReturnConstantAuditMain
             SourceOrderAuditMain
+            HoiminOracle.SourceCoordinatesModel
+            HoiminOracle.SourceCoordinatesCases
+            HoiminOracle.SourceDeclarationModel
+            HoiminOracle.SourceDeclarationCases
+            HoiminOracle.DelimiterDepthModel
+            HoiminOracle.DelimiterDepthCases
+            HoiminOracle.SourceEscapeModel
+            HoiminOracle.SourceEscapeCases
+            HoiminOracle.RegexLiteralSpanModel
+            HoiminOracle.RegexLiteralSpanCases
+            HoiminOracle.FormatSpecModel
+            HoiminOracle.FormatSpecCases
+            HoiminOracle.FormatRemovalModel
+            HoiminOracle.FormatRemovalCases
+            HoiminOracle.AstDepthModel
+            HoiminOracle.AstDepthCases
+            HoiminOracle.SymbolCatalogModel
+            HoiminOracle.SymbolCatalogCases
+            HoiminOracle.LineCoverageModel
+            HoiminOracle.CandidateSelectionModel
+            HoiminOracle.CandidateSelectionCases
+            HoiminOracle.SourceLocationModel
+            HoiminOracle.SourceLocationCases
+            HoiminOracle.AnalyzerSourceAdmissionModel
+            HoiminOracle.AnalyzerSourceAdmissionCases
             CandidateSpanAuditMain
             ChangedTargetAuditMain
+            HoiminOracle.ChangedConfigModel
+            HoiminOracle.ChangedConfigCases
+            HoiminOracle.SelectorSyntaxModel
+            HoiminOracle.SelectorSyntaxCases
+            HoiminOracle.PathOrderModel
+            HoiminOracle.SymbolResolutionModel
+            HoiminOracle.SymbolResolutionCases
+            HoiminOracle.ImportRootModel
+            HoiminOracle.DiscoveryScopeModel
+            HoiminOracle.DiscoveryScopeCases
+            HoiminOracle.BoundedFileDiscoveryModel
+            HoiminOracle.BoundedFileDiscoveryCases
+            HoiminOracle.LineCoverageCases
+            HoiminOracle.GitInventoryModel
+            HoiminOracle.GitInventoryCases
+            HoiminOracle.GitPatchModel
+            HoiminOracle.GitPatchCases
+            HoiminOracle.GitQuoteModel
+            HoiminOracle.GitQuoteCases
+            HoiminOracle.GitNumstatModel
+            HoiminOracle.GitNumstatCases
             ChangedContextAuditMain
+            HoiminOracle.GitPhysicalRowsModel
+            HoiminOracle.GitPhysicalRowsCases
+            HoiminOracle.GitWorktreeModel
+            HoiminOracle.GitWorktreeCases
+            HoiminOracle.GitTrackedRowsModel
+            HoiminOracle.GitTrackedRowsCases
+            HoiminOracle.GitResolutionModel
+            HoiminOracle.GitResolutionCases
+            HoiminOracle.GitCaptureModel
+            HoiminOracle.GitCaptureCases
+            HoiminOracle.GitLifecycleModel
+            HoiminOracle.GitLifecycleCases
+            HoiminOracle.GitAdmissionModel
+            HoiminOracle.GitAdmissionCases
             ChangedLinesAuditMain
             GlobSelectionAuditMain
             CleanupCapabilityAuditMain
@@ -564,12 +645,22 @@ jobs:
             HoiminOracle.ProgressInputModel
             HoiminOracle.ProgressInputProofs
             HoiminOracle.ProgressInputCases
+            HoiminOracle.ProgressDuplicateModel
+            HoiminOracle.ProgressDuplicateCases
+            HoiminOracle.BufferedComparisonModel
+            HoiminOracle.BufferedComparisonCases
             ProgressInputAuditMain
             ReportSequenceAuditMain
             ResultLifecycleAuditMain
             SchemaMigrationAuditMain
             SessionAuditMain
             ShutdownAuditMain
+            HoiminOracle.ResourceSizeModel
+            HoiminOracle.ResourceSizeCases
+            HoiminOracle.SnapshotReadModel
+            HoiminOracle.SnapshotReadCases
+            HoiminOracle.BoundedFileReadModel
+            HoiminOracle.BoundedFileReadCases
             TimeoutLimitAuditMain
             TopBudgetProjectionAuditMain
             WorkspaceAuditMain
@@ -607,7 +698,123 @@ jobs:
             HoiminOracle.NullableGateModel
             NullableGateAuditMain
             HoiminOracle.EnvironmentFingerprintModel
+            HoiminOracle.ImportRootCases
+            HoiminOracle.OperatorSelectorModel
+            HoiminOracle.OperatorSelectorCases
+            HoiminOracle.RelativePathModel
+            HoiminOracle.PlanRecordsModel
+            HoiminOracle.PlanRecordsCases
+            PlanRecordsAuditMain
+            HoiminOracle.PlanVerifyModel
+            HoiminOracle.PlanVerifyCases
+            PlanVerifyAuditMain
+            HoiminOracle.PlanDiscoveryBudgetModel
+            HoiminOracle.PlanDiscoveryBudgetCases
+            PlanDiscoveryBudgetAuditMain
+            HoiminOracle.VerifySelectionFlowModel
+            HoiminOracle.VerifySelectionFlowCases
+            VerifySelectionFlowAuditMain
+            HoiminOracle.WorkspaceIntegrityModel
+            HoiminOracle.WorkspaceIntegrityCases
+            WorkspaceIntegrityAuditMain
+            HoiminOracle.WorkspaceRestoreModel
+            HoiminOracle.WorkspaceRestoreCases
+            WorkspaceRestoreAuditMain
+            HoiminOracle.WorkerRecoveryModel
+            HoiminOracle.WorkerRecoveryCases
+            WorkerRecoveryAuditMain
+            HoiminOracle.WorkspaceCapacityModel
+            HoiminOracle.WorkspaceCapacityCases
+            WorkspaceCapacityAuditMain
+            HoiminOracle.WorkerGrantPublicationModel
+            HoiminOracle.WorkerGrantPublicationCases
+            WorkerGrantPublicationAuditMain
+            HoiminOracle.WorkspaceMutationModel
+            HoiminOracle.WorkspaceMutationCases
+            WorkspaceMutationAuditMain
+            HoiminOracle.WorkspaceMutationWriteModel
+            HoiminOracle.WorkspaceMutationWriteCases
+            WorkspaceMutationWriteAuditMain
+            HoiminOracle.WorkerEnvironmentModel
+            HoiminOracle.WorkerEnvironmentCases
+            WorkerEnvironmentAuditMain
+            HoiminOracle.WorkspaceSelectionModel
+            HoiminOracle.WorkspaceSelectionCases
+            WorkspaceSelectionAuditMain
+            HoiminOracle.FingerprintPreflightModel
+            HoiminOracle.FingerprintPreflightCases
+            FingerprintPreflightAuditMain
+            HoiminOracle.SessionArtifactsModel
+            HoiminOracle.SessionArtifactsCases
+            SessionArtifactsAuditMain
+            HoiminOracle.SessionAdmissionModel
+            HoiminOracle.SessionAdmissionCases
+            SessionAdmissionAuditMain
+            HoiminOracle.SessionWalAdmissionModel
+            HoiminOracle.SessionWalAdmissionCases
+            SessionWalAdmissionAuditMain
+            HoiminOracle.SessionWalRetryModel
+            HoiminOracle.SessionWalRetryCases
+            SessionWalRetryAuditMain
+            HoiminOracle.SessionUriModel
+            HoiminOracle.SessionUriCases
+            SessionUriAuditMain
+            HoiminOracle.SessionHeaderModel
+            HoiminOracle.SessionHeaderCases
+            SessionHeaderAuditMain
+            HoiminOracle.SessionCatalogModel
+            HoiminOracle.SessionCatalogCases
+            SessionCatalogAuditMain
+            HoiminOracle.SessionConfigurationModel
+            HoiminOracle.SessionConfigurationCases
+            SessionConfigurationAuditMain
+            HoiminOracle.StoredResultModel
+            HoiminOracle.StoredResultCases
+            StoredResultAuditMain
+            HoiminOracle.ResumeSelectionModel
+            HoiminOracle.ResumeSelectionCases
+            ResumeSelectionAuditMain
+            HoiminOracle.ResumeRecheckModel
+            HoiminOracle.ResumeRecheckCases
+            ResumeRecheckAuditMain
+            HoiminOracle.FinishTransactionModel
+            HoiminOracle.FinishTransactionCases
+            FinishTransactionAuditMain
+            HoiminOracle.BeginTransactionModel
+            HoiminOracle.BeginTransactionCases
+            BeginTransactionAuditMain
+            HoiminOracle.PersistTransactionModel
+            HoiminOracle.PersistTransactionCases
+            PersistTransactionAuditMain
+            HoiminOracle.SessionDispatchModel
+            HoiminOracle.SessionDispatchCases
+            SessionDispatchAuditMain
+            HoiminOracle.ProcessGroupModel
+            HoiminOracle.ProcessGroupCases
+            ProcessGroupAuditMain
+            HoiminOracle.CgroupCleanupModel
+            HoiminOracle.CgroupCleanupCases
+            CgroupCleanupAuditMain
+            HoiminOracle.CgroupMemberModel
+            HoiminOracle.CgroupMemberCases
+            CgroupMemberAuditMain
+            HoiminOracle.CgroupLifecycleModel
+            HoiminOracle.CgroupLifecycleCases
+            CgroupLifecycleAuditMain
+            HoiminOracle.CgroupStartupModel
+            HoiminOracle.CgroupStartupCases
+            CgroupStartupAuditMain
+            HoiminOracle.RelativePathCases
+            HoiminOracle.TargetPathModel
+            HoiminOracle.TargetPathCases
             EnvironmentFingerprintAuditMain
+            HoiminOracle.WorkerMetricsModel
+            HoiminOracle.WorkerMetricsProofs
+            HoiminOracle.StageMetricsModel
+            HoiminOracle.StageMetricsCases
+            HoiminOracle.MetricsValidationModel
+            HoiminOracle.MetricsValidationCases
+            WorkerMetricsAuditMain
             HoiminOracle
             MultipleHandlerJoinAuditMain
             NestedMatchExitAuditMain
@@ -679,9 +886,45 @@ jobs:
             'generate_private_annotation_import|corpus/private-annotation-import.jsonl|sensitivity'
             'generate_environment_fingerprint|corpus/environment-fingerprint.jsonl|sensitivity'
             'generate_resume_diagnostic|corpus/resume-diagnostic.jsonl|sensitivity'
+            'generate_run_fingerprint|corpus/run-fingerprint.jsonl|sensitivity'
+            'generate_plan_records|corpus/plan-records.jsonl|sensitivity'
+            'generate_plan_verify|corpus/plan-verify.jsonl|sensitivity'
+            'generate_plan_discovery_budget|corpus/plan-discovery-budget.jsonl|sensitivity'
+            'generate_verify_selection_flow|corpus/verify-selection-flow.jsonl|sensitivity'
+            'generate_workspace_integrity|corpus/workspace-integrity.jsonl|sensitivity'
+            'generate_workspace_restore|corpus/workspace-restore.jsonl|sensitivity'
+            'generate_worker_recovery|corpus/worker-recovery.jsonl|sensitivity'
+            'generate_workspace_capacity|corpus/workspace-capacity.jsonl|sensitivity'
+            'generate_worker_grant_publication|corpus/worker-grant-publication.jsonl|sensitivity'
+            'generate_workspace_mutation|corpus/workspace-mutation.jsonl|sensitivity'
+            'generate_workspace_mutation_write|corpus/workspace-mutation-write.jsonl|sensitivity'
+            'generate_worker_environment|corpus/worker-environment.jsonl|sensitivity'
+            'generate_workspace_selection|corpus/workspace-selection.jsonl|sensitivity'
+            'generate_fingerprint_preflight|corpus/fingerprint-preflight.jsonl|sensitivity'
+            'generate_session_artifacts|corpus/session-artifacts.jsonl|sensitivity'
+            'generate_session_admission|corpus/session-admission.jsonl|sensitivity'
+            'generate_session_wal_admission|corpus/session-wal-admission.jsonl|sensitivity'
+            'generate_session_wal_retry|corpus/session-wal-retry.jsonl|sensitivity'
+            'generate_session_uri|corpus/session-uri.jsonl|sensitivity'
+            'generate_session_header|corpus/session-header.jsonl|sensitivity'
+            'generate_session_catalog|corpus/session-catalog.jsonl|sensitivity'
+            'generate_session_configuration|corpus/session-configuration.jsonl|sensitivity'
+            'generate_stored_result|corpus/stored-result.jsonl|sensitivity'
+            'generate_resume_selection|corpus/resume-selection.jsonl|sensitivity'
+            'generate_resume_recheck|corpus/resume-recheck.jsonl|sensitivity'
+            'generate_finish_transaction|corpus/finish-transaction.jsonl|sensitivity'
+            'generate_begin_transaction|corpus/begin-transaction.jsonl|sensitivity'
+            'generate_persist_transaction|corpus/persist-transaction.jsonl|sensitivity'
+            'generate_session_dispatch|corpus/session-dispatch.jsonl|sensitivity'
+            'generate_process_group|corpus/process-group.jsonl|sensitivity'
+            'generate_cgroup_cleanup|corpus/cgroup-cleanup.jsonl|sensitivity'
+            'generate_cgroup_member|corpus/cgroup-member.jsonl|sensitivity'
+            'generate_cgroup_lifecycle|corpus/cgroup-lifecycle.jsonl|sensitivity'
+            'generate_cgroup_startup|corpus/cgroup-startup.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'
+            'generate_worker_metrics|corpus/worker-metrics.jsonl|sensitivity'
           )
           for entry in "${generators[@]}"; do
             IFS='|' read -r executable corpus sensitivity <<< "$entry"
@@ -692,6 +935,140 @@ jobs:
                 lake exe "$executable" -- --sensitivity
             fi
           done
+          run_guard check-process-output-drain \
+            lake exe generate_process_output -- --check-drain corpus/process-output-drain.jsonl
+          run_guard check-process-output-resume \
+            lake exe generate_process_output -- --check-resume corpus/process-output-resume.jsonl
+          run_guard check-session-load-recheck \
+            lake exe generate_session -- --depth 4 --check-load-recheck corpus/session-load-recheck.jsonl
+          run_guard check-session-finish-wait \
+            lake exe generate_session -- --depth 4 --check-finish-wait corpus/session-finish-wait.jsonl
+          run_guard check-session-finish-deadline \
+            lake exe generate_session -- --depth 4 --check-finish-deadline corpus/session-finish-deadline.jsonl
+          run_guard check-session-persist-deadline \
+            lake exe generate_session -- --depth 4 --check-persist-deadline corpus/session-persist-deadline.jsonl
+          run_guard check-shutdown-metrics \
+            lake exe generate_shutdown -- --check-metrics corpus/shutdown-metrics.jsonl
+          run_guard check-stage-metrics \
+            lake exe generate_worker_metrics -- --check-stages corpus/stage-metrics.jsonl
+          run_guard check-stage-metrics-cli \
+            lake exe generate_worker_metrics -- --check-stages-cli corpus/stage-metrics-cli.jsonl
+          run_guard check-metrics-validation \
+            lake exe generate_worker_metrics -- --check-validation corpus/metrics-validation.jsonl
+          run_guard check-resource-sizes \
+            lake exe generate_timeout_limit -- --check-resource-sizes corpus/resource-sizes.jsonl
+          run_guard check-snapshot-reads \
+            lake exe generate_timeout_limit -- --check-snapshot-reads corpus/snapshot-reads.jsonl
+          run_guard check-bounded-file-reads \
+            lake exe generate_timeout_limit -- --check-bounded-file-reads corpus/bounded-file-reads.jsonl
+          run_guard check-review-sources \
+            lake exe generate_survivor_review -- --check-review-sources corpus/review-sources.jsonl
+          run_guard check-review-report-admission \
+            lake exe generate_survivor_review -- --check-review-report-admission corpus/review-report-admission.jsonl
+          run_guard check-review-store-destination \
+            lake exe generate_survivor_review -- --check-review-store-destination corpus/review-store-destination.jsonl
+          run_guard check-review-listing \
+            lake exe generate_survivor_review -- --check-review-listing corpus/review-listing.jsonl
+          run_guard check-review-record \
+            lake exe generate_survivor_review -- --check-review-record corpus/review-record.jsonl
+          run_guard check-review-store-publication \
+            lake exe generate_survivor_review -- --check-review-store-publication corpus/review-store-publication.jsonl
+          run_guard check-review-store-admission \
+            lake exe generate_survivor_review -- --check-review-store-admission corpus/review-store-admission.jsonl
+          run_guard check-review-store-snapshot \
+            lake exe generate_survivor_review -- --check-review-store-snapshot corpus/review-store-snapshot.jsonl
+          run_guard check-progress-duplicates \
+            lake exe generate_progress_input -- --check-duplicates corpus/progress-duplicates.jsonl
+          run_guard check-progress-buffered-comparison \
+            lake exe generate_progress_input -- --check-buffered-comparison corpus/progress-buffered-comparison.jsonl
+          run_guard check-source-coordinates \
+            lake exe generate_candidate_span -- --check-source-coordinates corpus/source-coordinates.jsonl
+          run_guard check-source-declaration \
+            lake exe generate_candidate_span -- --check-source-declaration corpus/source-declaration.jsonl
+          run_guard check-delimiter-depth \
+            lake exe generate_candidate_span -- --check-delimiter-depth corpus/delimiter-depth.jsonl
+          run_guard check-source-escape \
+            lake exe generate_candidate_span -- --check-source-escape corpus/source-escape.jsonl
+          run_guard check-regex-literal-span \
+            lake exe generate_candidate_span -- --check-regex-literal-span corpus/regex-literal-span.jsonl
+          run_guard check-format-spec \
+            lake exe generate_candidate_span -- --check-format-spec corpus/format-spec.jsonl
+          run_guard check-format-removal \
+            lake exe generate_candidate_span -- --check-format-removal corpus/format-removal.jsonl
+          run_guard check-ast-depth \
+            lake exe generate_candidate_span -- --check-ast-depth corpus/ast-depth.jsonl
+          run_guard check-symbol-catalog \
+            lake exe generate_candidate_span -- --check-symbol-catalog corpus/symbol-catalog.jsonl
+          run_guard check-candidate-selection \
+            lake exe generate_candidate_span -- --check-candidate-selection corpus/candidate-selection.jsonl
+          run_guard check-source-locations \
+            lake exe generate_candidate_span -- --check-source-locations corpus/source-locations.jsonl
+          run_guard check-candidate-locations \
+            lake exe generate_candidate_span -- --check-candidate-locations corpus/candidate-locations.jsonl
+          run_guard check-analyzer-source-admission \
+            lake exe generate_candidate_span -- --check-analyzer-source-admission corpus/analyzer-source-admission.jsonl
+          run_guard check-exception-acquisition \
+            lake exe generate_exception_hierarchy -- --check-acquisition corpus/exception-acquisition.jsonl
+          run_guard check-import-roots \
+            lake exe generate_environment_fingerprint -- --check-import-roots corpus/import-roots.jsonl
+          run_guard check-operator-selectors \
+            lake exe generate_environment_fingerprint -- --check-operator-selectors corpus/operator-selectors.jsonl
+          run_guard check-relative-path \
+            lake exe generate_environment_fingerprint -- --check-relative-path corpus/relative-path.jsonl
+          run_guard check-target-path \
+            lake exe generate_environment_fingerprint -- --check-target-path corpus/target-path.jsonl
+          run_guard check-changed-config \
+            lake exe generate_changed_context -- --check-config corpus/changed-config.jsonl
+          run_guard check-selector-syntax \
+            lake exe generate_changed_context -- --check-selector-syntax corpus/selector-syntax.jsonl
+          run_guard check-symbol-resolution \
+            lake exe generate_changed_context -- --check-symbol-resolution corpus/symbol-resolution.jsonl
+          run_guard check-discovery-scope \
+            lake exe generate_changed_context -- --check-discovery-scope corpus/discovery-scope.jsonl
+          run_guard check-bounded-file-discovery \
+            lake exe generate_changed_context -- --check-bounded-file-discovery corpus/bounded-file-discovery.jsonl
+          run_guard check-line-coverage \
+            lake exe generate_changed_context -- --check-line-coverage corpus/line-coverage.jsonl
+          run_guard check-git-inventory \
+            lake exe generate_changed_context -- --check-git-inventory corpus/git-inventory.jsonl
+          run_guard check-git-patch \
+            lake exe generate_changed_context -- --check-git-patch corpus/git-patch.jsonl
+          run_guard check-git-quote \
+            lake exe generate_changed_context -- --check-git-quote corpus/git-quote.jsonl
+          run_guard check-git-numstat \
+            lake exe generate_changed_context -- --check-git-numstat corpus/git-numstat.jsonl
+          run_guard check-git-physical-rows \
+            lake exe generate_changed_lines -- --check-physical-rows corpus/git-physical-rows.jsonl
+          run_guard check-git-worktree \
+            lake exe generate_changed_lines -- --check-git-worktree corpus/git-worktree.jsonl
+          run_guard check-git-tracked-rows \
+            lake exe generate_changed_lines -- --check-git-tracked-rows corpus/git-tracked-rows.jsonl
+          run_guard check-git-resolution \
+            lake exe generate_changed_lines -- --check-git-resolution corpus/git-resolution.jsonl
+          run_guard check-git-capture \
+            lake exe generate_changed_lines -- --check-git-capture corpus/git-capture.jsonl
+          run_guard check-git-lifecycle \
+            lake exe generate_changed_lines -- --check-git-lifecycle corpus/git-lifecycle.jsonl
+          run_guard check-git-admission \
+            lake exe generate_changed_lines -- --check-git-admission corpus/git-admission.jsonl
+          run_guard check-resume-budget-recheck \
+            lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
+          run_guard check-disk-report-evidence \
+            lake exe generate_disk_guard -- --check-report-evidence corpus/disk-report-evidence.jsonl
+          run_guard check-disk-finalization-errors \
+            lake exe generate_disk_guard -- --check-finalization-errors corpus/disk-finalization-errors.jsonl
+          run_guard check-disk-meter \
+            lake exe generate_disk_guard -- --check-meter corpus/disk-meter.jsonl
+          run_guard check-disk-statistics \
+            lake exe generate_disk_guard -- --check-statistics corpus/disk-statistics.jsonl
+          run_guard check-disk-final-capacity \
+            lake exe generate_disk_guard -- --check-final-capacity corpus/disk-final-capacity.jsonl
+          run_guard check-disk-delivery \
+            lake exe generate_disk_guard -- --check-delivery corpus/disk-delivery.jsonl
+          run_guard check-report-admission \
+            lake exe generate_disk_guard -- --check-report-admission corpus/report-admission.jsonl
+          run_guard check-report-recovery \
+            lake exe generate_disk_guard -- --check-report-recovery corpus/report-recovery.jsonl
       - name: Verify release SBOM model and corpus
         working-directory: formal/HoiminOracle
         run: |

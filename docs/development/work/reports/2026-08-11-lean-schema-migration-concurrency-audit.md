@@ -1,6 +1,47 @@
 # Lean schema migration concurrency audit report
 
-## Result
+## Schema 5 follow-up for catalog separators
+
+SQLite stores `schema_version` followed by U+00A0 as a different bare column name.
+The earlier comparison treated U+00A0 as a separator, so the public session API
+accepted a schema whose `fingerprints` table lacked the required column. The
+regression fixture creates that table in a schema-5 database and verifies that
+the API reports `InvalidIdentity` and preserves the database and companion files.
+[Rust admission and regression test](../../../../crates/hoimin-cli/src/session/schema.rs)
+
+The catalog comparison now uses SQLite's ASCII whitespace set. The Lean model
+splits the catalog text and rejoins it with ASCII spaces. The proof shows that
+this operation preserves the sequence of nonseparator characters. It follows
+that inserting a nonseparator changes the normalized catalog text. The negative
+control adds U+00A0 to the separator set and reproduces the earlier comparison.
+[Lean proof](../../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationProofs.lean)
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_schema_migration -- --sensitivity)
+cargo test --locked -p hoimin-cli --lib session::schema::
+```
+
+## Schema 5 admission matrix
+
+The snapshot model proves the conditions for initializing and reopening a
+database, as well as the precedence of an unsupported version over identity
+checks. The generated matrix crosses seven version values with application IDs
+0 and 12345 and three catalog shapes. The 42 cases predict two successful opens,
+ten `InvalidIdentity` errors, and thirty `UnsupportedVersion` errors.
+[Lean proof](../../../../formal/HoiminOracle/HoiminOracle/SchemaMigrationProofs.lean)
+
+The adapter constructs each fixture in a separate directory and calls
+`SessionHandler::open`. It compares the result and stored version and checks
+that rejection leaves the database and any companion files byte-for-byte
+intact. It also checks the existing marker rows in the populated fixtures.
+[Public API replay](../../../../crates/hoimin-cli/tests/lean_schema_migration_oracle.rs)
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_schema_migration -- --check corpus/schema-migration-concurrency.jsonl)
+cargo test --locked -p hoimin-cli --test lean_schema_migration_oracle
+```
+
+## Original audit result
 
 No Hoimin implementation mismatch was found in the audited SQLite schema
 migration concurrency contract. The Lean state machine, unbounded invariant

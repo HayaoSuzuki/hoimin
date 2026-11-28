@@ -1,4 +1,6 @@
 import HoiminOracle.ProgressInputCases
+import HoiminOracle.ProgressDuplicateCases
+import HoiminOracle.BufferedComparisonCases
 import Lean.Data.Json
 
 open HoiminOracle HoiminOracle.ProgressInput HoiminOracle.MutationScoreExitPolicy
@@ -84,12 +86,28 @@ def main (args : List String) : IO UInt32 := do
     if (← IO.FS.readFile path) == renderCorpus then return 0
     IO.eprintln s!"stale progress input corpus: {path}"
     return 1
+  | ["--output-duplicates", path] =>
+    IO.FS.writeFile path ProgressDuplicate.corpus
+    return 0
+  | ["--check-duplicates", path] =>
+    if (← IO.FS.readFile path) == ProgressDuplicate.corpus then return 0
+    IO.eprintln s!"stale progress duplicate corpus: {path}"
+    return 1
+  | ["--output-buffered-comparison", path] =>
+    IO.FS.writeFile path BufferedComparison.corpus
+    return 0
+  | ["--check-buffered-comparison", path] =>
+    if (← IO.FS.readFile path) == BufferedComparison.corpus then return 0
+    IO.eprintln s!"stale buffered comparison corpus: {path}"
+    return 1
   | ["--sensitivity"] =>
     for (name, detected) in sensitivities do IO.println s!"{name}={detected}"
-    return 0
+    let status ← ProgressDuplicate.sensitivity
+    if status != 0 then return status
+    BufferedComparison.sensitivity
   | ["--stats"] =>
     IO.println s!"profiles={profiles.length} summary_cases={summaryCases.length} result_cases={resultCases.length} cases={cases.length} exit_codes=8 complete_values=2 statuses=7 terminations=7 output_states=2"
     return 0
   | _ =>
-    IO.eprintln "usage: generate_progress_input --output PATH | --check PATH | --sensitivity | --stats"
+    IO.eprintln "usage: generate_progress_input --output PATH | --check PATH | --output-duplicates PATH | --check-duplicates PATH | --output-buffered-comparison PATH | --check-buffered-comparison PATH | --sensitivity | --stats"
     return 2

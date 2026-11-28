@@ -61,3 +61,30 @@ suite for this parser-only fix. We did not run Linux or Windows tests.
 
 Independent review found no blocking issue. The coordinator reran all 54
 `cli_config` tests and the diff whitespace check before committing.
+
+## Lean correspondence for line and symbol syntax
+
+The model splits line selectors at the final colon and symbol selectors at
+the first colon. A line number without a range separator selects that one
+line. Lean proves that the range guard requires a start of at least one,
+an end at or after the start, and an end that fits `u32`. The model also
+distinguishes Windows separator conversion from backslash rejection on
+Unix-style platforms.
+
+The corpus contains 198 combinations of paths and ranges, 48 symbol
+combinations, and 12 cases for mixed argument order, repeated selections,
+and diagnostic precedence. Normalization checks line syntax before symbol
+syntax, and checks the required source after both syntaxes succeed.
+The Rust adapter compares both CLI parsers and checks that accepted
+selectors retain their exact strings and ordering after run or plan settings
+are serialized and restored. This comparison ends before filesystem and
+Python symbol resolution.
+
+The sensitivity check detects splitting either selector at the wrong colon,
+validating symbols before lines, and rejecting native Windows separators.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --check-selector-syntax corpus/selector-syntax.jsonl)
+(cd formal/HoiminOracle && lake exe generate_changed_context -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test cli_config line_and_symbol_selector_syntax_matches_lean
+```

@@ -955,6 +955,14 @@ mod adapter;
 #[case::trace_397(949)]
 #[case::trace_398(950)]
 #[case::trace_399(951)]
+#[case::pair_full_width_exact_threshold(952)]
+#[case::pair_full_width_exact_threshold_plus_one(953)]
+#[case::pair_full_width_fractional_threshold(954)]
+#[case::pair_full_width_fractional_threshold_plus_one(955)]
+#[case::pair_full_width_maximum_denominator_threshold(956)]
+#[case::pair_full_width_maximum_denominator_threshold_plus_one(957)]
+#[case::trace_best_retained_after_slower_certificate(958)]
+#[case::trace_best_retained_after_equal_median(959)]
 fn lean_reduce_row_matches_production(#[case] index: usize) {
     // Arrange
     let line = include_str!("../../../formal/HoiminOracle/corpus/reduce-spec.jsonl")
@@ -976,7 +984,7 @@ fn corpus_inventory_is_complete() {
     let count = corpus.lines().count();
     // Assert
     assert_eq!(
-        count, 952,
+        count, 960,
         "regenerate the per-row case inventory when Lean changes"
     );
 }

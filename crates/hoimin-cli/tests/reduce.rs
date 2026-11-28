@@ -79,22 +79,64 @@ const REDUNDANT: &str = "from subject import value\nimport time\ndef test_keep()
 #[tokio::test]
 async fn redundant_definition_produces_verified_unapplied_diff() {
     // Arrange
-    let project = Project::new(REDUNDANT).await;
+    let checks = format!(
+        "from pathlib import Path\nimport sys\nsys.stdout.buffer.write(Path(__file__).read_bytes())\n{REDUNDANT}"
+    );
+    let project = Project::new(&checks).await;
+    let output = project.artifacts.path().join("reduced");
+    let patch_target = tempfile::tempdir().unwrap();
+    let patched_path = patch_target.path().join("checks.py");
+    std::fs::write(&patched_path, &checks).unwrap();
     // Act
     let code = project.reduce("checks.py:test_slow", "5", "30s").await;
     // Assert
+    assert_eq!(code, 0);
     assert_eq!(
-        (
-            code,
-            std::fs::read(project.root.path().join("checks.py")).unwrap(),
-            project
-                .artifacts
-                .path()
-                .join("reduced/proposal.diff")
-                .is_file()
-        ),
-        (0, REDUNDANT.as_bytes().to_vec(), true)
+        std::fs::read(project.root.path().join("checks.py")).unwrap(),
+        checks.as_bytes()
     );
+    let report: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(output.join("report.json")).unwrap()).unwrap();
+    let best = &report["best"];
+    let trial = report["trials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|trial| trial["proposal"] == *best)
+        .expect("report must include the trial for its best proposal");
+    assert_eq!(trial["checks"]["certified"], true);
+    assert_eq!(best["pairCount"], 3);
+    assert_eq!(report["diff"], "proposal.diff");
+    let applied = std::process::Command::new("git")
+        .arg("apply")
+        .arg(output.join("proposal.diff"))
+        .current_dir(patch_target.path())
+        .output()
+        .unwrap();
+    assert!(
+        applied.status.success(),
+        "{}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+    let patched = std::fs::read(patched_path).unwrap();
+    assert_ne!(patched, checks.as_bytes());
+    assert_eq!(
+        trial["variant_hashes"],
+        serde_json::json!([{"path":"checks.py", "blake3":blake3::hash(&patched).to_hex().to_string()}])
+    );
+    let measured_sources: Vec<_> = report["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|observation| {
+            observation["variant"] == best["id"] && observation["mutant"].is_null()
+        })
+        .map(|observation| {
+            std::fs::read(output.join(observation["output"].as_str().unwrap())).unwrap()
+        })
+        .collect();
+    // Three exploration runs and three final measurements use the certified variant.
+    assert_eq!(measured_sources, vec![patched; 6]);
 }
 
 #[rstest::rstest]
@@ -131,6 +173,32 @@ async fn loss_of_original_kill_produces_no_diff() {
                 .exists()
         ),
         (0, false)
+    );
+}
+
+#[tokio::test]
+async fn report_failure_preserves_a_diff_the_session_did_not_publish() {
+    // Arrange
+    // The test child creates the conflicts after reduce opens its fresh output directory.
+    let project = Project::new(REDUNDANT).await;
+    let output = project.artifacts.path().join("reduced");
+    let checks = format!(
+        "from pathlib import Path\noutput = Path({:?})\n(output / 'proposal.diff').write_bytes(b'independent diff')\n(output / 'report.json').write_bytes(b'independent report')\ndef test_fails():\n    assert False\n",
+        output.to_str().unwrap(),
+    );
+    std::fs::write(project.root.path().join("checks.py"), checks).unwrap();
+    // Act
+    let code = project.reduce("checks.py:test_fails", "5", "20s").await;
+    // Assert
+    assert_eq!(code, 3);
+    assert_eq!(
+        std::fs::read(output.join("report.json")).unwrap(),
+        b"independent report"
+    );
+    assert_eq!(
+        std::fs::read(output.join("proposal.diff"))
+            .expect("rollback must preserve an independently created diff"),
+        b"independent diff"
     );
 }
 

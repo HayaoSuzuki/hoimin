@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use proptest::prelude::*;
+use serde::Deserialize;
 
 use super::{
     DiskMeasurement, DiskMonitorStats, FilesystemKey, MeterReading, sample_meter_with_refresh_at,
@@ -186,4 +187,118 @@ fn valid_samples_update_statistics_even_after_a_sticky_stop() {
     let filesystem = stats.filesystems.get(&FilesystemKey(1)).unwrap();
     assert_eq!(filesystem.start, 400);
     assert_eq!(filesystem.minimum, 30);
+}
+
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum StatisticsSample {
+    Reading {
+        owned_bytes: u64,
+        elapsed_ms: u64,
+        capacities: Vec<(u64, u64)>,
+    },
+    MeasurementFailed,
+    RefreshFailed,
+}
+
+impl StatisticsSample {
+    fn replay(&self, samples: &Samples) {
+        match self {
+            Self::Reading {
+                owned_bytes,
+                elapsed_ms,
+                capacities,
+            } => {
+                let mut value = reading(capacities.iter().copied().collect(), *owned_bytes);
+                value.elapsed = Duration::from_millis(*elapsed_ms);
+                samples.sample(Ok(value), false);
+            }
+            Self::MeasurementFailed => {
+                samples.sample(Err(io::Error::other("measurement failed")), false);
+            }
+            Self::RefreshFailed => {
+                samples.sample(Ok(reading(BTreeMap::from([(99, 0)]), u64::MAX)), true);
+            }
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct FilesystemObservation {
+    start: u64,
+    minimum: u64,
+}
+
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+struct StatisticsObservation {
+    sample_count: u64,
+    peak_owned_bytes: u64,
+    maximum_measurement_ms: u64,
+    minimum_available_bytes: Option<u64>,
+    filesystems: BTreeMap<u64, FilesystemObservation>,
+}
+
+impl From<DiskMonitorStats> for StatisticsObservation {
+    fn from(stats: DiskMonitorStats) -> Self {
+        Self {
+            sample_count: stats.sample_count,
+            peak_owned_bytes: stats.peak_owned_bytes,
+            maximum_measurement_ms: u64::try_from(stats.maximum_measurement.as_millis()).unwrap(),
+            minimum_available_bytes: stats.minimum_available_bytes(),
+            filesystems: stats
+                .filesystems
+                .into_iter()
+                .map(|(key, stats)| {
+                    (
+                        key.0,
+                        FilesystemObservation {
+                            start: stats.start,
+                            minimum: stats.minimum,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+}
+
+#[test]
+fn disk_statistics_match_lean_after_every_sample() {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Case {
+        schema: u8,
+        mode: String,
+        id: String,
+        samples: Vec<StatisticsSample>,
+        expected: Vec<StatisticsObservation>,
+    }
+
+    let cases = include_str!("../../../../../formal/HoiminOracle/corpus/disk-statistics.jsonl")
+        .lines()
+        .map(|line| serde_json::from_str::<Case>(line).unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(cases.len(), 10);
+    let mut ids = std::collections::BTreeSet::new();
+    for case in &cases {
+        assert_eq!(case.schema, 1);
+        assert_eq!(case.mode, "internal-fixture");
+        assert!(ids.insert(&case.id));
+        assert_eq!(case.expected.len(), case.samples.len() + 1);
+        let samples = Samples::new();
+        assert_eq!(
+            StatisticsObservation::from(samples.snapshot()),
+            case.expected[0],
+            "{} initial",
+            case.id
+        );
+        for (index, (sample, expected)) in case.samples.iter().zip(&case.expected[1..]).enumerate()
+        {
+            sample.replay(&samples);
+            let actual = StatisticsObservation::from(samples.snapshot());
+            assert_eq!(&actual, expected, "{} after sample {}", case.id, index + 1);
+        }
+    }
 }

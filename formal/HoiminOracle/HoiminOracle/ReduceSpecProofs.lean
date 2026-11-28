@@ -14,6 +14,16 @@ theorem pairPass_strict (num den original reduced : Nat)
   exact (Nat.mul_lt_mul_left hdpos).mp hlt
 
 set_option maxHeartbeats 20000 in
+theorem pairPass_iff_threshold (num den original reduced : Nat)
+    (rate : validRate num den = true) (originalPositive : 0 < original)
+    (reducedPositive : 0 < reduced) :
+    pairPass num den original reduced = true ↔ reduced ≤ (den - num) * original / den := by
+  have valid : 0 < num ∧ num < den := by simpa [validRate] using rate
+  have denominatorPositive : 0 < den := Nat.lt_trans valid.1 valid.2
+  simp [pairPass, rate, originalPositive, reducedPositive,
+    Nat.le_div_iff_mul_le denominatorPositive, Nat.mul_comm den reduced]
+
+set_option maxHeartbeats 20000 in
 theorem certified_protected (ctx : Context) (p : Proposal) (h : Certified ctx p) :
     ctx.keptSpans.all (fun k => p.retained.contains k.id &&
       p.removed.all (fun r => !overlaps r k)) = true := by
@@ -130,6 +140,47 @@ theorem chooseBest_minimum (best : Option Proposal) (p : Proposal) :
         exact Nat.le_refl _
 
 set_option maxHeartbeats 20000 in
+theorem chooseBest_retains_tie (previous candidate : Proposal)
+    (tie : median candidate.exploration = median previous.exploration) :
+    chooseBest (some previous) candidate = some previous := by
+  simp [chooseBest, tie]
+
+set_option maxHeartbeats 20000 in
+theorem step_retains_or_improves_best (ctx : Context) (s : State) (e : Event)
+    (previous : Proposal) (saved : s.best = some previous) :
+    ∃ best, (step ctx s e).best = some best ∧
+      median best.exploration ≤ median previous.exploration := by
+  have unchanged : ∃ best, s.best = some best ∧
+      median best.exploration ≤ median previous.exploration := ⟨previous, saved, Nat.le_refl _⟩
+  unfold step
+  split
+  · exact unchanged
+  · split
+    · exact unchanged
+    · cases e.proposal with
+      | none => exact unchanged
+      | some candidate =>
+        dsimp only
+        split
+        · exact unchanged
+        · split
+          · obtain ⟨best, selected, _, improved⟩ := chooseBest_minimum s.best candidate
+            exact ⟨best, selected, improved previous saved⟩
+          · exact unchanged
+
+set_option maxHeartbeats 20000 in
+theorem run_retains_or_improves_best (ctx : Context) (s : State) (events : List Event)
+    (previous : Proposal) (saved : s.best = some previous) :
+    ∃ best, (run ctx s events).best = some best ∧
+      median best.exploration ≤ median previous.exploration := by
+  induction events generalizing s previous with
+  | nil => exact ⟨previous, saved, Nat.le_refl _⟩
+  | cons e rest ih =>
+    obtain ⟨next, kept, improved⟩ := step_retains_or_improves_best ctx s e previous saved
+    obtain ⟨best, selected, improvedAgain⟩ := ih (step ctx s e) next kept
+    exact ⟨best, selected, Nat.le_trans improvedAgain improved⟩
+
+set_option maxHeartbeats 20000 in
 theorem finalPass_strict (num den : Nat) (original reduced : Triple)
     (h : finalPass num den original reduced = true) :
     reduced.a < original.a ∧ reduced.b < original.b ∧ reduced.c < original.c := by
@@ -192,5 +243,10 @@ theorem measurement_error_stops (ctx : Context) (s : State) (e : Event) (p : Pro
     (step ctx s e).stopped = true ∧ (step ctx s e).best = s.best := by
   simp only [step, active, Bool.false_eq_true, ↓reduceIte]
   split <;> simp_all
+
+theorem finishDiff_removes_only_published (reportPublished : Bool) (diff : DiffPublication) :
+    finishDiff reportPublished diff ≠ diff ↔
+      reportPublished = false ∧ diff = .published := by
+  cases reportPublished <;> cases diff <;> decide
 
 end HoiminOracle.ReduceSpec

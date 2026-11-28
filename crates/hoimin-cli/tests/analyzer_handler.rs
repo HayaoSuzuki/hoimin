@@ -12,6 +12,12 @@ use std::{fs, num::NonZeroUsize};
 
 use proptest::prelude::*;
 
+#[path = "support/analyzer_source_admission_oracle.rs"]
+mod analyzer_source_admission_oracle;
+
+#[path = "support/candidate_location_oracle.rs"]
+mod candidate_location_oracle;
+
 fn candidate(sequence: u64) -> MutationCandidate {
     MutationCandidate {
         id: format!("m1_{sequence}"),

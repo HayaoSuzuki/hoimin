@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::{GitError, GitRunner};
 use crate::process::ProcessCancellation;
 use camino::Utf8Path;
-use hoimin_core::{TargetError, normalize_changed};
+use hoimin_core::TargetError;
 
 use super::{GitChangedRanges, GitPathScope, parse_binary_numstat, parse_diff, run_git};
 
@@ -70,8 +70,7 @@ pub(super) async fn collect(
             }
         }
     }
-    changed.retain(|path, _| !excluded.contains(path));
-    Ok(GitChangedRanges(normalize_changed(changed)))
+    Ok(GitChangedRanges::from_patch(changed, &excluded))
 }
 
 fn scoped_args<'a>(args: &[&'a str], paths: &'a [String]) -> Vec<&'a str> {
@@ -83,7 +82,7 @@ fn scoped_args<'a>(args: &[&'a str], paths: &'a [String]) -> Vec<&'a str> {
             *arg
         }
     }));
-    scoped.push("--");
+    // The comparison command already ends with the revision/path separator.
     scoped.extend(paths.iter().map(String::as_str));
     scoped
 }
@@ -259,6 +258,44 @@ mod tests {
         let actual = inventory_plan(output.as_bytes(), &selected).unwrap();
 
         assert_eq!(actual, DiffPlan::Legacy);
+    }
+
+    #[test]
+    fn git_inventory_plan_matches_lean() {
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "kind", rename_all = "snake_case")]
+        enum ExpectedPlan {
+            Legacy,
+            Scoped { batches: Vec<Vec<String>> },
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            schema: u32,
+            mode: String,
+            id: String,
+            scope: Vec<String>,
+            inventory: String,
+            expected: ExpectedPlan,
+        }
+
+        let corpus = include_str!("../../../../../formal/HoiminOracle/corpus/git-inventory.jsonl");
+        let mut ids = BTreeSet::new();
+        for row in corpus.lines() {
+            let fixture: Fixture = serde_json::from_str(row).unwrap();
+            assert_eq!(fixture.schema, 1, "{}", fixture.id);
+            assert_eq!(fixture.mode, "internal-fixture", "{}", fixture.id);
+            let selected: Vec<_> = fixture.scope.iter().map(String::as_str).collect();
+            let actual = inventory_plan(fixture.inventory.as_bytes(), &scope(&selected))
+                .unwrap_or_else(|error| panic!("{}: {error}", fixture.id));
+            let expected = match fixture.expected {
+                ExpectedPlan::Legacy => DiffPlan::Legacy,
+                ExpectedPlan::Scoped { batches } => DiffPlan::Scoped(batches),
+            };
+            assert_eq!(actual, expected, "{}", fixture.id);
+            assert!(ids.insert(fixture.id));
+        }
+        assert_eq!(ids.len(), 51);
     }
 }
 

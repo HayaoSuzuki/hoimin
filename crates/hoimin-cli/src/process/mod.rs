@@ -827,22 +827,48 @@ async fn await_output(
     mut collector_task: tokio::task::JoinHandle<std::io::Result<OutputSpoolRef>>,
     deadline: tokio::time::Instant,
 ) -> OutputDrainOutcome {
-    if let Err(error) = await_pipe_until(id, "stdout", &mut stdout_task, deadline).await {
+    let stdout = await_pipe_until(id, "stdout", &mut stdout_task, deadline).await;
+    let stderr = if stdout
+        .as_ref()
+        .is_err_and(|error| !output_close_timed_out(error))
+    {
         abort_and_join(&mut stderr_task).await;
-        let collector = await_collector(id, &mut collector_task, deadline).await;
-        return OutputDrainOutcome {
-            result: Err(error),
-            quiescent: collector.quiescent,
-        };
+        Ok(())
+    } else {
+        // Keep the same deadline when stdout timed out, so an already completed
+        // stderr task can still contribute its result without waiting longer.
+        await_pipe_until(id, "stderr", &mut stderr_task, deadline).await
+    };
+    let collector = await_collector(id, &mut collector_task, deadline).await;
+    OutputDrainOutcome {
+        result: select_output_result(stdout, stderr, collector.result),
+        quiescent: collector.quiescent,
     }
-    if let Err(error) = await_pipe_until(id, "stderr", &mut stderr_task, deadline).await {
-        let collector = await_collector(id, &mut collector_task, deadline).await;
-        return OutputDrainOutcome {
-            result: Err(error),
-            quiescent: collector.quiescent,
-        };
-    }
-    await_collector(id, &mut collector_task, deadline).await
+}
+
+fn output_close_timed_out(error: &EffectFailed) -> bool {
+    error.failure.code() == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE
+}
+
+fn select_output_result(
+    stdout: Result<(), EffectFailed>,
+    stderr: Result<(), EffectFailed>,
+    collector: Result<OutputSpoolRef, EffectFailed>,
+) -> Result<OutputSpoolRef, EffectFailed> {
+    [stderr, stdout]
+        .into_iter()
+        .filter_map(Result::err)
+        .fold(collector, |later, earlier| {
+            if output_close_timed_out(&earlier)
+                && later
+                    .as_ref()
+                    .is_err_and(|error| !output_close_timed_out(error))
+            {
+                later
+            } else {
+                Err(earlier)
+            }
+        })
 }
 
 async fn await_collector(
@@ -1249,7 +1275,7 @@ fn combine_process_and_output(
             Ok(output) => Ok((termination, output, ProcessOutputState::Complete)),
             Err(error)
                 if matches!(context, ExecutionContext::Mutant(_))
-                    && error.failure.code() == PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE =>
+                    && output_close_timed_out(&error) =>
             {
                 Ok((
                     termination,
@@ -1413,10 +1439,11 @@ mod tests {
     use tokio::process::Command;
 
     use super::{
-        CompletionGuard, ExecutionContext, POST_TERMINATION_GRACE, ProcessCancellation,
-        ProcessHandler, ProcessRequest, ProcessSelection, ProcessStartGate, abort_and_join,
-        append_cleanup_failure, attach_failure, await_output, combine_process_and_output,
-        select_process_result, wait_after_termination, wait_failure_after_cleanup,
+        CompletionGuard, ExecutionContext, POST_TERMINATION_GRACE,
+        PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, ProcessCancellation, ProcessHandler, ProcessRequest,
+        ProcessSelection, ProcessStartGate, abort_and_join, append_cleanup_failure, attach_failure,
+        await_output, combine_process_and_output, select_output_result, select_process_result,
+        wait_after_termination, wait_failure_after_cleanup,
     };
     use crate::resource::{PortableBackend, ResourceBackend, ResourceError};
 
@@ -1573,6 +1600,82 @@ mod tests {
         assert!(failed.load(Ordering::Acquire));
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn stdout_close_timeout_preserves_an_already_failed_stderr() {
+        let stdout = tokio::spawn(pending::<std::io::Result<()>>());
+        let stderr = tokio::spawn(async { Err(std::io::Error::other("fixture stderr failure")) });
+        let collector = tokio::spawn(pending::<std::io::Result<OutputSpoolRef>>());
+
+        let outcome = await_output(
+            EffectId(48),
+            stdout,
+            stderr,
+            collector,
+            tokio::time::Instant::now() + POST_TERMINATION_GRACE,
+        )
+        .await;
+
+        assert!(!outcome.quiescent);
+        let error = combine_process_and_output(
+            Ok(ProcessTermination::Exit(0)),
+            outcome.result,
+            &execution_context("mutant"),
+            output_ref(),
+        )
+        .expect_err("a definite read error must stay fatal after the close timeout");
+        assert_eq!(error.failure.code(), "process.stderr.read");
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct DrainCase {
+        schema: u64,
+        stdout: String,
+        stderr: String,
+        collector: String,
+        expected_source: Option<String>,
+        expected_error: Option<String>,
+    }
+
+    fn drain_fixture_result<T>(source: &str, kind: &str, value: T) -> Result<T, EffectFailed> {
+        let code = match kind {
+            "complete" => return Ok(value),
+            "close_timed_out" => PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE,
+            "failed" => "fixture.output.failure",
+            other => panic!("unknown drain outcome {other}"),
+        };
+        Err(EffectFailed::other(EffectId(48), code, source))
+    }
+
+    #[test]
+    fn output_drain_failure_selection_matches_lean() {
+        let cases: Vec<DrainCase> =
+            include_str!("../../../../formal/HoiminOracle/corpus/process-output-drain.jsonl")
+                .lines()
+                .map(|line| serde_json::from_str(line).unwrap())
+                .collect();
+        assert_eq!(cases.len(), 27);
+        let inputs: BTreeSet<_> = cases
+            .iter()
+            .map(|case| (&case.stdout, &case.stderr, &case.collector))
+            .collect();
+        assert_eq!(inputs.len(), 27);
+        for case in &cases {
+            assert_eq!(case.schema, 1);
+            let actual = select_output_result(
+                drain_fixture_result("stdout", &case.stdout, ()),
+                drain_fixture_result("stderr", &case.stderr, ()),
+                drain_fixture_result("collector", &case.collector, output_ref()),
+            );
+            let expected = match (&case.expected_source, &case.expected_error) {
+                (Some(source), Some(error)) => drain_fixture_result(source, error, output_ref()),
+                (None, None) => Ok(output_ref()),
+                _ => panic!("incomplete expected drain failure: {case:?}"),
+            };
+            assert_eq!(actual, expected, "{case:?}");
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn settled_output_tasks_remain_joined_when_the_spool_write_fails() {
         let temporary = tempfile::tempdir().unwrap();
@@ -1662,6 +1765,7 @@ mod tests {
         process: String,
         output: String,
         expected_fatal: bool,
+        expected_failure_source: Option<String>,
         expected_status: Option<String>,
         expected_termination: Option<String>,
         expected_output_incomplete: bool,
@@ -1702,14 +1806,14 @@ mod tests {
             .lines()
             .map(|line| serde_json::from_str::<ProcessOutputCase>(line).unwrap())
             .collect::<Vec<_>>();
-        assert_eq!(cases.len(), 42);
+        assert_eq!(cases.len(), 63);
         assert_eq!(
             cases
                 .iter()
                 .map(|case| case.id.as_str())
                 .collect::<BTreeSet<_>>()
                 .len(),
-            42
+            63
         );
         cases
     }
@@ -1730,29 +1834,24 @@ mod tests {
         }
     }
 
+    fn process_output_fixture_failure(source: &str, output: &str) -> EffectFailed {
+        let (code, message) = match (source, output) {
+            ("process", _) => ("process.wait.failed", "fixture process failure"),
+            ("output", "close_timed_out") => {
+                (PROCESS_OUTPUT_CLOSE_TIMEOUT_CODE, "fixture output timeout")
+            }
+            ("output", "failed") => ("process.stdout.read", "fixture output failure"),
+            _ => panic!("unknown fixture failure {source} for output {output}"),
+        };
+        EffectFailed::other(EffectId(7), code, message)
+    }
+
     fn combine_process_output_case(
         case: &ProcessOutputCase,
     ) -> Result<(ProcessTermination, OutputSpoolRef, ProcessOutputState), EffectFailed> {
-        let process_failure = EffectFailed::other(
-            EffectId(7),
-            "process.wait.failed",
-            "fixture process failure",
-        );
-        let output_failure = match case.output.as_str() {
-            "close_timed_out" => EffectFailed::other(
-                EffectId(7),
-                "process.output.close.timeout",
-                "fixture output timeout",
-            ),
-            "failed" => {
-                EffectFailed::other(EffectId(7), "process.stdout.read", "fixture output failure")
-            }
-            "complete" => EffectFailed::other(EffectId(7), "unreachable.complete", "unreachable"),
-            other => panic!("unknown output {other}"),
-        };
         let process = match case.input_termination.as_deref() {
             Some(termination) => Ok(named_termination(termination)),
-            None => Err(process_failure.clone()),
+            None => Err(process_output_fixture_failure("process", &case.output)),
         };
         let collected = OutputSpoolRef {
             token: "collected".to_owned(),
@@ -1762,7 +1861,7 @@ mod tests {
         let fallback = output_ref();
         let output = match case.output.as_str() {
             "complete" => Ok(collected),
-            _ => Err(output_failure),
+            _ => Err(process_output_fixture_failure("output", &case.output)),
         };
         let context = execution_context(&case.execution);
         combine_process_and_output(process, output, &context, fallback)
@@ -1772,15 +1871,21 @@ mod tests {
     fn process_output_combiner_matches_every_lean_decision_row() {
         let cases = process_output_cases();
         for case in &cases {
-            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.schema, 2, "{}", case.id);
             assert_eq!(case.mode, "strict", "{}", case.id);
             assert_eq!(case.expected_continue, !case.expected_fatal, "{}", case.id);
             assert_eq!(case.process == "failed", case.input_termination.is_none());
+            assert_eq!(case.expected_fatal, case.expected_failure_source.is_some());
         }
         for case in cases.iter().filter(|case| case.expected_fatal) {
             let actual = combine_process_output_case(case);
-
-            assert!(actual.is_err(), "{}", case.id);
+            let source = case.expected_failure_source.as_deref().unwrap();
+            assert_eq!(
+                actual,
+                Err(process_output_fixture_failure(source, &case.output)),
+                "{}",
+                case.id
+            );
         }
         for case in cases.iter().filter(|case| !case.expected_fatal) {
             let (termination, output, output_state) = combine_process_output_case(case).unwrap();

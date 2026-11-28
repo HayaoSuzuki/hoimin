@@ -274,14 +274,25 @@ mod tests {
 
     use super::*;
 
-    struct GatedWriter {
+    struct WriterGate {
         entered: Option<tokio::sync::oneshot::Sender<()>>,
         release: mpsc::Receiver<()>,
-        bytes: Arc<Mutex<Vec<u8>>>,
-        gate_flush: bool,
     }
 
-    impl GatedWriter {
+    impl WriterGate {
+        fn channel() -> (Self, tokio::sync::oneshot::Receiver<()>, mpsc::Sender<()>) {
+            let (entered, ready) = tokio::sync::oneshot::channel();
+            let (release, hold) = mpsc::channel();
+            (
+                Self {
+                    entered: Some(entered),
+                    release: hold,
+                },
+                ready,
+                release,
+            )
+        }
+
         fn wait_for_release(&mut self) -> io::Result<()> {
             if let Some(entered) = self.entered.take() {
                 let _ = entered.send(());
@@ -293,10 +304,16 @@ mod tests {
         }
     }
 
+    struct GatedWriter {
+        gate: WriterGate,
+        bytes: Arc<Mutex<Vec<u8>>>,
+        gate_flush: bool,
+    }
+
     impl Write for GatedWriter {
         fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
             if !self.gate_flush {
-                self.wait_for_release()?;
+                self.gate.wait_for_release()?;
             }
             self.bytes.lock().unwrap().extend_from_slice(bytes);
             Ok(bytes.len())
@@ -304,7 +321,7 @@ mod tests {
 
         fn flush(&mut self) -> io::Result<()> {
             if self.gate_flush {
-                self.wait_for_release()?;
+                self.gate.wait_for_release()?;
             }
             Ok(())
         }
@@ -350,92 +367,176 @@ mod tests {
         assert!(!delivery.is_quiescent());
     }
 
-    #[test]
-    fn abandoned_report_does_not_begin_a_queued_write() {
-        assert_queued_write_is_rejected(abandon_queued_report);
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum ReportTask {
+        Queued,
+        Active,
+        Refused,
+        Returned,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+    enum AdmissionEvent {
+        Restrict { deadline: u64 },
+        Advance { duration: u64 },
+        Abandon,
+        Start,
+        Finish,
+    }
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct AdmissionObservation {
+        may_start: bool,
+        task: ReportTask,
+        owner_held: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct AdmissionCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        gate_flush: bool,
+        events: Vec<AdmissionEvent>,
+        expected: Vec<AdmissionObservation>,
     }
 
     #[test]
-    fn expired_report_does_not_begin_a_queued_write_while_driver_is_alive() {
-        assert_queued_write_is_rejected(expire_queued_report);
-    }
-
-    type QueuedReport = ReportDelivery;
-
-    fn abandon_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
-        drop(delivery);
-        Vec::new()
-    }
-
-    fn expire_queued_report(delivery: QueuedReport) -> Vec<QueuedReport> {
-        delivery
-            .admission()
-            .restrict_to(tokio::time::Instant::now());
-        vec![delivery]
-    }
-
-    fn assert_queued_write_is_rejected(dispose: fn(QueuedReport) -> Vec<QueuedReport>) {
+    fn report_admission_and_owner_lifetime_match_lean() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
+            .start_paused(true)
             .max_blocking_threads(1)
             .build()
             .unwrap();
-        runtime.block_on(async {
-            let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-            let (release_tx, release_rx) = mpsc::channel();
-            let blocker = tokio::task::spawn_blocking(move || {
-                started_tx.send(()).unwrap();
-                release_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-            });
-            started_rx.await.unwrap();
-            let bytes = Arc::new(Mutex::new(Vec::new()));
-            let handler = ReportHandler::new(
-                GatedWriter {
-                    entered: None,
-                    release: mpsc::channel().1,
-                    bytes: Arc::clone(&bytes),
-                    gate_flush: false,
-                },
-                io::sink(),
-            );
-            let mut delivery = ReportDelivery::new(handler, Arc::new(()));
-            let mut write = Box::pin(delivery.handle(event(1)));
-            tokio::select! {
-                biased;
-                result = &mut write => panic!("queued write completed: {result:?}"),
-                () = tokio::task::yield_now() => {}
-            }
-            drop(write);
-            let driver = &mut delivery;
-            let OwnedDeliveryState::Running(queued) =
-                std::mem::replace(&mut driver.state, OwnedDeliveryState::Unavailable)
-            else {
-                unreachable!("queued report retains its running task");
-            };
-            let retained = dispose(delivery);
-            release_tx.send(()).unwrap();
-            blocker.await.unwrap();
-            let (_, result) = queued.await.unwrap();
-            assert!(
-                result.is_err(),
-                "an abandoned report acknowledged late output"
-            );
-            assert!(bytes.lock().unwrap().is_empty());
-            drop(retained);
+        let mut ids = std::collections::BTreeSet::new();
+        for line in
+            include_str!("../../../../formal/HoiminOracle/corpus/report-admission.jsonl").lines()
+        {
+            let case: AdmissionCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            runtime.block_on(replay_report_admission(case));
+        }
+        assert_eq!(ids.len(), 18);
+    }
+
+    async fn replay_report_admission(case: AdmissionCase) {
+        const OUTPUT_ID: u64 = 7;
+        let start = tokio::time::Instant::now();
+        let (pool_entered, pool_ready) = tokio::sync::oneshot::channel();
+        let (pool_release, hold_pool) = mpsc::channel();
+        let pool_blocker = tokio::task::spawn_blocking(move || {
+            pool_entered.send(()).unwrap();
+            hold_pool.recv_timeout(Duration::from_secs(3)).unwrap();
         });
+        pool_ready.await.unwrap();
+
+        let (gate, mut writer_ready, writer_release) = WriterGate::channel();
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let handler = ReportHandler::new(
+            GatedWriter {
+                gate,
+                bytes: Arc::clone(&bytes),
+                gate_flush: case.gate_flush,
+            },
+            io::sink(),
+        );
+        let owner = Arc::new(());
+        let lease = Arc::downgrade(&owner);
+        let mut delivery = ReportDelivery::new(handler, owner);
+        let admission = delivery.admission();
+        let mut write = Box::pin(delivery.handle(event(OUTPUT_ID)));
+        tokio::select! {
+            biased;
+            result = &mut write => panic!("{}: queued operation completed: {result:?}", case.id),
+            () = tokio::task::yield_now() => {}
+        }
+        drop(write);
+        // Keep the real blocking task observable after dropping its driver.
+        let OwnedDeliveryState::Running(worker) =
+            std::mem::replace(&mut delivery.state, OwnedDeliveryState::Unavailable)
+        else {
+            panic!("{}: expected a queued report task", case.id);
+        };
+
+        let mut status = ReportTask::Queued;
+        let mut worker = Some(worker);
+        let mut driver = Some(delivery);
+        assert_eq!(case.events.len(), case.expected.len(), "{}", case.id);
+        for (index, (event, expected)) in case.events.into_iter().zip(case.expected).enumerate() {
+            match event {
+                AdmissionEvent::Restrict { deadline } => {
+                    admission.restrict_to(start + Duration::from_secs(deadline));
+                }
+                AdmissionEvent::Advance { duration } => {
+                    tokio::time::advance(Duration::from_secs(duration)).await;
+                }
+                AdmissionEvent::Abandon => drop(driver.take()),
+                AdmissionEvent::Start => {
+                    pool_release.send(()).unwrap();
+                    let task = worker.as_mut().unwrap();
+                    status = tokio::select! {
+                        result = task => {
+                            let (_, result) = result.unwrap();
+                            let error = result.expect_err("disallowed queued operation");
+                            assert_eq!(error.id, EffectId(OUTPUT_ID));
+                            let EffectFailure::ReportState { message } = error.failure else {
+                                panic!("{}: wrong admission error: {error:?}", case.id);
+                            };
+                            assert!(message.contains("abandoned or its deadline expired"), "{message}");
+                            worker = None;
+                            ReportTask::Refused
+                        }
+                        ready = &mut writer_ready => {
+                            ready.unwrap();
+                            ReportTask::Active
+                        }
+                    };
+                }
+                AdmissionEvent::Finish => {
+                    writer_release.send(()).unwrap();
+                    let (_, result) = worker.take().unwrap().await.unwrap();
+                    assert_eq!(result.unwrap().unwrap().id, EffectId(OUTPUT_ID));
+                    status = ReportTask::Returned;
+                }
+            }
+            assert_eq!(
+                AdmissionObservation {
+                    may_start: admission.permits_start(),
+                    task: status,
+                    owner_held: lease.upgrade().is_some(),
+                },
+                expected,
+                "{} step {index}",
+                case.id
+            );
+        }
+        assert!(worker.is_none(), "{}", case.id);
+        pool_blocker.await.unwrap();
+        let bytes = bytes.lock().unwrap();
+        if status == ReportTask::Returned {
+            let record: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(record["sequence"], OUTPUT_ID, "{}", case.id);
+        } else {
+            assert!(bytes.is_empty(), "{}", case.id);
+        }
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn cancelled_wait_retains_writer_and_owner_without_acknowledgement_or_retry() {
-        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
-        let (release_tx, release_rx) = mpsc::channel();
+        let (gate, entered_rx, release_tx) = WriterGate::channel();
         let bytes = Arc::new(Mutex::new(Vec::new()));
         let owner = Arc::new(());
         let lease = Arc::downgrade(&owner);
         let handler = ReportHandler::new(
             GatedWriter {
-                entered: Some(entered_tx),
-                release: release_rx,
+                gate,
                 bytes: Arc::clone(&bytes),
                 gate_flush: false,
             },
@@ -468,14 +569,12 @@ mod tests {
 
     #[tokio::test(flavor = "current_thread")]
     async fn flush_keeps_its_owner_until_the_writer_has_finished() {
-        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
-        let (release_tx, release_rx) = mpsc::channel();
+        let (gate, entered_rx, release_tx) = WriterGate::channel();
         let owner = Arc::new(());
         let lease = Arc::downgrade(&owner);
         let handler = ReportHandler::new(
             GatedWriter {
-                entered: Some(entered_tx),
-                release: release_rx,
+                gate,
                 bytes: Arc::new(Mutex::new(Vec::new())),
                 gate_flush: true,
             },
@@ -492,5 +591,202 @@ mod tests {
         flush.await.unwrap();
         assert!(delivery.is_quiescent());
         assert!(lease.upgrade().is_none());
+    }
+
+    #[derive(Clone, Copy, Eq, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum IoOutcome {
+        Succeeded,
+        IoFailed,
+        Panicked,
+    }
+
+    impl IoOutcome {
+        fn complete(self, operation: &str) -> io::Result<()> {
+            match self {
+                Self::Succeeded => Ok(()),
+                Self::IoFailed => Err(io::Error::other(format!("{operation} I/O failure"))),
+                Self::Panicked => panic!("{operation} panic"),
+            }
+        }
+    }
+
+    struct RecoveryWriter {
+        write_gate: WriterGate,
+        flush_gate: WriterGate,
+        write_outcome: IoOutcome,
+        flush_outcome: IoOutcome,
+        bytes: Arc<Mutex<Vec<u8>>>,
+        record_needs_flush: bool,
+    }
+
+    impl Write for RecoveryWriter {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            assert!(
+                self.write_outcome == IoOutcome::Succeeded || self.write_gate.entered.is_some(),
+                "failed report write was retried"
+            );
+            self.write_gate.wait_for_release()?;
+            self.write_outcome.complete("injected report write")?;
+            self.bytes.lock().unwrap().extend_from_slice(bytes);
+            self.record_needs_flush = true;
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            if std::mem::take(&mut self.record_needs_flush) {
+                return Ok(());
+            }
+            assert!(
+                self.flush_gate.entered.is_some(),
+                "recovery flush was retried"
+            );
+            self.flush_gate.wait_for_release()?;
+            self.flush_outcome.complete("injected recovery flush")
+        }
+    }
+
+    #[derive(Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum RecoveryResult {
+        Flushed,
+        IoFailed,
+        Expired,
+        MissingHandler,
+        FlushPanicked,
+    }
+
+    impl RecoveryResult {
+        fn observe(result: io::Result<()>) -> Self {
+            let Err(error) = result else {
+                return Self::Flushed;
+            };
+            let error = error.to_string();
+            [
+                ("injected recovery flush I/O failure", Self::IoFailed),
+                ("its deadline expired", Self::Expired),
+                (
+                    "report handler ownership is unavailable",
+                    Self::MissingHandler,
+                ),
+                ("injected recovery flush panic", Self::FlushPanicked),
+            ]
+            .into_iter()
+            .find_map(|(marker, result)| error.contains(marker).then_some(result))
+            .unwrap_or_else(|| panic!("unexpected recovery error: {error}"))
+        }
+    }
+
+    #[derive(Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)] // Observe the writer, gate, driver, and owner separately.
+    struct RecoveryObservation {
+        result: RecoveryResult,
+        record_written: bool,
+        flush_entered: bool,
+        quiescent: bool,
+        owner_held: bool,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct RecoveryCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        emit: IoOutcome,
+        flush: Option<IoOutcome>,
+        expected: RecoveryObservation,
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn flush_after_cancelled_report_wait_matches_lean() {
+        let mut ids = std::collections::BTreeSet::new();
+        for line in
+            include_str!("../../../../formal/HoiminOracle/corpus/report-recovery.jsonl").lines()
+        {
+            let case: RecoveryCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            replay_report_recovery(case).await;
+        }
+        assert_eq!(ids.len(), 12);
+    }
+
+    async fn replay_report_recovery(case: RecoveryCase) {
+        const OUTPUT_ID: u64 = 7;
+        let (write_gate, write_ready, write_release) = WriterGate::channel();
+        let (flush_gate, mut flush_ready, flush_release) = WriterGate::channel();
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let writer = RecoveryWriter {
+            write_gate,
+            flush_gate,
+            write_outcome: case.emit,
+            flush_outcome: case.flush.unwrap_or(IoOutcome::Succeeded),
+            bytes: Arc::clone(&bytes),
+            record_needs_flush: false,
+        };
+        let owner = Arc::new(());
+        let lease = Arc::downgrade(&owner);
+        let mut delivery = ReportDelivery::new(ReportHandler::new(writer, io::sink()), owner);
+        let mut write = Box::pin(delivery.handle(event(OUTPUT_ID)));
+        tokio::select! {
+            result = &mut write => panic!("{}: blocked write completed: {result:?}", case.id),
+            ready = write_ready => ready.unwrap(),
+        }
+        drop(write);
+        assert!(!delivery.is_quiescent(), "{}", case.id);
+        if case.flush.is_none() {
+            delivery
+                .admission()
+                .restrict_to(tokio::time::Instant::now());
+        }
+        let mut flush = Box::pin(delivery.flush());
+        tokio::select! {
+            biased;
+            result = &mut flush => panic!("{}: flush bypassed pending write: {result:?}", case.id),
+            () = tokio::task::yield_now() => {}
+        }
+        assert!(
+            matches!(
+                flush_ready.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ),
+            "{}",
+            case.id
+        );
+        assert!(lease.upgrade().is_some(), "{}", case.id);
+        write_release.send(()).unwrap();
+        let (entered, result) = tokio::select! {
+            ready = &mut flush_ready => {
+                if ready.is_ok() {
+                    assert!(lease.upgrade().is_some(), "{}", case.id);
+                    flush_release.send(()).unwrap();
+                }
+                (ready.is_ok(), (&mut flush).await)
+            }
+            result = &mut flush => (false, result),
+        };
+        drop(flush);
+        let bytes = bytes.lock().unwrap();
+        if !bytes.is_empty() {
+            let record: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_eq!(record["sequence"], OUTPUT_ID, "{}", case.id);
+        }
+        assert_eq!(
+            RecoveryObservation {
+                result: RecoveryResult::observe(result),
+                record_written: !bytes.is_empty(),
+                flush_entered: entered,
+                quiescent: delivery.is_quiescent(),
+                owner_held: lease.upgrade().is_some(),
+            },
+            case.expected,
+            "{}",
+            case.id
+        );
+        drop(delivery);
+        assert!(lease.upgrade().is_none(), "{}", case.id);
     }
 }

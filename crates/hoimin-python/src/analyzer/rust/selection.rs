@@ -2,6 +2,10 @@
 use super::{AnalysisCancelled, AnalyzeRequest, LineRange, module_name};
 use std::collections::HashSet;
 
+#[cfg(test)]
+#[path = "selection/oracle_tests.rs"]
+mod oracle_tests;
+
 /// Raw empty ranges mean all lines; nonempty reversed ranges alone mean none.
 /// Construction costs O(R log R), stores O(R), and membership costs O(log R).
 /// Symbol preparation visits S selectors and retains O(S) borrowed qualifier slices.

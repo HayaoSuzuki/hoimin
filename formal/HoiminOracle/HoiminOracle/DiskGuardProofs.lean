@@ -242,6 +242,31 @@ theorem finished_implies_delivery_clean {start result : State} {events : List Ev
   intro finished
   simpa [finished] using guard
 
+theorem deferred_cleanup_rejects_finish (state : State) (deferred : state.cleanupDeferred ≠ []) :
+    step state .finish = none := by
+  simp [step, transition, deferred]
+
+theorem recorded_cleanup_rejects_another_outcome (state : State) (root : RootId)
+    (recorded : anyOutcomeRecorded state root = true) :
+    step state (.cleanupSucceeded root) = none ∧ step state (.cleanupFailed root) = none ∧
+      step state (.cleanupDeferred root) = none ∧ step state (.cleanupRetained root) = none := by
+  simp [step, transition, recorded]
+
+theorem finished_with_delivery_implies_safety_succeeded {start result : State}
+    {events : List Event} (startValid : Invariant start = true)
+    (accepted : run start events = some result) (finished : result.finished = true)
+    (delivery : result.deliveryRoots ≠ []) : safetyComponentsSucceeded result = true := by
+  have cleaned := finished_implies_delivery_clean startValid accepted finished
+  have safe := destructive_cleanup_implies_components_succeeded startValid accepted
+  cases deliveries : result.deliveryRoots with
+  | nil => exact False.elim (delivery deliveries)
+  | cons root rest =>
+      rw [deliveries] at cleaned
+      simp only [List.all_cons, Bool.and_eq_true] at cleaned
+      cases cleanRoots : result.cleanupClean with
+      | nil => simp [cleanRoots] at cleaned
+      | cons first others => simpa [cleanRoots] using safe
+
 theorem root_renaming_samples_match : rootRenamingCasesPass = true := by native_decide
 
 theorem payload_class_samples_match : payloadSymmetryCasesPass = true := by native_decide
@@ -251,5 +276,261 @@ theorem fixed_cases_match_literal_expectations : casesPass = true := by native_d
 theorem fixed_case_contract_is_closed : corpusContractValid = true := by native_decide
 
 theorem every_broken_family_has_a_witness : sensitivityPasses = true := by native_decide
+
+theorem distinct_report_evidence_is_appended (primary item : ReportEvidence)
+    (existing : List ReportEvidence) (different : item ≠ primary) (fresh : item ∉ existing) :
+    appendReportEvidence primary existing item = existing ++ [item] := by
+  simp [appendReportEvidence, different, fresh]
+
+theorem replayed_report_evidence_does_not_duplicate (primary item : ReportEvidence)
+    (existing : List ReportEvidence) :
+    appendReportEvidence primary (appendReportEvidence primary existing item) item =
+      appendReportEvidence primary existing item := by
+  by_cases duplicate : item = primary ∨ item ∈ existing <;>
+    simp [appendReportEvidence, duplicate]
+
+theorem finalization_error_preserves_primary (report : FinalizationReport)
+    (error : FinalizationError) (primary : String × Option String)
+    (prior : report.primary = some primary) :
+    (recordFinalizationError report error).primary = some primary := by
+  simp [recordFinalizationError, prior]
+  split <;> rfl
+
+theorem finalization_errors_preserve_primary (report : FinalizationReport)
+    (errors : List FinalizationError) (primary : String × Option String)
+    (prior : report.primary = some primary) :
+    (recordFinalizationErrors report errors).primary = some primary := by
+  induction errors generalizing report with
+  | nil => exact prior
+  | cons error rest ih =>
+      exact ih (recordFinalizationError report error)
+        (finalization_error_preserves_primary report error primary prior)
+
+theorem finalization_error_marks_incomplete (report : FinalizationReport)
+    (error : FinalizationError) :
+    (recordFinalizationError report error).complete = false ∧
+    ((recordFinalizationError report error).exitCode =
+      if report.exitCode = 0 then 2 else report.exitCode) := by
+  by_cases missing : report.primary.isNone = true
+  · simp [recordFinalizationError, missing]
+  · by_cases duplicate : report.primary = some (error.1, some error.2) ∨ error ∈ report.errors
+    · simp [recordFinalizationError, missing, duplicate]
+    · simp [recordFinalizationError, missing, duplicate]
+
+theorem repeated_finalization_error_preserves_evidence (report : FinalizationReport)
+    (error : FinalizationError)
+    (alreadyRecorded : report.primary = some (error.1, some error.2) ∨ error ∈ report.errors)
+    (primaryExists : report.primary.isSome = true) :
+    (recordFinalizationError report error).errors = report.errors := by
+  cases primary : report.primary with
+  | none => simp [primary] at primaryExists
+  | some value =>
+      have duplicate : value = (error.1, some error.2) ∨ error ∈ report.errors := by
+        simpa [primary] using alreadyRecorded
+      simp [recordFinalizationError, primary, duplicate]
+
+theorem distinct_finalization_error_appends (report : FinalizationReport)
+    (error : FinalizationError) (primary : String × Option String)
+    (prior : report.primary = some primary) (different : primary ≠ (error.1, some error.2))
+    (fresh : error ∉ report.errors) :
+    (recordFinalizationError report error).errors = report.errors ++ [error] := by
+  simp [recordFinalizationError, prior, different, fresh]
+
+theorem a_known_physical_file_adds_no_bytes (count : MeterCount) (filesystem id bytes : Nat)
+    (seen : (filesystem, id) ∈ count.identities) :
+    chargeMeterFile true count filesystem (id, bytes) = count := by
+  simp [chargeMeterFile, seen]
+
+theorem a_sampled_filesystem_keeps_its_first_capacity (seen : List (Nat × Nat))
+    (root : MeterRoot) (sampled : seen.any (fun capacity => capacity.1 == root.filesystem) = true) :
+    recordCapacity seen root = seen := by
+  simp [recordCapacity, sampled]
+
+theorem any_capacity_at_reserve_stops (capacities : List (Nat × Nat))
+    (filesystem free owned maxOwned minFree : Nat) (present : (filesystem, free) ∈ capacities)
+    (reserve : free ≤ minFree) :
+    (meterReasons owned maxOwned minFree capacities).head? = some .reserveReached := by
+  have member : free ∈ capacities.map Prod.snd := List.mem_map_of_mem present
+  cases minimum : minimumCapacity capacities with
+  | none =>
+    have empty := List.min?_eq_none_iff.mp minimum
+    simp [empty] at member
+  | some lowest =>
+    have least := (List.min?_eq_some_iff.mp minimum).2 free member
+    have reached := Nat.le_trans least reserve
+    by_cases size : owned ≥ maxOwned <;> simp [meterReasons, minimum, observationReasons, reached, size]
+
+theorem rejected_samples_preserve_history (history : List StatsReading) (value : StatsReading)
+    (empty : value.capacities = []) :
+    recordStats history .measurementFailed = history ∧ recordStats history .refreshFailed = history ∧
+      recordStats history (.reading value) = history := by
+  simp [recordStats, empty]
+
+theorem extending_capacity_history_preserves_minimum_bound (before added : List (Nat × Nat))
+    (previous : Nat) (sampled : minimumCapacity before = some previous) :
+    ∃ current, minimumCapacity (before ++ added) = some current ∧ current ≤ previous := by
+  have wasPresent : previous ∈ before.map Prod.snd := List.min?_mem sampled
+  have present : previous ∈ (before ++ added).map Prod.snd := by simp [wasPresent]
+  cases minimum : minimumCapacity (before ++ added) with
+  | none =>
+    have empty := List.min?_eq_none_iff.mp minimum
+    simp [empty] at present
+  | some current =>
+    exact ⟨current, rfl, (List.min?_eq_some_iff.mp minimum).2 previous present⟩
+
+theorem accepted_samples_do_not_raise_minimum (history : List StatsReading) (value : StatsReading)
+    (previous : Nat) (sampled : minimumCapacity (historicalCapacities history) = some previous) :
+    ∃ current, minimumCapacity (historicalCapacities (recordStats history (.reading value))) =
+      some current ∧ current ≤ previous := by
+  by_cases empty : value.capacities.isEmpty = true
+  · exact ⟨previous, by simpa [recordStats, empty] using sampled, Nat.le_refl _⟩
+  · simpa [recordStats, empty, historicalCapacities] using
+      extending_capacity_history_preserves_minimum_bound (historicalCapacities history)
+        value.capacities previous sampled
+
+theorem final_capacity_keys_are_historical (starts : List (Nat × Nat))
+    (query : Option (List (Nat × Nat))) :
+    (finalCapacities starts query).map FinalCapacity.key = starts.map Prod.fst := by
+  simp [finalCapacities, List.map_map, Function.comp_def]
+
+theorem unavailable_end_capacity_has_no_change (query : Option (List (Nat × Nat)))
+    (key start : Nat) (missing : endCapacity query key = none) :
+    capacityChange start (endCapacity query key) = none := by
+  simp [missing, capacityChange]
+
+theorem measured_zero_end_capacity_has_signed_change (start : Nat) :
+    capacityChange start (some 0) = some (-Int.ofNat start) := by
+  simp [capacityChange]
+
+theorem capacity_change_is_bounded_by_u64_magnitude (start finish : Nat)
+    (startFits : start < 2^64) (finishFits : finish < 2^64) :
+    ∃ change, capacityChange start (some finish) = some change ∧
+      -((2 : Int)^64 - 1) ≤ change ∧ change ≤ (2 : Int)^64 - 1 := by
+  refine ⟨(finish : Int) - (start : Int), rfl, ?_, ?_⟩ <;> omega
+
+theorem delivery_errors_preserve_stage_order (evidence : DeliveryEvidence) :
+    (deliveryErrors evidence).Sublist deliveryErrorOrder := by
+  unfold deliveryErrors
+  exact List.filter_sublist
+
+theorem delivery_cleanup_is_requested_once (evidence : DeliveryEvidence) :
+    (deliveryEvents evidence).count DeliveryEvent.cleanupRequested = 1 := by
+  rcases evidence with ⟨capacity, write, flush, cleanup⟩
+  cases capacity <;> cases write <;> cases flush <;> cases cleanup <;> decide
+
+theorem delivery_acknowledgement_requires_all_stages (evidence : DeliveryEvidence) :
+    DeliveryEvent.acknowledged ∈ deliveryEvents evidence ↔
+      evidence.capacity = true ∧ evidence.write = true ∧
+        evidence.flush = true ∧ evidence.cleanup = true := by
+  rcases evidence with ⟨capacity, write, flush, cleanup⟩
+  cases capacity <;> cases write <;> cases flush <;> cases cleanup <;>
+    simp [deliveryEvents, deliveryErrors, deliveryErrorOrder]
+
+theorem delivered_session_completion_requires_finish_and_complete_report
+    (evidence : DeliveryEvidence) (runComplete commit : Bool)
+    (complete : (deliverSession evidence runComplete commit).complete = true) :
+    (deliverSession evidence runComplete commit).finished = true ∧
+      (deliverSession evidence runComplete commit).reportComplete = some true := by
+  rcases evidence with ⟨capacity, write, flush, cleanup⟩
+  cases capacity <;> cases write <;> cases flush <;> cases cleanup <;>
+    cases runComplete <;> cases commit <;>
+    simp_all [deliverSession, deliveryErrors, deliveryErrorOrder]
+
+theorem failed_session_commit_preserves_unfinished_state
+    (evidence : DeliveryEvidence) (runComplete : Bool) :
+    (deliverSession evidence runComplete false).finished = false ∧
+      (deliverSession evidence runComplete false).complete = false := by
+  simp [deliverSession]
+
+theorem delivery_failure_leaves_session_unfinished
+    (evidence : DeliveryEvidence) (runComplete commit : Bool)
+    (failed : (deliveryErrors evidence).isEmpty = false) :
+    (deliverSession evidence runComplete commit).finishRequested = false ∧
+      (deliverSession evidence runComplete commit).finished = false ∧
+      (deliverSession evidence runComplete commit).complete = false := by
+  simp [deliverSession, failed]
+
+theorem incomplete_session_resumes_even_when_finished (session : SessionDelivery)
+    (priorExecutedAll : Bool) (incomplete : session.complete = false) :
+    (resumeAfterDelivery session priorExecutedAll).resumesPrior = true := by
+  simp [resumeAfterDelivery, incomplete]
+
+theorem completed_session_starts_fresh (session : SessionDelivery)
+    (priorExecutedAll : Bool) (complete : session.complete = true) :
+    (resumeAfterDelivery session priorExecutedAll).resumesPrior = false ∧
+      (resumeAfterDelivery session priorExecutedAll).executesMore = true := by
+  simp [resumeAfterDelivery, complete]
+
+theorem failed_delivery_resumes_without_reexecution_after_full_run
+    (evidence : DeliveryEvidence) (commit : Bool)
+    (failed : (deliveryErrors evidence).isEmpty = false) :
+    (resumeAfterDelivery (deliverSession evidence true commit) true).resumesPrior = true ∧
+      (resumeAfterDelivery (deliverSession evidence true commit) true).executesMore = false := by
+  simp [resumeAfterDelivery, deliverSession, failed]
+
+theorem report_deadline_cannot_be_extended (state : ReportAdmissionState)
+    (prior newDeadline : Nat) (limited : state.deadline = some prior) :
+    (reportAdmissionStep state (.restrict newDeadline)).deadline =
+      some (min newDeadline prior) := by
+  simp [reportAdmissionStep, limited]
+
+theorem report_cannot_start_at_deadline (state : ReportAdmissionState)
+    (closed : state.deadline = some state.now) :
+    reportMayStart state = false := by
+  simp [reportMayStart, closed, Nat.lt_irrefl]
+
+theorem restricting_report_deadline_does_not_reopen_gate (state : ReportAdmissionState)
+    (deadline : Nat) (closed : reportMayStart state = false) :
+    reportMayStart (reportAdmissionStep state (.restrict deadline)) = false := by
+  cases driver : state.driverAlive with
+  | false => simp [reportMayStart, reportAdmissionStep, driver]
+  | true =>
+      cases prior : state.deadline with
+      | none => simp [reportMayStart, driver, prior] at closed
+      | some limit =>
+          have elapsed : limit ≤ state.now := by
+            simpa [reportMayStart, driver, prior, Nat.not_lt] using closed
+          have tightened := Nat.le_trans (Nat.min_le_right deadline limit) elapsed
+          simp [reportMayStart, reportAdmissionStep, driver, prior, Nat.not_lt, tightened]
+
+theorem abandoned_queued_report_is_refused (state : ReportAdmissionState)
+    (queued : state.task = .queued) :
+    (reportAdmissionStep (reportAdmissionStep state .abandon) .start).task = .refused := by
+  simp [reportAdmissionStep, reportMayStart, queued]
+
+theorem queued_report_keeps_owner_after_abandonment (state : ReportAdmissionState)
+    (queued : state.task = .queued) :
+    reportOwnerHeld (reportAdmissionStep state .abandon) = true := by
+  simp [reportAdmissionStep, reportOwnerHeld, queued] <;> decide
+
+theorem active_report_keeps_owner_after_abandonment (state : ReportAdmissionState)
+    (active : state.task = .active) :
+    reportOwnerHeld (reportAdmissionStep state .abandon) = true := by
+  simp [reportAdmissionStep, reportOwnerHeld, active] <;> decide
+
+theorem detached_report_releases_owner_on_return (state : ReportAdmissionState)
+    (active : state.task = .active) (detached : state.driverAlive = false) :
+    reportOwnerHeld (reportAdmissionStep state .finish) = false := by
+  simp [reportAdmissionStep, reportOwnerHeld, active, detached] <;> decide
+
+theorem recovered_write_error_allows_flush (flush : Option ReportIoResult) :
+    recoverReport .ioFailed flush = recoverReport .succeeded flush := by
+  cases flush with
+  | none => rfl
+  | some outcome => cases outcome <;> rfl
+
+theorem panicked_emit_makes_recovery_unavailable (flush : Option ReportIoResult) :
+    recoverReport .panicked flush = .missingHandler ∧
+      recoveryFlushEntered .panicked flush = false := by
+  exact ⟨rfl, rfl⟩
+
+theorem rejected_recovery_flush_is_quiescent (emit : ReportIoResult)
+    (returned : emit ≠ .panicked) :
+    reportRecoveryQuiescent (recoverReport emit none) = true := by
+  cases emit <;> simp_all [recoverReport, reportRecoveryQuiescent]
+
+theorem panicked_recovery_flush_is_not_quiescent (emit : ReportIoResult) :
+    reportRecoveryQuiescent (recoverReport emit (some .panicked)) = false := by
+  cases emit <;> rfl
 
 end HoiminOracle.DiskGuard

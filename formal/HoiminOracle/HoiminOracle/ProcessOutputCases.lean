@@ -1,9 +1,10 @@
 import HoiminOracle.ProcessOutputProofs
+import HoiminOracle.SessionCases
 
 namespace HoiminOracle.ProcessOutput
 
 structure OracleCase where
-  schema : Nat := 1
+  schema : Nat := 2
   id : String
   mode : String := "strict"
   execution : ExecutionKind
@@ -15,6 +16,11 @@ structure OracleCase where
 def executionName : ExecutionKind → String
   | .baseline => "baseline"
   | .mutant => "mutant"
+  | .probe => "probe"
+
+def failureSourceName : FailureSource → String
+  | .process => "process"
+  | .output => "output"
 
 def terminationName : Termination → String
   | .exitSuccess => "exit_success"
@@ -53,8 +59,86 @@ def cases : List OracleCase := assignments.map fun entry =>
     expected := decideOutcome execution process output }
 
 def caseSafe (item : OracleCase) : Bool :=
-  item.schema == 1 && item.mode == "strict" &&
+  item.schema == 2 && item.mode == "strict" &&
     item.expected == decideOutcome item.execution item.process item.output &&
     safeDecision item.execution item.process item.output
+
+private def sessionStatus : Status → SessionAudit.Status
+  | .killed => .killed
+  | .survived => .survived
+  | .timeout => .timeout
+  | .outOfMemory => .outOfMemory
+  | .processLimit => .processLimit
+  | .notRun => .notRun
+  | .error => .error
+
+structure ResumeObservation where
+  stored : Option SessionAudit.Status
+  reused : Option SessionAudit.Status
+  faultError : String
+  storedAfterFault : Option SessionAudit.Status
+  replacementError : Option String
+  storedAfterReplacement : Option SessionAudit.Status
+  deriving DecidableEq, BEq
+
+private def observeResume (status : Status) : ResumeObservation :=
+  let resumed := SessionAudit.run SessionAudit.State.initial [
+    .open .h0, .begin .h0 .r0 .f0, .persist .h0 .r0 .m0 (sessionStatus status) .p0 .valid,
+    .finish .h0 .r0 false, .drop .h0, .open .h1, .load .h1 .f0 ]
+  let lookup : SessionAudit.Event := .lookup .h1 .r0 .m0
+  let stored := (SessionAudit.step resumed lookup).storedResult.map SessionAudit.ResultRow.status
+  let stage : SessionAudit.Event := .replacementDelete .h1 .r0 .m0 .survived .p1
+  let staged := SessionAudit.step resumed stage
+  let (faultError, rolledBack) := match staged.rejection with
+    | some error => (SessionAudit.rejectionCode stage error, staged.state)
+    | none => ("session.commit", (SessionAudit.step staged.state (.replacementRollback .h1)).state)
+  let reopened := SessionAudit.run rolledBack [.drop .h1, .open .h0, .load .h0 .f0]
+  let lookup : SessionAudit.Event := .lookup .h0 .r0 .m0
+  let replacement : SessionAudit.Event := .persist .h0 .r0 .m0 .survived .p1 .valid
+  let attempted := SessionAudit.step reopened replacement
+  { stored
+    reused := stored.filter SessionAudit.Status.isDeterminate
+    faultError
+    storedAfterFault :=
+      (SessionAudit.step reopened lookup).storedResult.map SessionAudit.ResultRow.status
+    replacementError := attempted.rejection.map (SessionAudit.rejectionCode replacement)
+    storedAfterReplacement :=
+      (SessionAudit.step attempted.state lookup).storedResult.map SessionAudit.ResultRow.status }
+
+structure ResumeCase where
+  id : String
+  termination : Termination
+  closeTimedOut : Bool
+  expected : ResumeObservation
+  deriving DecidableEq, BEq
+
+def resumeCases : List ResumeCase := cases.filterMap fun item => do
+  let termination ← item.expected.termination
+  let status ← item.expected.status
+  return {
+    id := item.id
+    termination
+    closeTimedOut := item.output == .closeTimedOut
+    expected := observeResume status
+  }
+
+def resumeSensitivity : Bool :=
+  observeResume .error != observeResume (classify .exitSuccess) &&
+    observeResume .notRun != observeResume .survived &&
+    (observeResume .error).storedAfterFault != (observeResume .error).storedAfterReplacement
+
+theorem timeout_result_reruns_after_reopen (termination : Termination) :
+    ((decideOutcome .mutant (.known termination) .closeTimedOut).status.map observeResume) =
+      some {
+        stored := some .error
+        reused := none
+        faultError := "session.commit"
+        storedAfterFault := some .error
+        replacementError := none
+        storedAfterReplacement := some .survived
+      } := by
+  rfl
+
+theorem resume_sensitivity_passes : resumeSensitivity = true := by native_decide
 
 end HoiminOracle.ProcessOutput

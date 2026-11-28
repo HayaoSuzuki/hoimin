@@ -211,3 +211,135 @@ cargo test -p hoimin-cli --test session_handler \
 cargo test -p hoimin-cli --test session_handler \
   failed_inconclusive_replacement_restores_the_previous_result -- --exact --nocapture
 ```
+
+## Follow-up on the candidate recheck
+
+The Lean theorem establishes that rechecking a completed candidate selects no
+run, keeps the owner set intact, and clears the pending load. Three generated
+`internal-fixture` cases exercise the boundary where the loader has read the
+candidate and is about to acquire ownership. The first handler keeps ownership,
+finishes the run as incomplete, or finishes it as complete.
+
+The Rust replay uses two real SQLite connections and a one-shot callback at
+that boundary to order the operations. It compares the load result, the run's
+durable flags, and the state of its ownership lock. A third handler probes the
+lock so the completed-candidate case detects a leaked provisional lock. The
+test controls the interleaving within one process.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-load-recheck corpus/session-load-recheck.jsonl
+lake exe generate_session -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --lib resume_candidate_interleaving_matches_lean
+```
+
+## Budget changes between candidate read and ownership acquisition
+
+The Lean model covers an incomplete, compatible run after ownership has been
+acquired. A stale observed budget prevents the write. In every modeled
+transition the saved budget can only stay the same or increase. The negative
+control omits the equality check and permits a stale request to write.
+
+Twelve `internal-fixture` cases use the same callback to let the existing
+owner apply a budget through the public `load` operation before releasing
+ownership. They include an unchanged budget and a change from 255 to 256.
+The Rust replay compares the first outcome and stored bytes, checks that a
+stale request releases the provisional lock, then retries on a new connection.
+The retry can resume with the requested budget or report `BudgetDecreased`.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_resume_budget -- --check-recheck corpus/resume-budget-recheck.jsonl
+lake exe generate_resume_budget -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --lib resume_budget_recheck_and_retry_match_lean
+```
+
+## Finish commits after the async waiter is dropped
+
+The model starts with an owned run whose finish transaction has updated the
+row and is waiting to commit. Dropping the waiter leaves that operation with
+the blocking worker. Dropping the dispatcher as well releases its remaining
+ownership only after the worker settles. Lean proves that a cancelled
+waiter receives no reply, the operation can still commit, and rollback
+preserves the committed run and result rows.
+
+Twenty-four fixtures use the real dispatcher and a one-shot gate immediately
+before SQLite commit. They vary the run's previous finished flag, the requested
+completion flag, the commit outcome, and whether the waiter or dispatcher is
+dropped. A separate handler reads the durable flags and attempts a real
+resume before and after settlement. An injected deferred foreign-key
+violation causes commit failure on the writer connection. The replay also
+compares the previously committed mutant result before and after settlement.
+The fixtures control the interleaving within one process.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-finish-wait corpus/session-finish-wait.jsonl
+lake exe generate_session -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --lib finish_commit_and_ownership_after_waiter_cancellation_match_lean
+```
+
+## The CLI shutdown deadline while a finish is pending
+
+This replay starts after the final report was acknowledged and the SQLite
+finish has reached the pre-commit gate. It distinguishes release before the
+total timeout, release within shutdown grace, and release after the CLI has
+returned a shutdown error. The model observes the durable flags at CLI
+return and after the worker settles. Lean proves that an expired wait
+returns before acknowledging the finish and that the late worker can
+still commit.
+
+The twelve fixtures combine those release points with complete and
+mutant-limited runs and with successful or rejected commits. The Rust
+fixture advances the Tokio clock after entering the real transaction.
+It compares the reported completion flag, observed acknowledgements,
+CLI result, and durable flags. It checks that prior mutant results survive
+and observes the detached worker's handler until release after CLI return.
+A deferred foreign-key violation injects commit failure on an isolated
+fixture database.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-finish-deadline corpus/session-finish-deadline.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib session_finish_across_cli_shutdown_deadline_matches_lean
+```
+
+## Mutant result commits across the CLI shutdown deadline
+
+These fixtures stop the first mutant's persistence transaction immediately
+before commit. The CLI run has a one-mutant limit. Lean models the
+observable result at CLI return, the committed result after settlement,
+and whether a later resume can reuse it. An expired wait returns before
+the pending transaction becomes visible. Commit failure leaves the
+previous durable rows intact. The model also represents an observed
+execution result that reaches the report after a failed persistence attempt.
+An output-close timeout makes that result an infrastructure error, which
+takes precedence over the exit status for the mutant limit.
+
+Twenty-four cases combine the three release points with successful or rejected
+commits, complete output or an injected output-close timeout, and either an
+initial insert or replacement of a saved inconclusive result. The replacement
+fixtures seed the old outcome through an actual CLI run and resume it with
+the same one-mutant limit. Lean proves that the old result remains visible at
+CLI return after expiry and a later successful commit replaces only the
+target result.
+
+The adapter uses the real CLI run loop, a controlled Tokio clock, and an
+independent SQLite connection. It compares the complete stored outcome and
+diagnostic rows, using SQLite diagnostic IDs to distinguish a replacement
+even when the old and new diagnostic codes agree. It reads the emitted
+result and resumes the same run with a larger budget. The output-close
+timeout is injected at the process completion boundary. It produces a real
+session diagnostic through the core transition. A deferred foreign-key
+violation on the writer connection injects commit failure.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_session -- --depth 4 --check-persist-deadline corpus/session-persist-deadline.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib mutant_persistence_across_cli_shutdown_deadline_matches_lean
+```

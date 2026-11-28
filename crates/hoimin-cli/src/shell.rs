@@ -341,6 +341,13 @@ pub struct RunControl {
     #[cfg(test)]
     final_measurement_pause: Option<FinalMeasurementPause>,
     #[cfg(test)]
+    session_finish_pause: Arc<std::sync::Mutex<Option<crate::session::SessionCommitPause>>>,
+    #[cfg(test)]
+    session_persist_pause:
+        Arc<std::sync::Mutex<Option<(crate::session::SessionCommitPause, bool)>>>,
+    #[cfg(test)]
+    mutant_output_close_timeout_once: Arc<AtomicBool>,
+    #[cfg(test)]
     post_drain_disk_failure: Arc<std::sync::Mutex<Option<hoimin_core::DiskFailure>>>,
     #[cfg(test)]
     force_execution_cleanup_deferred: Arc<AtomicBool>,
@@ -500,6 +507,12 @@ impl RunControl {
             end_available_override: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(test)]
             final_measurement_pause: None,
+            #[cfg(test)]
+            session_finish_pause: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(test)]
+            session_persist_pause: Arc::new(std::sync::Mutex::new(None)),
+            #[cfg(test)]
+            mutant_output_close_timeout_once: Arc::new(AtomicBool::new(false)),
             #[cfg(test)]
             post_drain_disk_failure: Arc::new(std::sync::Mutex::new(None)),
             #[cfg(test)]
@@ -2118,7 +2131,7 @@ fn apply_finalization_errors_to_summary(summary: &mut hoimin_core::RunSummary, e
         );
         if let Some(stop) = &mut summary.disk.stop {
             let secondary = hoimin_core::DiskSecondary::Error { code, message };
-            if disk_secondary_matches_primary(stop, &secondary)
+            if disk_secondary_matches_primary_error(stop, &secondary)
                 || stop.secondary.contains(&secondary)
             {
                 continue;
@@ -2136,20 +2149,12 @@ fn apply_finalization_errors_to_summary(summary: &mut hoimin_core::RunSummary, e
     }
 }
 
-fn disk_secondary_matches_primary(
+fn disk_secondary_matches_primary_error(
     report: &hoimin_core::DiskStopReport,
     secondary: &hoimin_core::DiskSecondary,
 ) -> bool {
-    match secondary {
-        hoimin_core::DiskSecondary::Observation { reason, value } => {
-            report.code == reason.code()
-                && report.owned_bytes == Some(value.owned_bytes)
-                && report.available_bytes == Some(value.available_bytes)
-        }
-        hoimin_core::DiskSecondary::Error { code, message } => {
-            report.code == *code && report.message.as_deref() == Some(message)
-        }
-    }
+    matches!(secondary, hoimin_core::DiskSecondary::Error { code, message }
+        if report.code == *code && report.message.as_deref() == Some(message))
 }
 
 fn apply_execution_cleanup_evidence(
@@ -2176,22 +2181,33 @@ fn apply_execution_cleanup_evidence(
     report.remaining_root = evidence.remaining_root.as_ref().map(ToString::to_string);
 }
 
-fn merge_monitor_stop(report: &mut hoimin_core::DiskStopReport, latest: hoimin_core::DiskFailure) {
+fn merge_monitor_stop(
+    report: &mut hoimin_core::DiskStopReport,
+    primary: Option<&hoimin_core::DiskFailureReason>,
+    latest: hoimin_core::DiskFailure,
+) {
+    let primary = primary.map(hoimin_core::DiskFailureReason::to_secondary);
     let mut incoming = vec![latest.reason.to_secondary()];
     incoming.extend(latest.secondary);
     for secondary in incoming {
-        if disk_secondary_matches_primary(report, &secondary)
-            || report.secondary.contains(&secondary)
-        {
+        let matches_primary = primary.as_ref().map_or_else(
+            || disk_secondary_matches_primary_error(report, &secondary),
+            |evidence| *evidence == secondary,
+        );
+        if matches_primary || report.secondary.contains(&secondary) {
             continue;
         }
         report.secondary.push(secondary);
     }
 }
 
-fn merge_lifecycle_stop(summary: &mut hoimin_core::RunSummary, failure: hoimin_core::DiskFailure) {
+fn merge_lifecycle_stop(
+    summary: &mut hoimin_core::RunSummary,
+    primary: Option<&hoimin_core::DiskFailureReason>,
+    failure: hoimin_core::DiskFailure,
+) {
     if let Some(report) = &mut summary.disk.stop {
-        merge_monitor_stop(report, failure);
+        merge_monitor_stop(report, primary, failure);
         return;
     }
     summary.disk.stop = Some(failure.into());
@@ -3486,6 +3502,19 @@ async fn run_loop_context(
                     #[cfg(test)]
                     control.observe_effect_dispatch();
                 }
+                #[cfg(test)]
+                if matches!(&effect, RunEffect::FinishSession(_)) {
+                    if let Some(pause) = control.session_finish_pause.lock().unwrap().take() {
+                        context.session.as_ref().expect("session was started").pause_finish_before_commit(pause);
+                    }
+                    control.observe_finalization_event("session_finish_requested");
+                }
+                #[cfg(test)]
+                if matches!(&effect, RunEffect::PersistResult(_))
+                    && let Some((pause, reject)) = control.session_persist_pause.lock().unwrap().take()
+                {
+                    context.session.as_ref().expect("session was started").pause_persist_before_commit(pause, reject);
+                }
                 match effect {
                     RunEffect::RunBaseline(request) => {
                         let id = request.id;
@@ -3668,7 +3697,7 @@ async fn run_loop_context(
                             if let (Some(report), Some(latest)) =
                                 (&mut summary.disk.stop, latest_stop)
                             {
-                                merge_monitor_stop(report, latest);
+                                merge_monitor_stop(report, finalization.disk_primary(), latest);
                             }
                             finalization.project_summary(summary);
                             apply_finalization_errors_to_summary(summary, &finalization_errors);
@@ -4428,6 +4457,12 @@ async fn run_loop_context(
                 ),
             };
             finalization_errors.append(&mut context.blocking_secondary_errors);
+            #[cfg(test)]
+            if let RunEvent::MutantFinished(finished) = &mut event
+                && control.mutant_output_close_timeout_once.swap(false, Ordering::AcqRel)
+            {
+                finished.output_state = hoimin_core::ProcessOutputState::CloseTimedOut;
+            }
             if let RunEvent::CleanupFinished(value) = &event
                 && finalization.safety_proven()
                 && !finalization.cleaned()
@@ -4528,6 +4563,14 @@ async fn run_loop_context(
             let cleanup_finished = matches!(&event, RunEvent::CleanupFinished(_));
             #[cfg(test)]
             let session_finished = matches!(&event, RunEvent::SessionFinished(_));
+            #[cfg(test)]
+            let session_finish_commit_failed = matches!(
+                &event,
+                RunEvent::EffectFailed(EffectFailed {
+                    failure: hoimin_core::EffectFailure::SessionDatabase { code, operation, .. },
+                    ..
+                }) if code == "session.commit" && operation == "commit run finish"
+            );
             let analyzed_records = match &event {
                 RunEvent::AnalysisFinished(value) => {
                     value.spool.as_ref().map(|spool| spool.records)
@@ -4541,7 +4584,8 @@ async fn run_loop_context(
                     | RunEvent::DiskStopRequested(_)
             );
             let deadline_stop = matches!(event, RunEvent::DeadlineReached);
-            if matches!(event, RunEvent::DiskStopRequested(_)) {
+            if let RunEvent::DiskStopRequested(stop) = &event {
+                finalization.record_disk_primary(&stop.failure.reason);
                 disk_stop_drain_pending = true;
             }
             let failed = matches!(event, RunEvent::EffectFailed(_));
@@ -4610,6 +4654,10 @@ async fn run_loop_context(
             #[cfg(test)]
             if session_finished {
                 control.observe_finalization_event("session_finished");
+            }
+            #[cfg(test)]
+            if session_finish_commit_failed {
+                control.observe_finalization_event("session_finish_commit_failed");
             }
             track_diagnostic_run_id(&mut diagnostic_run_id, &state);
             if let CompletionSource::Process(WorkerProcessContext::Mutant(worker)) = source
@@ -5013,6 +5061,8 @@ async fn run_loop_context(
                     },
                 )(run_result);
                 context.spool_dir.release_delivery_spool();
+                #[cfg(test)]
+                control.observe_finalization_event("delivery_cleanup_requested_once");
                 delivery_cleanup = CleanupProgress::Attempted;
                 let requested = finalization.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
@@ -5116,6 +5166,8 @@ async fn run_loop_context(
                 let _ = finalization.apply(DiskLifecycleEvent::ReportFailed);
             }
             if delivery_cleanup == CleanupProgress::NotAttempted {
+                #[cfg(test)]
+                control.observe_finalization_event("delivery_cleanup_requested_once");
                 delivery_cleanup = CleanupProgress::Attempted;
                 let requested = finalization.apply(DiskLifecycleEvent::CleanupRequested {
                     root: DiskRootId::Delivery,
@@ -5256,10 +5308,10 @@ fn track_diagnostic_run_id(diagnostic_run_id: &mut String, state: &RunState) {
     diagnostic_run_id.push_str(state.run_id());
 }
 
-fn record_metrics(
-    collector: &mut Option<MetricsCollector>,
+fn record_metrics<C: crate::metrics::Clock>(
+    collector: &mut Option<MetricsCollector<C>>,
     warnings: &mut Vec<(&'static str, String)>,
-    observation: impl FnOnce(&mut MetricsCollector) -> Result<(), MetricsError>,
+    observation: impl FnOnce(&mut MetricsCollector<C>) -> Result<(), MetricsError>,
 ) {
     if let Some(collector) = collector.as_mut()
         && let Err(error) = observation(collector)
@@ -5344,8 +5396,8 @@ fn accept_process_dispatch<'a>(
     Some(dispatch)
 }
 
-fn observe_accepted_transition(
-    collector: &mut Option<MetricsCollector>,
+fn observe_accepted_transition<C: crate::metrics::Clock>(
+    collector: &mut Option<MetricsCollector<C>>,
     warnings: &mut Vec<(&'static str, String)>,
     previous: RunPhase,
     next: RunPhase,
@@ -5789,9 +5841,9 @@ fn skip_expired_metrics_finalization(
     clippy::too_many_arguments,
     reason = "metrics finalization carries the existing run summary and the shared shutdown deadline"
 )]
-async fn finalize_metrics_with_shutdown(
+async fn finalize_metrics_with_shutdown<C: crate::metrics::Clock + Send + 'static>(
     path: crate::metrics::MetricsOutput,
-    collector: Option<MetricsCollector>,
+    collector: Option<MetricsCollector<C>>,
     run_failure: Option<String>,
     discovered: u64,
     executed: u64,
@@ -5853,6 +5905,9 @@ fn combine_close_results(
 
 #[cfg(test)]
 mod tests {
+    mod fingerprint_preflight_oracle;
+    mod session_artifacts_oracle;
+
     use super::*;
     use crate::test_writer::CollectingWriter;
     use std::collections::{BTreeMap, VecDeque};
@@ -6435,29 +6490,83 @@ mod tests {
     async fn pre_dispatch_sample_stops_before_analyzer_dispatch() {
         let project = tempfile::tempdir().unwrap();
         let config = shell_setup_test_config(&project);
-        let reading = |available_bytes| MeterReading {
-            owned_bytes: 0,
+        let reading = |owned_bytes, available_bytes, milliseconds| MeterReading {
+            owned_bytes,
             available_by_filesystem: BTreeMap::from([(FilesystemKey(7), available_bytes)]),
             conservative_entries: false,
-            elapsed: Duration::from_millis(1),
+            elapsed: Duration::from_millis(milliseconds),
         };
         let control = RunControl::with_disk_meter_and_interval(
             ScriptedDiskMeter(std::sync::Mutex::new(VecDeque::from([
-                reading(u64::MAX),
-                reading(1),
-                reading(1),
+                reading(3, u64::MAX, 1),
+                reading(0, 1, 1),
+                reading(0, 1, 2),
             ]))),
             Duration::from_secs(60),
         );
         let observed = control.clone();
+        let stdout = CollectingWriter::default();
 
-        let exit = run_loop_with_control(config, Vec::new(), Vec::new(), control)
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect("a pre-dispatch disk stop must finish through the run state machine");
 
         assert_ne!(exit, 0);
         assert_eq!(observed.dispatched_effect_count(), 0);
         assert_eq!(observed.max_process_tasks(), 0);
+        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
+        let disk = &report["summary"]["disk"];
+        assert_disk_summary_statistics(disk);
+        let primary = &disk["stop"];
+        assert_eq!(primary["code"], hoimin_core::FILESYSTEM_RESERVE_REACHED);
+        let secondaries: Vec<hoimin_core::DiskSecondary> =
+            serde_json::from_value(primary["secondary"].clone()).unwrap();
+        let measurements: Vec<_> = secondaries
+            .into_iter()
+            .filter(|evidence| matches!(evidence, hoimin_core::DiskSecondary::Observation { .. }))
+            .collect();
+        assert_eq!(
+            measurements,
+            [hoimin_core::DiskSecondary::Observation {
+                reason: hoimin_core::DiskStopReason::FilesystemReserveReached,
+                value: DiskObservation {
+                    owned_bytes: 0,
+                    available_bytes: 1,
+                    measured_in: Duration::from_millis(2)
+                },
+            }]
+        );
+    }
+
+    fn assert_disk_summary_statistics(disk: &serde_json::Value) {
+        let case = include_str!("../../../formal/HoiminOracle/corpus/disk-statistics.jsonl")
+            .lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|case| case["id"] == "shutdown_report")
+            .unwrap();
+        let expected = case["expected"].as_array().unwrap().last().unwrap();
+        for key in [
+            "sample_count",
+            "peak_owned_bytes",
+            "maximum_measurement_ms",
+            "minimum_available_bytes",
+        ] {
+            assert_eq!(disk[key], expected[key], "{key}");
+        }
+        let filesystems = disk["filesystems"].as_array().unwrap();
+        let expected_filesystems = expected["filesystems"].as_object().unwrap();
+        assert_eq!(filesystems.len(), expected_filesystems.len());
+        for filesystem in filesystems {
+            let key = filesystem["key"].as_str().unwrap();
+            assert_eq!(
+                filesystem["start_available_bytes"],
+                expected_filesystems[key]["start"]
+            );
+            assert_eq!(
+                filesystem["minimum_available_bytes"],
+                expected_filesystems[key]["minimum"]
+            );
+        }
     }
 
     async fn wait_for_live_process<F>(run: &mut F, ready: impl Fn() -> bool) -> Result<(), String>
@@ -7173,76 +7282,188 @@ mod tests {
         assert_eq!(janitor["details"][0]["reason"], "young");
     }
 
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinalizationReportObservation {
+        complete: bool,
+        exit_code: i32,
+        primary: Option<(String, Option<String>)>,
+        errors: Vec<(String, String)>,
+    }
+
+    impl FinalizationReportObservation {
+        fn from_summary(summary: &hoimin_core::RunSummary) -> Self {
+            let stop = summary.disk.stop.as_ref();
+            Self {
+                complete: summary.complete,
+                exit_code: summary.exit_code,
+                primary: stop.map(|stop| (stop.code.clone(), stop.message.clone())),
+                errors: stop
+                    .into_iter()
+                    .flat_map(|stop| &stop.secondary)
+                    .filter_map(|evidence| match evidence {
+                        hoimin_core::DiskSecondary::Error { code, message } => {
+                            Some((code.clone(), message.clone()))
+                        }
+                        hoimin_core::DiskSecondary::Observation { .. } => None,
+                    })
+                    .collect(),
+            }
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinalizationErrorCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        runtime: bool,
+        start: FinalizationReportObservation,
+        errors: Vec<(String, String)>,
+        expected: FinalizationReportObservation,
+    }
+
+    fn finalization_error_cases() -> impl Iterator<Item = FinalizationErrorCase> {
+        include_str!("../../../formal/HoiminOracle/corpus/disk-finalization-errors.jsonl")
+            .lines()
+            .map(|line| {
+                let case: FinalizationErrorCase = serde_json::from_str(line).unwrap();
+                assert_eq!(case.schema, 1, "{}", case.id);
+                assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+                case
+            })
+    }
+
+    fn last_jsonl_run_summary(stdout: &CollectingWriter, case_id: &str) -> hoimin_core::RunSummary {
+        // Preserve the original JSON tokens, including signed deltas outside the i64 range.
+        let bytes = stdout.snapshot();
+        let last = bytes
+            .rsplit(|byte| *byte == b'\n')
+            .find(|line| !line.is_empty())
+            .expect(case_id);
+        let OutputEvent::RunFinished(summary) =
+            serde_json::from_slice(last).unwrap_or_else(|error| panic!("{case_id}: {error}"))
+        else {
+            panic!("{case_id}: expected run_finished");
+        };
+        summary
+    }
+
+    #[test]
+    fn finalization_error_projection_matches_lean() {
+        let mut ids = BTreeSet::new();
+        for case in finalization_error_cases().filter(|case| !case.runtime) {
+            assert!(ids.insert(case.id.clone()));
+            let mut disk = hoimin_core::DiskRunSummary::unmeasured(8, 10);
+            disk.stop = case
+                .start
+                .primary
+                .map(|(code, message)| hoimin_core::DiskStopReport {
+                    code,
+                    message,
+                    owned_bytes: None,
+                    available_bytes: None,
+                    secondary: case
+                        .start
+                        .errors
+                        .into_iter()
+                        .map(|(code, message)| hoimin_core::DiskSecondary::Error { code, message })
+                        .collect(),
+                });
+            let mut summary = hoimin_core::RunSummary {
+                resolved_mutant_timeout: None,
+                schema_version: hoimin_core::REPORT_SCHEMA_VERSION,
+                sequence: 1,
+                run_id: "run".into(),
+                counts: hoimin_core::MutationSummary::default(),
+                complete: case.start.complete,
+                exit_code: case.start.exit_code,
+                disk,
+                verification_selection: None,
+            };
+            let errors = case
+                .errors
+                .iter()
+                .map(|(code, message)| format!("{code}: {message}"))
+                .collect::<Vec<_>>();
+            for _ in 0..2 {
+                apply_finalization_errors_to_summary(&mut summary, &errors);
+                assert_eq!(
+                    FinalizationReportObservation::from_summary(&summary),
+                    case.expected,
+                    "{}",
+                    case.id
+                );
+            }
+        }
+        assert_eq!(ids.len(), 53);
+    }
+
+    #[rstest::rstest]
+    #[case::monitor_timeout("monitor_timeout", false)]
+    #[case::monitor_timeout_and_end_query_failure("monitor_timeout_and_end_query_failure", true)]
     #[tokio::test]
-    async fn inner_monitor_join_timeout_is_persisted_when_outer_retry_joins() {
+    async fn finalization_error_report_matches_lean(
+        #[case] case_id: &str,
+        #[case] fail_end_query: bool,
+    ) {
+        let case = finalization_error_cases()
+            .find(|case| case.runtime && case.id == case_id)
+            .unwrap();
         let project = tempfile::tempdir().unwrap();
-        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
-        let mut args = vec![
-            OsString::from("hoimin"),
-            OsString::from("run"),
-            OsString::from("--root"),
-            project.path().as_os_str().to_owned(),
-            OsString::from("--file"),
-            OsString::from("target.py"),
-            OsString::from("--min-free-space"),
-            OsString::from("1B"),
-            OsString::from("--allow-best-effort-memory"),
-            OsString::from("--"),
-        ];
-        args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
+        let config = output_failure_test_config(&project);
         let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
             owned_bytes: 0,
             available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
             conservative_entries: false,
             elapsed: Duration::from_millis(1),
         }));
+        let (code, message) = case.start.primary.unwrap();
+        assert_eq!(code, hoimin_core::DISK_MEASUREMENT_FAILED);
         control.inject_post_drain_disk_failure(hoimin_core::DiskFailure {
-            reason: hoimin_core::DiskFailureReason::MeasurementFailed(
-                "injected prior measurement failure".to_owned(),
-            ),
+            reason: hoimin_core::DiskFailureReason::MeasurementFailed(message.unwrap()),
             secondary: Vec::new(),
         });
         control.inject_inner_monitor_join_timeout_once();
-        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
+        let end = if fail_end_query {
+            Err("injected end query failure".to_owned())
+        } else {
+            Ok(BTreeMap::from([(FilesystemKey(7), 500)]))
+        };
+        control.override_end_available(end);
         let observed = control.clone();
         let stdout = CollectingWriter::default();
 
         let error = run_loop_with_control(config, stdout.clone(), Vec::new(), control)
             .await
             .expect_err("an unjoined monitor must keep the run incomplete");
-
-        assert!(error.contains("disk.measurement.failed"), "{error}");
-        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(
-            report["summary"]["disk"]["stop"]["code"],
-            hoimin_core::DISK_MEASUREMENT_FAILED
-        );
-        assert_eq!(
-            report["summary"]["disk"]["stop"]["message"],
-            "injected prior measurement failure"
-        );
-        assert_eq!(
-            report["summary"]["disk"]["filesystems"][0]["end_available_bytes"],
-            500
-        );
-        assert_eq!(
-            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
-            -500
-        );
         assert!(
-            report["summary"]["disk"]["stop"]["secondary"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|secondary| {
-                    secondary["Error"]["code"] == hoimin_core::DISK_MEASUREMENT_FAILED
-                        && secondary["Error"]["message"]
-                            .as_str()
-                            .is_some_and(|message| message.contains("monitor join"))
-                }),
-            "{}",
-            report["summary"]["disk"]["stop"]
+            error.contains(hoimin_core::DISK_MEASUREMENT_FAILED),
+            "{error}"
+        );
+
+        let summary = last_jsonl_run_summary(&stdout, case_id);
+        assert_eq!(
+            FinalizationReportObservation::from_summary(&summary),
+            case.expected,
+            "{case_id}"
+        );
+        let execution = summary
+            .disk
+            .cleanup
+            .iter()
+            .find(|record| record.root_id == "execution")
+            .expect("execution cleanup evidence");
+        assert_eq!(execution.status, hoimin_core::DiskCleanupStatus::Deferred);
+        let filesystem = &summary.disk.filesystems[0];
+        assert_eq!(
+            filesystem.end_available_bytes,
+            (!fail_end_query).then_some(500)
+        );
+        assert_eq!(
+            filesystem.available_bytes_change,
+            (!fail_end_query).then_some(-500)
         );
         assert!(
             !observed
@@ -7956,43 +8177,74 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn final_disk_evidence_preserves_a_negative_free_space_change() {
-        let project = tempfile::tempdir().unwrap();
-        std::fs::write(project.path().join("target.py"), b"pass\n").unwrap();
-        let mut args = vec![
-            OsString::from("hoimin"),
-            OsString::from("run"),
-            OsString::from("--root"),
-            project.path().as_os_str().to_owned(),
-            OsString::from("--file"),
-            OsString::from("target.py"),
-            OsString::from("--min-free-space"),
-            OsString::from("1B"),
-            OsString::from("--allow-best-effort-memory"),
-            OsString::from("--"),
-        ];
-        args.extend(successful_test_command());
-        let config = crate::cli::parse_config_from(args).unwrap();
-        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
-            owned_bytes: 0,
-            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
-            conservative_entries: false,
-            elapsed: Duration::from_millis(1),
-        }));
-        control.override_end_available(Ok(BTreeMap::from([(FilesystemKey(7), 500)])));
-        let stdout = CollectingWriter::default();
+    async fn final_disk_capacity_report_matches_lean() {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Case {
+            schema: u8,
+            mode: String,
+            id: String,
+            start: Vec<(u64, u64)>,
+            end: Option<Vec<(u64, u64)>>,
+            expected_complete: bool,
+            expected_filesystems: Vec<hoimin_core::DiskFilesystemReport>,
+        }
 
-        assert_eq!(
-            run_loop_with_control(config, stdout.clone(), Vec::new(), control,)
-                .await
-                .unwrap(),
-            0
-        );
-        let report: serde_json::Value = crate::test_report::from_slice(&stdout.snapshot()).unwrap();
-        assert_eq!(
-            report["summary"]["disk"]["filesystems"][0]["available_bytes_change"],
-            -500
-        );
+        let corpus = include_str!("../../../formal/HoiminOracle/corpus/disk-final-capacity.jsonl");
+        assert_ne!(corpus, "");
+        for line in corpus.lines() {
+            let case: Case = serde_json::from_str(line).unwrap();
+            let id = &case.id;
+            assert_eq!(case.schema, 1, "{id}");
+            assert_eq!(case.mode, "internal-fixture", "{id}");
+            let filesystem_map = |values: Vec<(u64, u64)>| {
+                values
+                    .into_iter()
+                    .map(|(key, bytes)| (FilesystemKey(key), bytes))
+                    .collect::<BTreeMap<_, _>>()
+            };
+            let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+                owned_bytes: 0,
+                available_by_filesystem: filesystem_map(case.start),
+                conservative_entries: false,
+                elapsed: Duration::from_millis(1),
+            }));
+            control.override_end_available(
+                case.end
+                    .map(filesystem_map)
+                    .ok_or_else(|| "injected end query failure".to_owned()),
+            );
+            let observed = control.clone();
+            let project = tempfile::tempdir().unwrap();
+            let config = output_failure_test_config(&project);
+            let stdout = CollectingWriter::default();
+            let result = run_loop_with_control(config, stdout.clone(), Vec::new(), control).await;
+            if case.expected_complete {
+                assert_eq!(result, Ok(0), "{id}");
+            } else {
+                let error = result.expect_err(id);
+                assert!(
+                    error.contains(hoimin_core::DISK_MEASUREMENT_FAILED),
+                    "{id}: {error}"
+                );
+            }
+
+            let summary = last_jsonl_run_summary(&stdout, id);
+            assert_eq!(summary.disk.filesystems, case.expected_filesystems, "{id}");
+            assert_eq!(summary.complete, case.expected_complete, "{id}");
+            assert_eq!(
+                summary.disk.stop.as_ref().map(|stop| stop.code.as_str()),
+                (!case.expected_complete).then_some(hoimin_core::DISK_MEASUREMENT_FAILED),
+                "{id}"
+            );
+            assert_eq!(
+                observed
+                    .finalization_events()
+                    .contains(&"output_acknowledged"),
+                case.expected_complete,
+                "{id}"
+            );
+        }
     }
 
     #[tokio::test]
@@ -8203,6 +8455,15 @@ mod tests {
                 .contains(&"output_acknowledged"),
             "JSONL delivery"
         );
+        assert_eq!(
+            observed
+                .finalization_events()
+                .iter()
+                .filter(|event| **event == "delivery_cleanup_requested_once")
+                .count(),
+            1,
+            "outer shutdown must request cleanup once after an early I/O failure"
+        );
     }
 
     #[tokio::test]
@@ -8290,61 +8551,1155 @@ mod tests {
         );
     }
 
+    #[derive(PartialEq, Eq)]
+    enum FinalRecordProgress {
+        Pending,
+        Started,
+        Flushed,
+    }
+
+    struct FinalRecordWriter {
+        fail_write: bool,
+        fail_flush: bool,
+        record: Vec<u8>,
+        progress: FinalRecordProgress,
+        captured: CollectingWriter,
+        reject_commit: Option<Utf8PathBuf>,
+    }
+
+    impl Write for FinalRecordWriter {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            let marker = br#""kind":"run_finished""#;
+            self.record.extend_from_slice(bytes);
+            if self.progress == FinalRecordProgress::Pending
+                && self.record.windows(marker.len()).any(|part| part == marker)
+            {
+                self.progress = FinalRecordProgress::Started;
+                if let Some(session) = self.reject_commit.take() {
+                    let connection = rusqlite::Connection::open(session).unwrap();
+                    connection
+                        .execute_batch(
+                            "CREATE TABLE finish_fault (
+                            missing_run TEXT REFERENCES runs(run_id) DEFERRABLE INITIALLY DEFERRED
+                         );
+                         CREATE TRIGGER reject_finish AFTER UPDATE OF finished ON runs
+                         WHEN NEW.finished = 1 BEGIN
+                             INSERT INTO finish_fault VALUES ('missing-finish-fixture-run');
+                         END;",
+                        )
+                        .expect("install deferred foreign-key failure before session finish");
+                }
+            }
+            if self.progress == FinalRecordProgress::Started && self.fail_write {
+                return Err(std::io::Error::other("injected final record write failure"));
+            }
+            self.captured.write(bytes)
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            // A successful JSONL write flushes the record. The shell flushes again
+            // after the emit attempt. A failed write skips the first flush.
+            let explicit_flush = match self.progress {
+                FinalRecordProgress::Pending => false,
+                FinalRecordProgress::Started => self.fail_write,
+                FinalRecordProgress::Flushed => true,
+            };
+            if explicit_flush && self.fail_flush {
+                return Err(std::io::Error::other(
+                    "injected final delivery flush failure",
+                ));
+            }
+            if self.progress == FinalRecordProgress::Started {
+                self.progress = FinalRecordProgress::Flushed;
+            }
+            self.record.clear();
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum FinalDeliveryError {
+        Capacity,
+        Write,
+        Flush,
+        Cleanup,
+    }
+
+    fn final_delivery_errors(error: &str) -> Vec<FinalDeliveryError> {
+        let markers = [
+            (
+                FinalDeliveryError::Capacity,
+                "injected final capacity query failure",
+            ),
+            (
+                FinalDeliveryError::Write,
+                "injected final record write failure",
+            ),
+            (
+                FinalDeliveryError::Flush,
+                "injected final delivery flush failure",
+            ),
+            (FinalDeliveryError::Cleanup, "workspace.cleanup.failed:"),
+        ];
+        let mut stages = markers
+            .into_iter()
+            .flat_map(|(stage, marker)| {
+                error
+                    .match_indices(marker)
+                    .map(move |(index, _)| (index, stage))
+            })
+            .collect::<Vec<_>>();
+        stages.sort_unstable_by_key(|(index, _)| *index);
+        stages.into_iter().map(|(_, stage)| stage).collect()
+    }
+
+    #[derive(Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct SessionDeliveryObservation {
+        report_complete: Option<bool>,
+        finish_requested: bool,
+        finished: bool,
+        complete: bool,
+        exit_code: Option<i32>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct ResumeDeliveryExpectation {
+        resumes_prior: bool,
+        executes_more: bool,
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct StoredDeliveryRun {
+        run_id: String,
+        finished: bool,
+        complete: bool,
+        outcomes: BTreeMap<String, hoimin_core::MutationOutcome>,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)] // The run, delivery stages, and commit vary independently.
+    struct FinalDeliveryCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        run_complete: bool,
+        commit_ok: bool,
+        capacity_ok: bool,
+        write_ok: bool,
+        flush_ok: bool,
+        cleanup_ok: bool,
+        expected_errors: Vec<FinalDeliveryError>,
+        expected_events: Vec<String>,
+        expected_session: SessionDeliveryObservation,
+        expected_resume: ResumeDeliveryExpectation,
+    }
+
     #[tokio::test]
-    async fn output_rejects_ack_on_write_or_delivery_cleanup_failure() {
+    async fn final_delivery_and_durable_session_match_lean() {
+        let mut ids = BTreeSet::new();
+        for line in include_str!("../../../formal/HoiminOracle/corpus/disk-delivery.jsonl").lines()
+        {
+            let case: FinalDeliveryCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            replay_final_delivery(case).await;
+        }
+        assert_eq!(ids.len(), 34);
+    }
+
+    async fn replay_final_delivery(case: FinalDeliveryCase) {
+        let id = &case.id;
         let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project);
-        let control = RunControl::new();
+        let artifacts = tempfile::tempdir().unwrap();
+        let session = Utf8PathBuf::from_path_buf(artifacts.path().join("session.sqlite3")).unwrap();
+        let config = delivery_session_test_config(&project, &session, case.run_complete);
+        let control = delivery_test_control(case.capacity_ok);
+        if !case.cleanup_ok {
+            control.inject_delivery_cleanup_identity_failure();
+        }
         let observed = control.clone();
+        let stdout = CollectingWriter::default();
+        let writer = FinalRecordWriter {
+            fail_write: !case.write_ok,
+            fail_flush: !case.flush_ok,
+            record: Vec::new(),
+            progress: FinalRecordProgress::Pending,
+            captured: stdout.clone(),
+            reject_commit: (!case.commit_ok).then(|| session.clone()),
+        };
 
-        let error = run_loop_with_control(config, AlwaysFailingWriter, Vec::new(), control)
+        let result = run_loop_with_control(config.clone(), writer, Vec::new(), control).await;
+        let events = observed
+            .finalization_events()
+            .into_iter()
+            .filter(|event| {
+                matches!(
+                    *event,
+                    "run_finished_written"
+                        | "delivery_cleanup_requested_once"
+                        | "delivery_root_absent"
+                        | "output_acknowledged"
+                        | "session_finish_requested"
+                        | "session_finished"
+                        | "session_finish_commit_failed"
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(events, case.expected_events, "{id}");
+        if let Err(error) = &result {
+            assert_eq!(
+                final_delivery_errors(error),
+                case.expected_errors,
+                "{id}: {error}"
+            );
+        }
+        let (observation, prior) = observe_delivery_session(
+            &session,
+            &stdout.snapshot(),
+            events.contains(&"session_finish_requested"),
+            result.ok(),
+            &case,
+        );
+        assert_eq!(observation, case.expected_session, "{id}");
+        let roots = observed.managed_root_paths();
+        assert_eq!(roots.len(), 2, "{id}");
+        assert!(!roots[0].exists(), "{id}: execution root");
+        assert_eq!(
+            roots[1].exists(),
+            !events.contains(&"delivery_root_absent"),
+            "{id}: delivery root"
+        );
+        if !case.cleanup_ok {
+            let original = observed
+                .delivery_cleanup_sentinel()
+                .expect("original delivery root");
+            assert!(original.exists(), "{id}: original delivery root");
+        }
+        resume_after_final_delivery(config, &session, &prior, &case).await;
+    }
+
+    fn delivery_session_test_config(
+        project: &TempDir,
+        session: &Utf8Path,
+        complete: bool,
+    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
+        let mut config = output_failure_test_config(project).into_data();
+        std::fs::write(
+            project.path().join("target.py"),
+            "def compute():\n    return 1 + 2\n",
+        )
+        .unwrap();
+        config.limits.max_mutants =
+            std::num::NonZeroUsize::new(if complete { 100 } else { 1 }).unwrap();
+        config.limits.jobs = std::num::NonZeroUsize::new(1).unwrap();
+        config.session = hoimin_core::SessionMode::Fresh(hoimin_core::SessionConfig {
+            path: session.to_owned(),
+        });
+        RunConfig::try_from(config).unwrap()
+    }
+
+    fn delivery_test_control(capacity_ok: bool) -> RunControl {
+        let control = RunControl::with_disk_meter(FixedDiskMeter(MeterReading {
+            owned_bytes: 0,
+            available_by_filesystem: BTreeMap::from([(FilesystemKey(7), 1_000)]),
+            conservative_entries: false,
+            elapsed: Duration::from_millis(1),
+        }));
+        control.override_end_available(if capacity_ok {
+            Ok(BTreeMap::from([(FilesystemKey(7), 500)]))
+        } else {
+            Err("injected final capacity query failure".to_owned())
+        });
+        control
+    }
+
+    fn read_delivery_run(database: &rusqlite::Connection, run_id: String) -> StoredDeliveryRun {
+        let (finished, complete) = database
+            .query_row(
+                "SELECT finished, complete FROM runs WHERE run_id=?1",
+                [&run_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let mut query = database
+            .prepare("SELECT mutant_id, outcome_json FROM results WHERE run_id=?1")
+            .unwrap();
+        let outcomes = query
+            .query_map([&run_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .map(|row| {
+                let (mutant, json) = row.unwrap();
+                let outcome: hoimin_core::MutationOutcome = serde_json::from_str(&json).unwrap();
+                (mutant, outcome)
+            })
+            .collect();
+        StoredDeliveryRun {
+            run_id,
+            finished,
+            complete,
+            outcomes,
+        }
+    }
+
+    fn open_delivery_database(session: &Utf8Path) -> rusqlite::Connection {
+        rusqlite::Connection::open_with_flags(session, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap()
+    }
+
+    fn complete_delivery_events(stdout: &[u8]) -> impl Iterator<Item = OutputEvent> + '_ {
+        // A writer failure can leave an unterminated final record in the stream.
+        stdout
+            .split_inclusive(|byte| *byte == b'\n')
+            .filter(|line| line.ends_with(b"\n"))
+            .map(|line| serde_json::from_slice(line).unwrap())
+    }
+
+    fn observe_delivery_session(
+        session: &Utf8Path,
+        stdout: &[u8],
+        finish_requested: bool,
+        exit_code: Option<i32>,
+        case: &FinalDeliveryCase,
+    ) -> (SessionDeliveryObservation, StoredDeliveryRun) {
+        let id = &case.id;
+        let database = open_delivery_database(session);
+        let run_id = database
+            .query_row("SELECT run_id FROM runs", [], |row| row.get(0))
+            .unwrap();
+        let stored = read_delivery_run(&database, run_id);
+        if !case.commit_ok {
+            let fault_rows: i64 = database
+                .query_row("SELECT count(*) FROM finish_fault", [], |row| row.get(0))
+                .unwrap();
+            assert_eq!(
+                fault_rows, 0,
+                "{id}: the failed commit must roll back the trigger insert"
+            );
+        }
+
+        let mut started = false;
+        let mut report_complete = None;
+        let mut reported = BTreeMap::new();
+        for event in complete_delivery_events(stdout) {
+            match event {
+                OutputEvent::RunStarted(event) => {
+                    assert_eq!(event.run_id, stored.run_id, "{id}");
+                    started = true;
+                }
+                OutputEvent::MutantFinished(event)
+                    if event.outcome.status() != hoimin_core::MutationStatus::NotRun =>
+                {
+                    assert_eq!(event.run_id, stored.run_id, "{id}");
+                    assert!(
+                        reported.insert(event.candidate.id, event.outcome).is_none(),
+                        "{id}"
+                    );
+                }
+                OutputEvent::RunFinished(event) => {
+                    assert_eq!(event.run_id, stored.run_id, "{id}");
+                    assert!(report_complete.replace(event.complete).is_none(), "{id}");
+                }
+                _ => {}
+            }
+        }
+        assert!(started, "{id}: expected a run-start record");
+        assert_ne!(reported, BTreeMap::new(), "{id}: expected a mutant result");
+        assert_eq!(stored.outcomes, reported, "{id}: durable mutant results");
+        (
+            SessionDeliveryObservation {
+                report_complete,
+                finish_requested,
+                finished: stored.finished,
+                complete: stored.complete,
+                exit_code,
+            },
+            stored,
+        )
+    }
+
+    async fn resume_after_final_delivery(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        prior: &StoredDeliveryRun,
+        case: &FinalDeliveryCase,
+    ) {
+        let id = &case.id;
+        let expected = &case.expected_resume;
+        if !case.commit_ok {
+            rusqlite::Connection::open(session)
+                .unwrap()
+                .execute_batch("DROP TRIGGER reject_finish; DROP TABLE finish_fault;")
+                .unwrap();
+        }
+        let mut config = config.into_data();
+        config.session = hoimin_core::SessionMode::Resume(hoimin_core::SessionConfig {
+            path: session.to_owned(),
+        });
+        config.limits.max_mutants = std::num::NonZeroUsize::new(100).unwrap();
+        let metrics_path = session.with_file_name("resume-metrics.json");
+        config.output.metrics = Some(metrics_path.clone());
+        let stdout = CollectingWriter::default();
+        let result = run_loop_with_control(
+            RunConfig::try_from(config).unwrap(),
+            stdout.clone(),
+            Vec::new(),
+            delivery_test_control(true),
+        )
+        .await;
+        assert_eq!(result, Ok(0), "{id}: resume run");
+        let bytes = stdout.snapshot();
+        let Some(OutputEvent::RunStarted(header)) = complete_delivery_events(&bytes).next() else {
+            panic!("{id}: expected resume run header");
+        };
+        assert_eq!(
+            header.run_id == prior.run_id,
+            expected.resumes_prior,
+            "{id}"
+        );
+        let resume = if expected.resumes_prior {
+            hoimin_core::ResumeOutcome::Resumed
+        } else {
+            hoimin_core::ResumeOutcome::Fresh {
+                reason: hoimin_core::ResumeFreshReason::MatchingRunComplete,
+            }
+        };
+        assert_eq!(header.resume, Some(resume), "{id}");
+        let summary = last_jsonl_run_summary(&stdout, id);
+        assert_eq!(summary.run_id, header.run_id, "{id}");
+        assert!(summary.complete, "{id}");
+        let database = open_delivery_database(session);
+        let current = read_delivery_run(&database, header.run_id);
+        assert!(current.finished && current.complete, "{id}");
+        let run_count: i64 = database
+            .query_row("SELECT count(*) FROM runs", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            run_count,
+            if expected.resumes_prior { 1 } else { 2 },
+            "{id}"
+        );
+        if !expected.resumes_prior {
+            assert_eq!(
+                &read_delivery_run(&database, prior.run_id.clone()),
+                prior,
+                "{id}"
+            );
+        }
+        let executed = assert_delivery_resume_outcomes(&bytes, prior, &current, case);
+        let metrics: hoimin_core::RunMetrics =
+            serde_json::from_slice(&std::fs::read(metrics_path).unwrap()).unwrap();
+        assert_eq!(metrics.run_id, current.run_id, "{id}");
+        assert_eq!(metrics.executed, executed, "{id}");
+        assert_eq!(executed > 0, expected.executes_more, "{id}");
+    }
+
+    fn assert_delivery_resume_outcomes(
+        stdout: &[u8],
+        prior: &StoredDeliveryRun,
+        current: &StoredDeliveryRun,
+        case: &FinalDeliveryCase,
+    ) -> u64 {
+        let id = &case.id;
+        let mut reported = BTreeMap::new();
+        let mut reused = BTreeSet::new();
+        let mut executed = 0;
+        for event in complete_delivery_events(stdout) {
+            let OutputEvent::MutantFinished(event) = event else {
+                continue;
+            };
+            assert_eq!(event.run_id, current.run_id, "{id}");
+            let mutant = event.candidate.id;
+            let status = event.outcome.status();
+            let stored = match event.outcome {
+                hoimin_core::MutationOutcome::Reused { .. } => {
+                    assert!(reused.insert(mutant.clone()), "{id}");
+                    let outcome = prior
+                        .outcomes
+                        .get(&mutant)
+                        .expect("reused mutant was saved");
+                    assert_eq!(status, outcome.status(), "{id}");
+                    outcome.clone()
+                }
+                outcome @ hoimin_core::MutationOutcome::Executed { .. } => {
+                    executed += 1;
+                    outcome
+                }
+                hoimin_core::MutationOutcome::NotRun => panic!("{id}: incomplete resumed outcome"),
+            };
+            assert!(reported.insert(mutant, stored).is_none(), "{id}");
+        }
+        let expected_reuse = if case.expected_resume.resumes_prior {
+            prior.outcomes.keys().cloned().collect()
+        } else {
+            BTreeSet::new()
+        };
+        assert_eq!(reused, expected_reuse, "{id}");
+        assert_eq!(
+            reported, current.outcomes,
+            "{id}: durable results after resume"
+        );
+        executed
+    }
+
+    #[derive(PartialEq, Eq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum FinishRelease {
+        BeforeDeadline,
+        WithinGrace,
+        AfterGrace,
+    }
+
+    #[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct FinishFlags {
+        finished: bool,
+        complete: bool,
+    }
+
+    impl From<&StoredDeliveryRun> for FinishFlags {
+        fn from(run: &StoredDeliveryRun) -> Self {
+            Self {
+                finished: run.finished,
+                complete: run.complete,
+            }
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)] // Inputs and observed acknowledgements vary separately.
+    struct FinishDeadlineCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        release: FinishRelease,
+        complete: bool,
+        commit: bool,
+        exit_code: Option<i32>,
+        session_acknowledged: bool,
+        commit_failure_observed: bool,
+        at_return: FinishFlags,
+        settled: FinishFlags,
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn session_finish_across_cli_shutdown_deadline_matches_lean() {
+        let mut ids = BTreeSet::new();
+        for line in
+            include_str!("../../../formal/HoiminOracle/corpus/session-finish-deadline.jsonl")
+                .lines()
+        {
+            let case: FinishDeadlineCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            replay_finish_deadline(case).await;
+        }
+        assert_eq!(ids.len(), 12);
+    }
+
+    async fn advance_test_clock(elapsed: Duration) {
+        tokio::time::pause();
+        tokio::time::advance(elapsed).await;
+        tokio::time::resume();
+    }
+
+    async fn await_cli_at_session_commit(
+        run: &mut (impl Future<Output = Result<i32, String>> + Unpin),
+        observed: &RunControl,
+        release_point: &FinishRelease,
+        release: &std::sync::mpsc::Sender<()>,
+        timeout: Duration,
+        grace: Duration,
+        id: &str,
+    ) -> Result<i32, String> {
+        if *release_point != FinishRelease::BeforeDeadline {
+            advance_test_clock(timeout).await;
+            tokio::select! {
+                result = &mut *run => panic!("{id}: run returned before grace: {result:?}"),
+                () = coverage_tests::wait_for_finalization_event(observed, "serial_report_deadline_observed") => {}
+            }
+        }
+        if *release_point == FinishRelease::AfterGrace {
+            advance_test_clock(grace).await;
+        } else {
+            release.send(()).unwrap();
+        }
+        tokio::time::timeout(Duration::from_secs(4), run)
             .await
-            .expect_err("report write failure must not be acknowledged");
+            .unwrap()
+    }
 
-        assert!(error.contains("report"), "{error}");
+    async fn replay_finish_deadline(case: FinishDeadlineCase) {
+        let id = &case.id;
+        let project = tempfile::tempdir().unwrap();
+        let artifacts = tempfile::tempdir().unwrap();
+        let session = Utf8PathBuf::from_path_buf(artifacts.path().join("session.sqlite3")).unwrap();
+        let config = delivery_session_test_config(&project, &session, case.complete);
+        let timeout = config.limits.total_timeout.get();
+        let mut control = delivery_test_control(true);
+        let grace = Duration::from_secs(5);
+        control.shutdown_grace = grace;
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, hold) = std::sync::mpsc::channel();
+        *control.session_finish_pause.lock().unwrap() = Some(crate::session::SessionCommitPause {
+            entered,
+            release: hold,
+        });
+        let observed = control.clone();
+        let stdout = CollectingWriter::default();
+        let writer = FinalRecordWriter {
+            fail_write: false,
+            fail_flush: false,
+            record: Vec::new(),
+            progress: FinalRecordProgress::Pending,
+            captured: stdout.clone(),
+            reject_commit: (!case.commit).then(|| session.clone()),
+        };
+        let mut run = Box::pin(run_loop_with_control(config, writer, Vec::new(), control));
+        let handler = tokio::select! {
+            result = &mut run => panic!("{id}: run returned before finish entered: {result:?}"),
+            entered = tokio::time::timeout(Duration::from_secs(5), ready) => entered.unwrap().unwrap(),
+        };
+        let summary = last_jsonl_run_summary(&stdout, id);
+        assert_eq!(
+            summary.complete, case.complete,
+            "{id}: already published report"
+        );
+        let snapshot =
+            || read_delivery_run(&open_delivery_database(&session), summary.run_id.clone());
+        let pending = snapshot();
+        assert!(
+            !pending.finished && !pending.complete,
+            "{id}: transaction is still pending"
+        );
+        assert_ne!(
+            pending.outcomes,
+            BTreeMap::new(),
+            "{id}: durable mutant results"
+        );
+
+        let expired = case.release == FinishRelease::AfterGrace;
+        let result = await_cli_at_session_commit(
+            &mut run,
+            &observed,
+            &case.release,
+            &release,
+            timeout,
+            grace,
+            id,
+        )
+        .await;
+        drop(run);
+        assert_finish_deadline_return(&result, &observed, &case);
+        let at_return = snapshot();
+        assert_eq!(
+            FinishFlags::from(&at_return),
+            case.at_return,
+            "{id}: state at return"
+        );
+        assert_eq!(
+            at_return.outcomes, pending.outcomes,
+            "{id}: results at return"
+        );
+        if expired {
+            assert!(
+                handler.upgrade().is_some(),
+                "{id}: running commit retains the session"
+            );
+            release.send(()).unwrap();
+            SessionDispatcher::wait_for_session_worker_drop(&handler).await;
+        }
+        let settled = snapshot();
+        assert_eq!(
+            FinishFlags::from(&settled),
+            case.settled,
+            "{id}: state after settlement"
+        );
+        assert_eq!(
+            settled.outcomes, pending.outcomes,
+            "{id}: results after settlement"
+        );
+    }
+
+    fn assert_finish_deadline_return(
+        result: &Result<i32, String>,
+        observed: &RunControl,
+        case: &FinishDeadlineCase,
+    ) {
+        let id = &case.id;
+        assert_cli_shutdown_return(result, case.exit_code, id);
+        let events = observed.finalization_events();
+        assert!(events.contains(&"output_acknowledged"), "{id}");
+        assert!(events.contains(&"session_finish_requested"), "{id}");
+        assert_eq!(
+            events.contains(&"session_finished"),
+            case.session_acknowledged,
+            "{id}"
+        );
+        assert_eq!(
+            events.contains(&"session_finish_commit_failed"),
+            case.commit_failure_observed,
+            "{id}"
+        );
         assert!(
             observed
                 .managed_root_paths()
                 .iter()
                 .all(|root| !root.exists()),
-            "report failure stranded a managed root"
+            "{id}"
         );
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged"),
-            "write failure was acknowledged"
-        );
+    }
 
+    fn assert_cli_shutdown_return(result: &Result<i32, String>, exit_code: Option<i32>, id: &str) {
+        assert_eq!(result.as_ref().ok().copied(), exit_code, "{id}: {result:?}");
+        if let Err(error) = result {
+            assert!(error.contains("shutdown grace expired"), "{id}: {error}");
+        }
+    }
+
+    #[derive(Debug, Default, Eq, PartialEq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PersistReadback {
+        status: Option<hoimin_core::MutationStatus>,
+        diagnostics: Vec<String>,
+    }
+
+    impl From<&hoimin_core::MutantFinished> for PersistReadback {
+        fn from(result: &hoimin_core::MutantFinished) -> Self {
+            Self {
+                status: Some(result.outcome.status()),
+                diagnostics: result
+                    .diagnostics
+                    .iter()
+                    .map(|item| item.code.clone())
+                    .collect(),
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(rename_all = "snake_case")]
+    enum PersistOrigin {
+        Prior,
+        Current,
+    }
+
+    #[derive(Debug, Eq, PartialEq, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct PersistSnapshot {
+        result: PersistReadback,
+        origin: Option<PersistOrigin>,
+    }
+
+    #[derive(Debug, Eq, PartialEq)]
+    struct PersistedMutant {
+        outcome: Option<hoimin_core::MutationOutcome>,
+        diagnostics: Vec<(i64, hoimin_core::SessionDiagnostic)>,
+    }
+
+    impl PersistedMutant {
+        fn readback(&self) -> PersistReadback {
+            PersistReadback {
+                status: self
+                    .outcome
+                    .as_ref()
+                    .map(hoimin_core::MutationOutcome::status),
+                diagnostics: self
+                    .diagnostics
+                    .iter()
+                    .map(|(_, item)| item.code.clone())
+                    .collect(),
+            }
+        }
+
+        fn assert_report(&self, report: &hoimin_core::MutantFinished, id: &str) {
+            assert_eq!(
+                self.outcome.as_ref(),
+                Some(&report.outcome),
+                "{id}: stored outcome"
+            );
+            let diagnostics = self
+                .diagnostics
+                .iter()
+                .map(|(_, item)| item)
+                .collect::<Vec<_>>();
+            assert_eq!(
+                diagnostics,
+                report.diagnostics.iter().collect::<Vec<_>>(),
+                "{id}"
+            );
+        }
+    }
+
+    struct PriorPersistedMutant {
+        started: hoimin_core::MutantStarted,
+        stored: PersistedMutant,
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    #[allow(clippy::struct_excessive_bools)] // The fixture varies four independent conditions.
+    struct PersistDeadlineCase {
+        schema: u8,
+        mode: String,
+        id: String,
+        release: FinishRelease,
+        replaces: bool,
+        diagnostic: bool,
+        commit: bool,
+        exit_code: Option<i32>,
+        pending: PersistSnapshot,
+        at_return: PersistSnapshot,
+        settled: PersistSnapshot,
+        reported: PersistReadback,
+        resume_reuses: bool,
+    }
+
+    fn read_persisted_mutant(
+        database: &rusqlite::Connection,
+        run: &str,
+        mutant: &str,
+    ) -> PersistedMutant {
+        use rusqlite::OptionalExtension;
+
+        let outcome = database
+            .query_row(
+                "SELECT outcome_json FROM results WHERE run_id=?1 AND mutant_id=?2",
+                [run, mutant],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .unwrap();
+        let outcome = outcome.map(|json| serde_json::from_str(&json).unwrap());
+        let candidates: i64 = database
+            .query_row(
+                "SELECT count(*) FROM candidates WHERE run_id=?1 AND mutant_id=?2",
+                [run, mutant],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            candidates,
+            i64::from(outcome.is_some()),
+            "candidate and result must commit together"
+        );
+        let mut query = database
+            .prepare("SELECT id, level, code, message FROM diagnostics WHERE run_id=?1 AND mutant_id=?2 ORDER BY id")
+            .unwrap();
+        let diagnostics = query
+            .query_map([run, mutant], |row| {
+                Ok((
+                    row.get(0)?,
+                    hoimin_core::SessionDiagnostic {
+                        mutant_id: mutant.to_owned(),
+                        level: row.get(1)?,
+                        code: row.get(2)?,
+                        message: row.get(3)?,
+                    },
+                ))
+            })
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        PersistedMutant {
+            outcome,
+            diagnostics,
+        }
+    }
+
+    fn assert_persist_snapshot(
+        actual: &PersistedMutant,
+        prior: Option<&PersistedMutant>,
+        expected: &PersistSnapshot,
+        id: &str,
+        point: &str,
+    ) {
+        let origin = actual.outcome.as_ref().map(|_| {
+            if prior == Some(actual) {
+                PersistOrigin::Prior
+            } else {
+                PersistOrigin::Current
+            }
+        });
+        assert_eq!(
+            PersistSnapshot {
+                result: actual.readback(),
+                origin
+            },
+            *expected,
+            "{id}: {point}"
+        );
+        if origin == Some(PersistOrigin::Current)
+            && let Some(prior) = prior
+        {
+            assert!(
+                actual
+                    .diagnostics
+                    .iter()
+                    .all(|(new, _)| { prior.diagnostics.iter().all(|(old, _)| old != new) }),
+                "{id}: replacement retained an old diagnostic row"
+            );
+        }
+    }
+
+    fn first_started_mutant(stdout: &[u8]) -> hoimin_core::MutantStarted {
+        complete_delivery_events(stdout)
+            .find_map(|event| match event {
+                OutputEvent::MutantStarted(started) => Some(started),
+                _ => None,
+            })
+            .expect("executed candidate must be announced before persistence")
+    }
+
+    fn read_reported_mutant(
+        stdout: &[u8],
+        run: &str,
+        mutant: &str,
+    ) -> Option<hoimin_core::MutantFinished> {
+        let mut events = complete_delivery_events(stdout).filter_map(|event| match event {
+            OutputEvent::MutantFinished(result) if result.candidate.id == mutant => Some(result),
+            _ => None,
+        });
+        let result = events.next()?;
+        assert_eq!(result.run_id, run);
+        assert!(events.next().is_none(), "result was emitted twice");
+        Some(result)
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mutant_persistence_across_cli_shutdown_deadline_matches_lean() {
+        let mut ids = BTreeSet::new();
+        for line in
+            include_str!("../../../formal/HoiminOracle/corpus/session-persist-deadline.jsonl")
+                .lines()
+        {
+            let case: PersistDeadlineCase = serde_json::from_str(line).unwrap();
+            assert_eq!(case.schema, 1, "{}", case.id);
+            assert_eq!(case.mode, "internal-fixture", "{}", case.id);
+            assert!(ids.insert(case.id.clone()));
+            replay_persist_deadline(case).await;
+        }
+        assert_eq!(ids.len(), 24);
+    }
+
+    async fn replay_persist_deadline(case: PersistDeadlineCase) {
         let project = tempfile::tempdir().unwrap();
-        let config = output_failure_test_config(&project);
-        let control = RunControl::new();
-        control.inject_delivery_cleanup_identity_failure();
+        let artifacts = tempfile::tempdir().unwrap();
+        let session = Utf8PathBuf::from_path_buf(artifacts.path().join("session.sqlite3")).unwrap();
+        let config = delivery_session_test_config(&project, &session, false);
+        let (config, prior) = if case.replaces {
+            let prior = seed_persisted_mutant(config.clone(), &session, &case.id).await;
+            (persist_resume_config(config, &session, 1), Some(prior))
+        } else {
+            (config, None)
+        };
+        let (mutant, settled) =
+            run_persist_deadline(config.clone(), &session, prior.as_ref(), &case).await;
+        resume_after_pending_persist(config, &session, &mutant, settled, &case).await;
+    }
+
+    async fn seed_persisted_mutant(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        id: &str,
+    ) -> PriorPersistedMutant {
+        let stdout = CollectingWriter::default();
+        let control = delivery_test_control(true);
+        control
+            .mutant_output_close_timeout_once
+            .store(true, Ordering::Release);
+        let exit = run_loop_with_control(config, stdout.clone(), Vec::new(), control).await;
+        assert_eq!(exit, Ok(2), "{id}: seed run");
+        let bytes = stdout.snapshot();
+        let started = first_started_mutant(&bytes);
+        let report = read_reported_mutant(&bytes, &started.run_id, &started.mutant_id).unwrap();
+        let stored = read_persisted_mutant(
+            &open_delivery_database(session),
+            &started.run_id,
+            &started.mutant_id,
+        );
+        stored.assert_report(&report, id);
+        PriorPersistedMutant { started, stored }
+    }
+
+    async fn run_persist_deadline(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        prior: Option<&PriorPersistedMutant>,
+        case: &PersistDeadlineCase,
+    ) -> (hoimin_core::MutantStarted, PersistedMutant) {
+        let id = &case.id;
+        let timeout = config.limits.total_timeout.get();
+        let grace = Duration::from_secs(5);
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let (release, hold) = std::sync::mpsc::channel();
+        let mut control = delivery_test_control(true);
+        control.shutdown_grace = grace;
+        control
+            .mutant_output_close_timeout_once
+            .store(case.diagnostic, Ordering::Release);
+        *control.session_persist_pause.lock().unwrap() = Some((
+            crate::session::SessionCommitPause {
+                entered,
+                release: hold,
+            },
+            !case.commit,
+        ));
         let observed = control.clone();
-
-        let error = run_loop_with_control(config, Vec::new(), Vec::new(), control)
-            .await
-            .expect_err("delivery cleanup failure must not be acknowledged");
-
-        assert!(
-            error.contains(hoimin_core::WORKSPACE_CLEANUP_FAILED),
-            "{error}"
+        let stdout = CollectingWriter::default();
+        let mut run = Box::pin(run_loop_with_control(
+            config,
+            stdout.clone(),
+            Vec::new(),
+            control,
+        ));
+        let handler = tokio::select! {
+            result = &mut run => panic!("{id}: run returned before persist entered: {result:?}"),
+            entered = tokio::time::timeout(Duration::from_secs(5), ready) => entered.unwrap().unwrap(),
+        };
+        let mutant = first_started_mutant(&stdout.snapshot());
+        if let Some(prior) = prior {
+            assert_eq!(mutant.run_id, prior.started.run_id, "{id}: resumed run");
+            assert_eq!(
+                mutant.mutant_id, prior.started.mutant_id,
+                "{id}: replacement mutant"
+            );
+        }
+        let prior = prior.map(|record| &record.stored);
+        let readback = || {
+            read_persisted_mutant(
+                &open_delivery_database(session),
+                &mutant.run_id,
+                &mutant.mutant_id,
+            )
+        };
+        assert_persist_snapshot(&readback(), prior, &case.pending, id, "pending transaction");
+        let result = await_cli_at_session_commit(
+            &mut run,
+            &observed,
+            &case.release,
+            &release,
+            timeout,
+            grace,
+            id,
+        )
+        .await;
+        drop(run);
+        assert_cli_shutdown_return(&result, case.exit_code, id);
+        let reported = read_reported_mutant(&stdout.snapshot(), &mutant.run_id, &mutant.mutant_id);
+        assert_eq!(
+            reported
+                .as_ref()
+                .map_or_else(PersistReadback::default, PersistReadback::from),
+            case.reported,
+            "{id}: reported result"
         );
-        let roots = observed.managed_root_paths();
-        assert!(!roots[0].exists(), "execution root");
-        assert!(roots[1].exists(), "replacement root");
-        assert!(
-            observed
-                .delivery_cleanup_sentinel()
-                .expect("original delivery sentinel")
-                .exists(),
-            "original delivery sentinel"
+        assert_persist_snapshot(
+            &readback(),
+            prior,
+            &case.at_return,
+            id,
+            "database at return",
         );
-        assert!(
-            !observed
-                .finalization_events()
-                .contains(&"output_acknowledged"),
-            "cleanup failure was acknowledged"
+        if case.release == FinishRelease::AfterGrace {
+            assert!(
+                handler.upgrade().is_some(),
+                "{id}: persist operation retains the session"
+            );
+            release.send(()).unwrap();
+            SessionDispatcher::wait_for_session_worker_drop(&handler).await;
+        }
+        let settled = readback();
+        assert_persist_snapshot(
+            &settled,
+            prior,
+            &case.settled,
+            id,
+            "database after settlement",
+        );
+        if case.commit
+            && let Some(reported) = &reported
+        {
+            settled.assert_report(reported, id);
+        }
+        (mutant, settled)
+    }
+
+    fn persist_resume_config(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        limit: usize,
+    ) -> RunConfig<hoimin_core::EnvironmentRequest> {
+        let mut config = config.into_data();
+        config.session = hoimin_core::SessionMode::Resume(hoimin_core::SessionConfig {
+            path: session.to_owned(),
+        });
+        config.limits.max_mutants = std::num::NonZeroUsize::new(limit).unwrap();
+        RunConfig::try_from(config).unwrap()
+    }
+
+    async fn resume_after_pending_persist(
+        config: RunConfig<hoimin_core::EnvironmentRequest>,
+        session: &Utf8Path,
+        mutant: &hoimin_core::MutantStarted,
+        settled: PersistedMutant,
+        case: &PersistDeadlineCase,
+    ) {
+        use hoimin_core::MutationOutcome;
+
+        let id = &case.id;
+        let stdout = CollectingWriter::default();
+        let exit = run_loop_with_control(
+            persist_resume_config(config, session, 100),
+            stdout.clone(),
+            Vec::new(),
+            delivery_test_control(true),
+        )
+        .await;
+        assert_eq!(exit, Ok(0), "{id}: resume run");
+        let captured = stdout.snapshot();
+        let Some(OutputEvent::RunStarted(header)) = complete_delivery_events(&captured).next()
+        else {
+            panic!("{id}: expected resume header");
+        };
+        assert_eq!(
+            header.resume,
+            Some(hoimin_core::ResumeOutcome::Resumed),
+            "{id}"
+        );
+        assert_eq!(header.run_id, mutant.run_id, "{id}");
+        let resumed = read_reported_mutant(&captured, &mutant.run_id, &mutant.mutant_id).unwrap();
+        let saved = read_persisted_mutant(
+            &open_delivery_database(session),
+            &mutant.run_id,
+            &mutant.mutant_id,
+        );
+        match resumed.outcome {
+            MutationOutcome::Reused { .. } => {
+                assert!(case.resume_reuses, "{id}");
+                assert_eq!(saved, settled, "{id}: reuse preserves the committed rows");
+            }
+            MutationOutcome::Executed { .. } => {
+                assert!(!case.resume_reuses, "{id}");
+                saved.assert_report(&resumed, id);
+            }
+            MutationOutcome::NotRun => panic!("{id}: resume did not resolve the mutant"),
+        }
+        assert_eq!(
+            saved.readback(),
+            PersistReadback {
+                status: Some(hoimin_core::MutationStatus::Survived),
+                diagnostics: Vec::new()
+            },
+            "{id}: database after resume"
         );
     }
 
@@ -12046,4 +13401,10 @@ mod tests {
     include!("shell_coverage_tests.rs");
     include!("shell_runtime_coverage_tests.rs");
     include!("shell_disk_stop_tests.rs");
+    mod metrics_deadline_oracle {
+        include!("shell_metrics_deadline_tests.rs");
+    }
+    mod stage_metrics_oracle {
+        include!("shell_stage_metrics_tests.rs");
+    }
 }

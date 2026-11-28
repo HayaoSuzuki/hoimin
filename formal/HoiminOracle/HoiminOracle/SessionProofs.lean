@@ -43,6 +43,22 @@ theorem failed_replacement_restores_old
       | split
       | simp_all [reject]
 
+theorem rollback_replacement_preserves_durable (state : State) (handler : Handler) :
+    durable (step state (.replacementRollback handler)).state = durable state := by
+  simp only [step, rollbackReplacement]
+  split
+  · split <;> simp [reject, accept, durable]
+  · simp [reject]
+
+theorem completed_candidate_is_never_selected (state : State) (handler : Handler)
+    (fingerprint : Fingerprint) (row : RunRow)
+    (locked : state.pending = some (.loadLocked handler fingerprint row.run))
+    (present : findRun state row.run = some row) (complete : row.complete = true) :
+    let outcome := step state (.loadRecheck handler)
+    outcome.selectedRun = none ∧ outcome.state.owners = state.owners ∧
+      outcome.state.pending = none := by
+  simp [step, recheckLoad, locked, present, resumeEligible, complete, accept]
+
 theorem successful_replacement_is_exact
     (state : State) (handler : Handler) (old replacement : ResultRow)
     (present : findResult state old.run old.mutant = some old)
@@ -185,5 +201,82 @@ theorem run_preserves_invariant (state : State) (trace : List Event)
 
 theorem initial_invariant : Invariant State.initial := by
   rfl
+
+theorem dropping_finish_driver_preserves_pending_owner (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) :
+    owns (dropFinishDriver pending).session runId handler = owns pending.session runId handler :=
+  rfl
+
+theorem cancelled_finish_has_no_reply (pending : PendingFinishWait) (handler : Handler)
+    (runId : Run) (complete commit : Bool) :
+    (settleFinishWait (cancelFinishWait pending) handler runId complete commit).reply = none :=
+  rfl
+
+theorem cancelled_finish_can_commit (pending : PendingFinishWait) (handler : Handler)
+    (runId : Run) (complete : Bool) (live : pending.driverAlive = true) :
+    (settleFinishWait (cancelFinishWait pending) handler runId complete true).session =
+      (finishRun pending.session handler runId complete).state := by
+  simp [settleFinishWait, cancelFinishWait, live]
+
+theorem detached_finish_releases_handler_when_settled (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete commit : Bool) :
+    ownerRuns (settleFinishWait (dropFinishDriver pending) handler runId complete commit).session
+      handler = [] := by
+  let settled := if commit then (finishRun pending.session handler runId complete).state
+    else pending.session
+  change ownerRuns (step settled (.drop handler)).state handler = []
+  exact drop_releases_exactly_handler settled handler
+
+theorem rolled_back_finish_preserves_runs_and_results (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete : Bool) :
+    let settled := settleFinishWait pending handler runId complete false
+    settled.session.runs = pending.session.runs ∧ settled.session.results = pending.session.results := by
+  by_cases alive : pending.driverAlive = true
+  · simp [settleFinishWait, alive]
+  · cases operation : pending.session.pending with
+    | none =>
+        simp [settleFinishWait, alive, stopHandler, accept, setHandler, clearPendingFor,
+          releaseHandler, operation]
+    | some current =>
+        by_cases owner : pendingHandler current = handler <;>
+          simp [settleFinishWait, alive, stopHandler, accept, setHandler, clearPendingFor,
+            releaseHandler, operation, owner]
+
+theorem expired_session_finish_returns_without_acknowledgement (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete commit : Bool) :
+    let result := finishAcrossShutdown pending handler runId .afterGrace complete commit
+    result.atReturn = pending.session ∧ result.exitCode = none ∧
+      result.sessionAcknowledged = false := by
+  simp [finishAcrossShutdown]
+
+theorem late_session_finish_can_still_commit (pending : PendingFinishWait)
+    (handler : Handler) (runId : Run) (complete : Bool) :
+    (finishAcrossShutdown pending handler runId .afterGrace complete true).settled =
+      (stopHandler (finishRun pending.session handler runId complete).state handler).state := by
+  simp [finishAcrossShutdown, settleFinishWait, dropFinishDriver, cancelFinishWait]
+
+theorem expired_persist_returns_before_result_is_visible (state : State) (handler : Handler)
+    (runId : Run) (mutant : Mutant) (status : Status) (commit : Bool) :
+    let result := persistAcrossShutdown state handler runId mutant status .afterGrace commit
+    result.atReturn = state ∧ result.reported = none ∧ result.exitCode = none := by
+  simp [persistAcrossShutdown]
+
+theorem rejected_result_commit_preserves_durable_rows (state : State) (handler : Handler)
+    (runId : Run) (mutant : Mutant) (status : Status) (release : FinishRelease) :
+    (persistAcrossShutdown state handler runId mutant status release false).settled = state := by
+  simp [persistAcrossShutdown]
+
+theorem late_replacement_preserves_old_result_until_commit
+    (state : State) (handler : Handler) (old : ResultRow) (status : Status)
+    (present : findResult state old.run old.mutant = some old)
+    (inconclusive : old.status.isDeterminate = false)
+    (accepted : (step state (.persist handler old.run old.mutant status .p1 .valid)).rejection = none) :
+    let result := persistAcrossShutdown state handler old.run old.mutant status .afterGrace true
+    findResult result.atReturn old.run old.mutant = some old ∧
+      SameExceptResult state result.settled { old with status := status, payload := .p1 } := by
+  refine ⟨present, ?_⟩
+  simpa [persistAcrossShutdown, step] using
+    successful_replacement_is_exact state handler old { old with status := status, payload := .p1 }
+      present inconclusive accepted
 
 end HoiminOracle.SessionAudit

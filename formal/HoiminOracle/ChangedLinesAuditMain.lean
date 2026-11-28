@@ -1,4 +1,11 @@
 import HoiminOracle.ChangedLinesModel
+import HoiminOracle.GitPhysicalRowsCases
+import HoiminOracle.GitWorktreeCases
+import HoiminOracle.GitTrackedRowsCases
+import HoiminOracle.GitResolutionCases
+import HoiminOracle.GitCaptureCases
+import HoiminOracle.GitLifecycleCases
+import HoiminOracle.GitAdmissionCases
 import Lean.Data.Json
 
 open HoiminOracle.ChangedLines Lean
@@ -38,11 +45,62 @@ def main (args : List String) : IO UInt32 := do
       if (← IO.FS.readFile path) = corpus then pure 0
       else IO.eprintln "corpus is stale" *> pure 1
   | ["--output", path] => IO.FS.writeFile path corpus *> pure 0
+  | ["--check-physical-rows", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitPhysicalRows.corpus then pure 0
+      else IO.eprintln "Git physical rows corpus is stale" *> pure 1
+  | ["--output-physical-rows", path] =>
+      IO.FS.writeFile path HoiminOracle.GitPhysicalRows.corpus *> pure 0
+  | ["--check-git-worktree", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitWorktree.corpus then pure 0
+      else IO.eprintln "Git worktree corpus is stale" *> pure 1
+  | ["--output-git-worktree", path] =>
+      IO.FS.writeFile path HoiminOracle.GitWorktree.corpus *> pure 0
+  | ["--check-git-tracked-rows", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitTrackedRows.corpus then pure 0
+      else IO.eprintln "Git tracked rows corpus is stale" *> pure 1
+  | ["--output-git-tracked-rows", path] =>
+      IO.FS.writeFile path HoiminOracle.GitTrackedRows.corpus *> pure 0
+  | ["--check-git-resolution", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitResolution.corpus then pure 0
+      else IO.eprintln "Git resolution corpus is stale" *> pure 1
+  | ["--output-git-resolution", path] =>
+      IO.FS.writeFile path HoiminOracle.GitResolution.corpus *> pure 0
+  | ["--check-git-capture", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitCapture.corpus then pure 0
+      else IO.eprintln "Git capture corpus is stale" *> pure 1
+  | ["--output-git-capture", path] =>
+      IO.FS.writeFile path HoiminOracle.GitCapture.corpus *> pure 0
+  | ["--check-git-lifecycle", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitLifecycle.corpus then pure 0
+      else IO.eprintln "Git lifecycle corpus is stale" *> pure 1
+  | ["--output-git-lifecycle", path] =>
+      IO.FS.writeFile path HoiminOracle.GitLifecycle.corpus *> pure 0
+  | ["--check-git-admission", path] =>
+      if (← IO.FS.readFile path) = HoiminOracle.GitAdmission.corpus then pure 0
+      else IO.eprintln "Git admission corpus is stale" *> pure 1
+  | ["--output-git-admission", path] =>
+      IO.FS.writeFile path HoiminOracle.GitAdmission.corpus *> pure 0
   | ["--sensitivity"] =>
       for (name, passed) in sensitivity do IO.println s!"{name}={passed}"
-      pure <| if sensitivity.all (·.2) then 0 else 1
+      unless sensitivity.all (·.2) do return 1
+      let status ← HoiminOracle.GitPhysicalRows.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.GitWorktree.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.GitTrackedRows.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.GitResolution.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.GitCapture.sensitivity
+      if status != 0 then return status
+      let status ← HoiminOracle.GitLifecycle.sensitivity
+      if status != 0 then return status
+      HoiminOracle.GitAdmission.sensitivity
   | ["--stats"] =>
       IO.println s!"cases={rows.length}\nseparator_pairs=9\ngit_states=4\nmaximum_source_bytes=37\nsensitivity_families={sensitivity.length}\ntransitions=not-applicable"
       pure 0
+  | ["--physical-rows-stats"] =>
+      HoiminOracle.GitPhysicalRows.stats
+      pure 0
   | [] => IO.print corpus *> pure 0
-  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--sensitivity|--stats]" *> pure 2
+  | _ => IO.eprintln "usage: generate_changed_lines [--check PATH|--output PATH|--check-physical-rows PATH|--output-physical-rows PATH|--check-git-worktree PATH|--output-git-worktree PATH|--check-git-tracked-rows PATH|--output-git-tracked-rows PATH|--check-git-resolution PATH|--output-git-resolution PATH|--check-git-capture PATH|--output-git-capture PATH|--check-git-lifecycle PATH|--output-git-lifecycle PATH|--check-git-admission PATH|--output-git-admission PATH|--sensitivity|--stats|--physical-rows-stats]" *> pure 2

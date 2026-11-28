@@ -6,6 +6,19 @@ use std::time::{Duration, Instant};
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 use thiserror::Error;
 
+#[cfg(test)]
+mod admission_oracle_tests;
+#[cfg(test)]
+mod catalog_oracle_tests;
+#[cfg(test)]
+mod configuration_oracle_tests;
+#[cfg(test)]
+mod header_oracle_tests;
+#[cfg(test)]
+mod uri_oracle_tests;
+#[cfg(test)]
+mod wal_retry_oracle_tests;
+
 pub(crate) const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Debug, Error)]
@@ -52,7 +65,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, SchemaError> {
         admit(&connection, &expected)?;
     }
     let mut connection = Connection::open(path)?;
-    configure_with_schema(&mut connection, &expected, || {})?;
+    configure_with_schema(&mut connection, &expected, |_| {}, |_| {}, enable_wal)?;
     Ok(connection)
 }
 
@@ -107,13 +120,17 @@ fn inspect_database_file(mut file: std::fs::File) -> Result<bool, SchemaError> {
     if crate::file_links::file_link_count(&file)? > 1 {
         return Err(SchemaError::SharedFile);
     }
+    read_wal_header(&mut file).map_err(SchemaError::Inspect)
+}
+
+fn read_wal_header(reader: &mut impl Read) -> std::io::Result<bool> {
     let mut header = [0; 20];
-    match file.read_exact(&mut header) {
+    match reader.read_exact(&mut header) {
         Ok(()) => {
             Ok(header.starts_with(b"SQLite format 3\0") && header[18] == 2 && header[19] == 2)
         }
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(error) => Err(error.into()),
+        Err(error) => Err(error),
     }
 }
 
@@ -152,15 +169,21 @@ fn immutable_uri(path: &Path) -> Result<String, rusqlite::Error> {
 
 #[cfg(test)]
 pub(crate) fn configure(connection: &mut Connection) -> Result<(), SchemaError> {
-    configure_observed(connection, || {})
+    configure_observed(connection, |_| {})
 }
 
 #[cfg(test)]
 fn configure_observed(
     connection: &mut Connection,
-    after_initial_version_read: impl FnOnce(),
+    after_initial_version_read: impl FnOnce(i64),
 ) -> Result<(), SchemaError> {
-    configure_with_schema(connection, &current_schema()?, after_initial_version_read)
+    configure_with_schema(
+        connection,
+        &current_schema()?,
+        after_initial_version_read,
+        |_| {},
+        enable_wal,
+    )
 }
 
 type SchemaObjects = Vec<(String, String, String, Option<String>)>;
@@ -175,7 +198,8 @@ fn schema_objects(connection: &Connection) -> Result<SchemaObjects, rusqlite::Er
                 row.get(0)?,
                 row.get(1)?,
                 row.get(2)?,
-                sql.map(|sql| sql.split_whitespace().collect::<Vec<_>>().join(" ")),
+                // SQLite treats non-ASCII whitespace as part of a bare identifier.
+                sql.map(|sql| sql.split_ascii_whitespace().collect::<Vec<_>>().join(" ")),
             ))
         })?
         .collect()
@@ -231,23 +255,27 @@ fn admit_observed(
 fn configure_with_schema(
     connection: &mut Connection,
     expected: &SchemaObjects,
-    after_initial_version_read: impl FnOnce(),
+    after_initial_version_read: impl FnOnce(i64),
+    after_writer_version_read: impl FnOnce(i64),
+    configure_journal: impl FnOnce(&Connection, Duration) -> Result<(), SchemaError>,
 ) -> Result<(), SchemaError> {
     const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
     connection.busy_timeout(BUSY_TIMEOUT)?;
     connection.pragma_update(None, "foreign_keys", "ON")?;
     let version = admit(connection, expected)?;
-    after_initial_version_read();
+    after_initial_version_read(version);
     if version == 0 {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         // Another initializer may have committed after the first inspection.
-        if admit(&transaction, expected)? == 0 {
+        let writer_version = admit(&transaction, expected)?;
+        after_writer_version_read(writer_version);
+        if writer_version == 0 {
             initialize(&transaction)?;
         }
         transaction.commit()?;
     }
-    enable_wal(connection, BUSY_TIMEOUT)
+    configure_journal(connection, BUSY_TIMEOUT)
 }
 
 fn initialize(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
@@ -309,18 +337,31 @@ fn initialize(transaction: &Transaction<'_>) -> Result<(), rusqlite::Error> {
 }
 
 fn enable_wal(connection: &Connection, timeout: Duration) -> Result<(), SchemaError> {
+    enable_wal_until(
+        Instant::now() + timeout,
+        || connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)),
+        Instant::now,
+        thread::sleep,
+    )
+}
+
+fn enable_wal_until(
+    deadline: Instant,
+    mut request_mode: impl FnMut() -> rusqlite::Result<String>,
+    mut now: impl FnMut() -> Instant,
+    mut sleep: impl FnMut(Duration),
+) -> Result<(), SchemaError> {
     const RETRY_BACKOFF: Duration = Duration::from_millis(5);
 
-    let deadline = Instant::now() + timeout;
     loop {
-        match connection.query_row("PRAGMA journal_mode=WAL", [], |row| row.get::<_, String>(0)) {
+        match request_mode() {
             Ok(mode) if mode.eq_ignore_ascii_case("wal") || mode.eq_ignore_ascii_case("memory") => {
                 return Ok(());
             }
             Ok(mode) => return Err(SchemaError::JournalMode(mode)),
-            Err(error) if is_lock_contention(&error) && Instant::now() < deadline => {
-                let remaining = deadline.saturating_duration_since(Instant::now());
-                thread::sleep(RETRY_BACKOFF.min(remaining));
+            Err(error) if is_lock_contention(&error) && now() < deadline => {
+                let remaining = deadline.saturating_duration_since(now());
+                sleep(RETRY_BACKOFF.min(remaining));
             }
             Err(error) => return Err(error.into()),
         }
@@ -338,6 +379,7 @@ fn is_lock_contention(error: &rusqlite::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::cell::{Cell, RefCell};
     use std::path::Path;
     use std::sync::{Arc, Condvar, Mutex, PoisonError};
     use std::thread;
@@ -659,6 +701,56 @@ mod tests {
         assert_rejected_without_disk_changes(&path);
     }
 
+    #[test]
+    fn admission_rejects_non_ascii_space_inside_a_current_schema_identifier() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("different.sqlite3");
+        let mut reference = Connection::open_in_memory().unwrap();
+        let transaction = reference.transaction().unwrap();
+        initialize(&transaction).unwrap();
+        transaction.commit().unwrap();
+
+        let mut statements = reference
+            .prepare("SELECT sql FROM sqlite_schema WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid")
+            .unwrap();
+        let sql = statements
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap()
+            .join(";\n");
+        let connection = Connection::open(&path).unwrap();
+        connection
+            .execute_batch(&sql.replacen(
+                "schema_version INTEGER",
+                "schema_version\u{a0} INTEGER",
+                1,
+            ))
+            .unwrap();
+        connection
+            .pragma_update(None, "user_version", SCHEMA_VERSION)
+            .unwrap();
+        assert!(
+            connection
+                .prepare("SELECT schema_version FROM fingerprints")
+                .is_err()
+        );
+        drop(connection);
+
+        let before = directory_bytes(directory.path());
+        let result = super::super::SessionHandler::open(&path);
+        assert!(
+            matches!(
+                result,
+                Err(super::super::SessionError::Schema(
+                    SchemaError::InvalidIdentity
+                ))
+            ),
+            "admission accepted a schema that cannot name the required column"
+        );
+        assert_eq!(directory_bytes(directory.path()), before);
+    }
+
     fn closed_database_snapshot(path: &Path) -> (Vec<String>, i64, String) {
         // Fixture paths are generated temporary ASCII names. Immutable reads
         // keep the observer itself from creating WAL/SHM companion files.
@@ -917,7 +1009,7 @@ mod tests {
         let mut connection = Connection::open(&path).unwrap();
         let mut before = None;
 
-        let result = configure_observed(&mut connection, || {
+        let result = configure_observed(&mut connection, |_| {
             let other = Connection::open(&path).unwrap();
             other.execute_batch("CREATE TABLE application_data(value TEXT); INSERT INTO application_data VALUES ('keep');").unwrap();
             before = Some(database_snapshot(&other));
@@ -929,6 +1021,82 @@ mod tests {
         );
         assert_eq!(user_version(&connection), 0);
         assert_eq!(database_snapshot(&connection), before.unwrap());
+    }
+
+    #[test]
+    fn initialization_replays_the_forced_stale_read() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("session.sqlite3");
+        let mut right = Connection::open(&path).unwrap();
+        let expected = current_schema().unwrap();
+        let versions = RefCell::new(Vec::new());
+
+        configure_with_schema(
+            &mut right,
+            &expected,
+            |observed| {
+                assert_eq!(observed, 0);
+                let mut left = Connection::open(&path).unwrap();
+                configure_with_schema(
+                    &mut left,
+                    &expected,
+                    |observed| assert_eq!(observed, 0),
+                    |version| versions.borrow_mut().push(version),
+                    enable_wal,
+                )
+                .unwrap();
+            },
+            |version| versions.borrow_mut().push(version),
+            enable_wal,
+        )
+        .unwrap();
+
+        let diagnostics: i64 = right
+            .query_row("SELECT count(*) FROM diagnostics", [], |row| row.get(0))
+            .unwrap();
+        assert_schema_oracle(
+            "stale_reread",
+            ["ok", "ok"],
+            &versions.into_inner(),
+            user_version(&right),
+            diagnostics > 0,
+        );
+    }
+
+    fn assert_schema_oracle(
+        scenario: &str,
+        open_results: [&str; 2],
+        writer_versions: &[i64],
+        final_version: i64,
+        legacy_row: bool,
+    ) {
+        let row = include_str!(
+            "../../../../formal/HoiminOracle/corpus/schema-migration-concurrency.jsonl"
+        )
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|row| row["scenario"] == scenario)
+        .unwrap();
+        let version_name = |version| {
+            if version == SCHEMA_VERSION {
+                "current"
+            } else {
+                assert_eq!(version, 0);
+                "fresh"
+            }
+        };
+        let writer_versions: Vec<_> = writer_versions.iter().copied().map(version_name).collect();
+        assert_eq!(row["mode"], "internal-fixture");
+        assert_eq!(
+            row["expected_open_results"],
+            serde_json::json!(open_results)
+        );
+        assert_eq!(
+            row["expected_writer_versions"],
+            serde_json::json!(writer_versions)
+        );
+        assert_eq!(row["expected_version"], version_name(final_version));
+        assert_eq!(row["expected_legacy_row"], legacy_row);
     }
 
     #[test]
@@ -1060,11 +1228,27 @@ mod tests {
         let files_before = directory_bytes(temp.path());
         // fingerprints and its primary-key index fit, but runs cannot be
         // allocated. This fails inside initialization after admission succeeds.
+        let writer_version = Cell::new(None);
+        let error = configure_with_schema(
+            &mut connection,
+            &current_schema().unwrap(),
+            |version| assert_eq!(version, 0),
+            |version| writer_version.set(Some(version)),
+            enable_wal,
+        )
+        .unwrap_err();
         assert!(matches!(
-            configure(&mut connection),
-            Err(SchemaError::Database(_))
+            error,
+            SchemaError::Database(rusqlite::Error::SqliteFailure(failure, _))
+                if failure.code == ErrorCode::DiskFull
         ));
-        assert_eq!(user_version(&connection), 0);
+        assert_schema_oracle(
+            "disk_full_rollback",
+            ["database_error", "not_run"],
+            &[writer_version.get().unwrap()],
+            user_version(&connection),
+            false,
+        );
         assert!(
             database_snapshot(&connection).is_empty(),
             "failed initialization retained schema objects"
@@ -1203,7 +1387,7 @@ mod tests {
                     let mut connection =
                         Connection::open(path).map_err(|error| error.to_string())?;
                     start.arrive_and_wait();
-                    configure_observed(&mut connection, || {
+                    configure_observed(&mut connection, |_| {
                         initialization.arrive_and_wait();
                     })
                     .map_err(

@@ -1095,3 +1095,248 @@ The change is complete when:
     output.
 12. Report failure and failed delivery cleanup remain settled errors but cannot produce
     output acknowledgement or a completed session.
+
+## Final report evidence correspondence
+
+The report projects the primary numeric stop to a reason and two byte counts.
+Finalization retains its full typed evidence until it merges later measurements.
+Equal reason and byte counts with a different measurement duration remain
+distinct evidence. An exact repeat is omitted, and the order of distinct
+entries is preserved.
+
+Lean proves the append and exact replay rules and generates five merge cases.
+The negative comparison drops a later measurement with the same byte counts
+and a different duration. The Rust replay checks the full result twice for each
+case. A shell test also drives the monitor through shutdown and checks that the
+serialized final report includes the distinct measurement duration.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-report-evidence corpus/disk-report-evidence.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib disk_report_secondary_merge_matches_lean
+cargo test --locked -p hoimin-cli --lib pre_dispatch_sample_stops_before_analyzer_dispatch
+```
+
+## Finalization errors in the final report
+
+Lean proves that an existing primary stop survives every added finalization
+error. Each error marks the run incomplete, changes an exit code of zero to
+two, and preserves an existing nonzero exit code. Error identity includes the
+code and message. An existing error is preserved in place, and a distinct
+error joins the end of the list.
+
+The corpus covers four initial reports, all sequences of up to two errors
+from a three-error alphabet, and one longer sequence that replays both the
+primary and a secondary error. The Rust projection fixture reapplies each
+sequence and compares the entire ordered list of secondary errors. Two shell
+fixtures also read the final JSONL after a measurement failure and monitor
+join timeout, with a successful or failed final capacity query. Before
+projecting the pending errors, the lifecycle records that the unjoined
+monitor makes cleanup unsafe and defers it. The fixtures check the primary,
+the full secondary error order including the cleanup deferral, completion,
+exit status, and the absence of an output acknowledgement. The query and
+join outcomes are injected.
+Measurement observations and their durations are covered by the earlier
+monitor evidence fixture.
+
+The generator checks witnesses for a replaced primary, repeated or reordered
+secondary errors, and loss of distinct messages with the same code.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-finalization-errors corpus/disk-finalization-errors.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib finalization_error_
+```
+
+## Final filesystem capacity
+
+The Lean model joins the final capacity query to the filesystem keys
+observed during the run. It proves that the report preserves those keys,
+an absent end value has no change, and a measured zero yields the negative
+of the start value. For any two unsigned 64-bit capacities, the difference
+lies between `-(2^64 - 1)` and `2^64 - 1`.
+
+Five fixtures supply a fixed starting reading and a controlled final query
+to the Rust shell, then decode the emitted JSONL as a typed report. They cover
+large differences in both directions, equal endpoints, a measured zero,
+missing and extra end keys, and an empty successful query. The failed query
+fixture checks the incomplete report, the measurement error, and the absence
+of an output acknowledgement.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-final-capacity corpus/disk-final-capacity.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib final_disk_capacity_report_matches_lean
+```
+
+## Acknowledgement after report delivery
+
+The delivery model starts with the execution root cleaned and all shutdown
+components quiescent. It distinguishes the final capacity query, the write of
+the final record, the explicit flush after that write attempt, and cleanup of
+the delivery root. Lean proves that the terminal errors preserve this order,
+cleanup is requested exactly once even if reporting fails, and acknowledgement
+requires success at all four stages.
+
+The Rust shell exercises all sixteen delivery outcomes for a complete run
+and for a run that reached its mutant limit. The capacity query and writer
+inject errors at their respective stages. A same-name directory replacement
+causes delivery cleanup to fail, and the test checks that both directory
+identities survive. The observer counts cleanup requests from the main
+delivery path and outer shutdown. The early writer failure and
+interrupted-delivery tests exercise the latter path directly.
+
+The replay reads SQLite after the shell returns. Delivery failure leaves
+the run unfinished and retains the previously committed mutant outcomes.
+Successful delivery issues the finish request. A committed finish stores
+the run's completion flag, including false for runs that reached the mutant
+limit. Two further fixtures install a deferred foreign-key violation during
+final output to make SQLite reject the finish commit. They check that the
+report acknowledgement preceded the finish request and the commit error.
+The finish flags and trigger insert roll back, and earlier mutant results
+survive. Each fixture reads the JSONL and compares the reported mutant
+outcomes with the stored outcomes.
+
+Each of the 34 fixtures then requests resume with unchanged input and a
+budget large enough to execute every candidate. The model uses the stored
+`complete` flag to select the existing run or start a fresh one. It
+predicts whether any mutant processes are needed. The replay checks the
+reported resume reason, the run ID, each reused outcome, the executed count
+in metrics, and the final rows in SQLite. A run whose first attempt
+persisted every mutant can resume after delivery failure with zero mutant
+processes. A budget-limited run reuses its saved results and runs the
+remaining candidates.
+
+The commit-failure fixtures remove the trigger and table used to inject
+the fault before requesting resume. The stored run and results are read
+back without editing their rows.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-delivery corpus/disk-delivery.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib final_delivery_and_durable_session_match_lean
+```
+
+## Report admission and ownership at the shutdown deadline
+
+At the model's admission event, a queued operation is allowed to start when
+its driver is live and the current time precedes the earliest reported
+deadline. Lean proves that a restriction cannot reopen a closed gate and that
+a queued task is refused after the driver drops. The task retains its owner
+while it is queued or active. An active task releases its last reference on
+return if the driver already dropped.
+
+Nine timelines are replayed with a writer blocked either in the record write
+or in its per-record flush. A single blocking thread makes the queue
+deterministic. The test uses a paused Tokio clock and compares the gate,
+task state, and live owner reference after every event. It also checks the
+returned effect ID and the bytes accepted by the writer. The cases schedule
+deadline changes and driver drops before or after the worker checks admission.
+The interrupted-delivery shell tests cover the actual workspace path.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-report-admission corpus/report-admission.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib report_admission_and_owner_lifetime_match_lean
+```
+
+## Flushing after the report waiter is cancelled
+
+The recovery model starts with an active record write whose waiter has been
+cancelled. The driver joins that operation before attempting a separate flush.
+An ordinary write error returns the handler and permits the flush. A panic
+loses the handler, keeps the driver non-quiescent, and prevents the flush.
+An expired flush request returns the unused handler and releases its owner.
+An admitted flush that panics leaves the driver non-quiescent.
+
+The twelve fixtures combine three write outcomes with four flush outcomes.
+The Rust adapter blocks the original writer and the recovery flush with
+separate gates. It observes the original record, whether the flush entered
+the writer, the result of the flush call, driver quiescence, and the live
+owner reference. The recovery call returns a flush result. The original
+emission waiter has already been dropped, and the record is written at most
+once in these fixtures.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-report-recovery corpus/report-recovery.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib flush_after_cancelled_report_wait_matches_lean
+```
+
+## Cleanup outcomes and finish admission
+
+The lifecycle corpus crosses four component-settlement schedules with the four
+execution-root outcomes and five delivery-root choices. This supplies 80
+ordered finish schedules, plus eight attempts to replace a recorded deferred
+or retained outcome. Independent finish predicates check the generated cases.
+The new negative controls allow finish after deferral, allow finish with a
+retained delivery root, or rewrite an existing deferred outcome.
+
+Lean proves that any deferral prevents finish and that each recorded cleanup
+outcome rejects a second assignment. A finished lifecycle with a delivery root
+requires successful process drain, output drain, and monitor join. The Rust
+replay drives the production lifecycle with fixture outcomes, checking the full
+snapshot on rejection and the exact cleanup diagnostics for each root. It
+consumes 99 runtime cases from the 110-record corpus. The shell integration test
+exercises execution cleanup deferral and the resulting output acknowledgement
+decision.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check corpus/disk-guard-lifecycle.jsonl
+lake exe generate_disk_guard -- --sensitivity
+cd ../..
+cargo test --locked -p hoimin-cli --test lean_disk_shutdown_oracle
+cargo test --locked -p hoimin-cli --lib deferred_execution_cleanup_is_incomplete_without_output_ack_or_outer_retry
+```
+
+## Disk metering across roots
+
+The Lean metering model counts physical identities on Unix and directory
+entries in Windows conservative accounting. It keeps the first capacity
+observation for each filesystem and supplies their minimum to the stop policy.
+The proofs cover repeated physical file identities, repeated filesystem
+observations, and a reserve violation on any observed filesystem. The model
+also supplies a measurement failure when the list of capacities is empty.
+
+Thirteen `internal-fixture` cases cover both root orders, same and distinct
+filesystem keys, three threshold combinations, and empty measurement. The
+Rust replay creates actual ordinary files and hard links, injects filesystem
+keys and capacity observations, and drives both the native walker and the
+monitor's stop policy. The injected keys exercise aggregation with controlled
+values. Native traversal uses the host filesystem.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-meter corpus/disk-meter.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib native_disk_meter_and_stop_policy_match_lean
+```
+
+## Statistics retained from accepted measurements
+
+Lean derives the report statistics from the ordered history of accepted
+measurements. Refresh failure, measurement failure, and a measurement with
+no capacity entries preserve that history. The historical minimum cannot
+increase after another sample, including when a previously observed filesystem
+is absent from the new reading.
+
+Ten histories compare all statistics after every sample through the Rust
+sampler. They cover independent peaks in owned bytes and measurement duration,
+zero capacity, and loss and reappearance of filesystem keys. The shutdown
+history also checks the serialized final report, including each filesystem's
+initial and minimum capacity values.
+
+```sh
+cd formal/HoiminOracle
+lake exe generate_disk_guard -- --check-statistics corpus/disk-statistics.jsonl
+cd ../..
+cargo test --locked -p hoimin-cli --lib disk_statistics_match_lean_after_every_sample
+cargo test --locked -p hoimin-cli --lib pre_dispatch_sample_stops_before_analyzer_dispatch
+```

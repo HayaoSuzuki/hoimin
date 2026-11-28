@@ -307,4 +307,175 @@ def oracleCaseJson (item : OracleCase) : Lean.Json := Lean.Json.mkObj [
 def renderCorpus : String :=
   String.join (cases.map fun item => (oracleCaseJson item).compress ++ "\n")
 
+private def loadRecheckCase (finishBeforeAcquire : Option Bool) : Lean.Json :=
+  let afterRead := run State.initial [
+    .open .h0, .open .h1, .begin .h0 .r0 .f0, .loadReadCandidate .h1 .f0 ]
+  let beforeAcquire := match finishBeforeAcquire with
+    | none => afterRead
+    | some complete => (step afterRead (.finish .h0 .r0 complete)).state
+  let acquired := step beforeAcquire (.loadAcquire .h1)
+  let (event, outcome) := if acquired.rejection.isSome then (.loadAcquire .h1, acquired)
+    else (.loadRecheck .h1, step acquired.state (.loadRecheck .h1))
+  let status := match outcome.rejection, outcome.selectedRun with
+    | some error, _ => rejectionCode event error
+    | none, some _ => "resumed"
+    | none, none => "candidate_changed"
+  let row := findRun outcome.state .r0
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)),
+    ("mode", .str "internal-fixture"),
+    ("finish_before_acquire", optionalJson Lean.toJson finishBeforeAcquire),
+    ("expected_status", .str status),
+    ("expected_loader_owns", Lean.toJson (owns outcome.state .r0 .h1)),
+    ("expected_lock_held", Lean.toJson (ownerCount outcome.state .r0 != 0)),
+    ("expected_run_finished", optionalJson Lean.toJson (row.map RunRow.finished)),
+    ("expected_run_complete", optionalJson Lean.toJson (row.map RunRow.complete)) ]
+
+def renderLoadRecheckCorpus : String :=
+  String.join ([none, some false, some true].map fun action =>
+    (loadRecheckCase action).compress ++ "\n")
+
+private def finishWaitSeed (priorFinished : Bool) : State :=
+  let seed := run State.initial [
+    .open .h0, .open .h1, .begin .h0 .r0 .f0, .persist .h0 .r0 .m0 .notRun .p0 .valid]
+  if priorFinished then run seed [.finish .h0 .r0 false, .load .h0 .f0] else seed
+
+private def finishWaitSnapshot (state : State) : Lean.Json :=
+  let row := findRun state .r0
+  let observer := loadRun state .h1 .f0
+  let resume := match observer.rejection, observer.selectedRun with
+    | some error, _ => rejectionCode (.load .h1 .f0) error
+    | none, some _ => "resumed"
+    | none, none => "matching_run_complete"
+  Lean.Json.mkObj [
+    ("finished", Lean.toJson (row.any RunRow.finished)),
+    ("complete", Lean.toJson (row.any RunRow.complete)),
+    ("resume", .str resume),
+    ("result_count", Lean.toJson state.results.length)]
+
+private def finishWaitCase (waiter : String) (arrange : PendingFinishWait → PendingFinishWait)
+    (priorFinished complete commit : Bool) : Lean.Json :=
+  let pending := arrange { session := finishWaitSeed priorFinished }
+  let settled := settleFinishWait pending .h0 .r0 complete commit
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"{waiter}_prior_{priorFinished}_complete_{complete}_commit_{commit}"),
+    ("waiter", .str waiter), ("prior_finished", Lean.toJson priorFinished),
+    ("complete", Lean.toJson complete), ("commit", Lean.toJson commit),
+    ("pending", finishWaitSnapshot pending.session), ("settled", finishWaitSnapshot settled.session),
+    ("reply", optionalJson Lean.toJson settled.reply)]
+
+def renderFinishWaitCorpus : String :=
+  let switches := [false, true]
+  let waiters : List (String × (PendingFinishWait → PendingFinishWait)) :=
+    [("awaited", id), ("cancelled", cancelFinishWait), ("driver_dropped", dropFinishDriver)]
+  let cases := waiters.flatMap fun (waiter, arrange) =>
+    switches.flatMap fun priorFinished => switches.flatMap fun complete =>
+      switches.map fun commit => finishWaitCase waiter arrange priorFinished complete commit
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+def finishWaitSensitivity : Bool :=
+  let seed := finishWaitSeed false
+  let detached := dropFinishDriver { session := seed }
+  let committed := settleFinishWait detached .h0 .r0 true true
+  let rolledBack := settleFinishWait detached .h0 .r0 true false
+  (loadRun detached.session .h1 .f0).rejection == some .active &&
+    committed.reply.isNone && runComplete committed.session .r0 &&
+    rolledBack.session.runs == seed.runs &&
+    (loadRun rolledBack.session .h1 .f0).selectedRun == some .r0
+
+private def finishReleaseName : FinishRelease → String
+  | .beforeDeadline => "before_deadline"
+  | .withinGrace => "within_grace"
+  | .afterGrace => "after_grace"
+
+private def finishFlags (state : State) : Lean.Json :=
+  let row := findRun state .r0
+  Lean.Json.mkObj [
+    ("finished", Lean.toJson (row.any RunRow.finished)),
+    ("complete", Lean.toJson (row.any RunRow.complete))]
+
+private def finishDeadlineCase (release : FinishRelease) (complete commit : Bool) : Lean.Json :=
+  let result := finishAcrossShutdown ⟨finishWaitSeed false, true, true⟩ .h0 .r0 release complete commit
+  let name := finishReleaseName release
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"{name}_complete_{complete}_commit_{commit}"),
+    ("release", .str name), ("complete", Lean.toJson complete), ("commit", Lean.toJson commit),
+    ("exit_code", optionalJson Lean.toJson result.exitCode),
+    ("session_acknowledged", Lean.toJson result.sessionAcknowledged),
+    ("commit_failure_observed", Lean.toJson result.commitFailureObserved),
+    ("at_return", finishFlags result.atReturn), ("settled", finishFlags result.settled)]
+
+def renderFinishDeadlineCorpus : String :=
+  let releases : List FinishRelease := [.beforeDeadline, .withinGrace, .afterGrace]
+  let cases := releases.flatMap fun release => [false, true].flatMap fun complete =>
+    [false, true].map fun commit => finishDeadlineCase release complete commit
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+def finishDeadlineSensitivity : Bool :=
+  let pending : PendingFinishWait := { session := finishWaitSeed false }
+  let late := finishAcrossShutdown pending .h0 .r0 .afterGrace true true
+  let timely := finishAcrossShutdown pending .h0 .r0 .withinGrace true true
+  late.exitCode.isNone && !late.sessionAcknowledged && !runComplete late.atReturn .r0 &&
+    runComplete late.settled .r0 && timely.sessionAcknowledged && runComplete timely.atReturn .r0
+
+private def persistReadbackJson (status : Option Status) : Lean.Json :=
+  Lean.Json.mkObj [
+    ("status", optionalJson (fun status => .str (statusName status)) status),
+    ("diagnostics", stringsJson (if status == some .error then ["process.output.close.timeout"] else []))]
+
+private def persistSnapshotJson (row : Option ResultRow) : Lean.Json :=
+  let origin := row.map fun result => if result.payload == .p0 then "prior" else "current"
+  Lean.Json.mkObj [
+    ("result", persistReadbackJson (row.map ResultRow.status)),
+    ("origin", optionalJson Lean.Json.str origin)]
+
+private def persistDeadlineSeed (replaces : Bool) : State :=
+  let fresh := run State.initial [.open .h0, .begin .h0 .r0 .f0]
+  if replaces then run fresh [
+    .persist .h0 .r0 .m0 .error .p0 .valid, .finish .h0 .r0 false, .load .h0 .f0]
+  else fresh
+
+private def persistDeadlineCase (release : FinishRelease)
+    (replaces diagnostic commit : Bool) : Lean.Json :=
+  let state := persistDeadlineSeed replaces
+  let result := persistAcrossShutdown state .h0 .r0 .m0
+    (if diagnostic then .error else .survived) release commit
+  let settled := findResult result.settled .r0 .m0
+  let stage := finishReleaseName release
+  let operation := if replaces then "replace" else "insert"
+  Lean.Json.mkObj [
+    ("schema", Lean.toJson (1 : Nat)), ("mode", .str "internal-fixture"),
+    ("id", .str s!"{operation}_{stage}_diagnostic_{diagnostic}_commit_{commit}"),
+    ("replaces", Lean.toJson replaces),
+    ("release", .str stage), ("diagnostic", Lean.toJson diagnostic), ("commit", Lean.toJson commit),
+    ("exit_code", optionalJson Lean.toJson result.exitCode),
+    ("pending", persistSnapshotJson (findResult state .r0 .m0)),
+    ("at_return", persistSnapshotJson (findResult result.atReturn .r0 .m0)),
+    ("settled", persistSnapshotJson settled),
+    ("reported", persistReadbackJson result.reported),
+    ("resume_reuses", Lean.toJson (settled.any (fun row => row.status.isDeterminate)))]
+
+def renderPersistDeadlineCorpus : String :=
+  let releases : List FinishRelease := [.beforeDeadline, .withinGrace, .afterGrace]
+  let cases := [false, true].flatMap fun replaces =>
+    releases.flatMap fun release => [false, true].flatMap fun diagnostic =>
+      [false, true].map fun commit => persistDeadlineCase release replaces diagnostic commit
+  String.join (cases.map fun item => item.compress ++ "\n")
+
+def persistDeadlineSensitivity : Bool :=
+  let seed := persistDeadlineSeed false
+  let late := persistAcrossShutdown seed .h0 .r0 .m0 .survived .afterGrace true
+  let failed := persistAcrossShutdown seed .h0 .r0 .m0 .survived .withinGrace false
+  let previous := persistDeadlineSeed true
+  let replaced := persistAcrossShutdown previous .h0 .r0 .m0 .error .afterGrace true
+  let rolledBack := persistAcrossShutdown previous .h0 .r0 .m0 .error .afterGrace false
+  (findResult late.atReturn .r0 .m0).isNone && late.reported.isNone &&
+    (findResult late.settled .r0 .m0).any (fun result => result.status.isDeterminate) &&
+    (findResult failed.settled .r0 .m0).isNone && failed.reported == some .survived &&
+    (findResult replaced.atReturn .r0 .m0).map ResultRow.payload == some .p0 &&
+    (findResult replaced.settled .r0 .m0).map ResultRow.payload == some .p1 &&
+    (findResult rolledBack.settled .r0 .m0).map ResultRow.payload == some .p0
+
 end HoiminOracle.SessionAudit

@@ -82,11 +82,14 @@ def freshConcurrentTrace : List Event := [
   .begin .right, .commit .right
 ]
 
-def staleReadTrace : List Event := [
-  .observe .left, .observe .right,
+def staleReadPrefix : List Event := [
+  .observe .right, .observe .left,
   .begin .left, .initializeSchema .left, .commit .left,
-  .begin .right, .initializeSchema .right, .commit .right
+  .begin .right
 ]
+
+def staleReadTrace : List Event :=
+  staleReadPrefix ++ [.initializeSchema .right, .commit .right]
 
 def rollbackTrace : List Event := [
   .observe .left, .begin .left, .initializeSchema .left, .fail .left
@@ -119,8 +122,30 @@ def unsupportedPrecedenceSensitivity : Bool :=
     correct.version == version && correct.leftPhase == .unsupportedRejected &&
       broken.version == version && broken.leftPhase == .initializationFailed
 
+def schemaSeparatorSensitivity : Bool :=
+  let canonical := "schema_version INTEGER".toList
+  let nbsp := Char.ofNat 160
+  let changed := "schema_version".toList ++ nbsp :: " INTEGER".toList
+  let broadSpace := fun c => sqliteSchemaSpace c || c == nbsp
+  normalizeSchemaSql sqliteSchemaSpace canonical != normalizeSchemaSql sqliteSchemaSpace changed &&
+    normalizeSchemaSql broadSpace canonical == normalizeSchemaSql broadSpace changed
+
+def snapshotInputs : List (Version × Int × Catalog) :=
+  [Version.fresh, .v1, .v2, .v3, .v4, .current, .future].flatMap fun version =>
+    [0, 12345].flatMap fun identity =>
+      [Catalog.empty, .canonical, .foreign].map fun catalog => (version, identity, catalog)
+
+def snapshotIdentitySensitivity : Bool :=
+  admitSnapshot .fresh 12345 .empty == .invalidIdentity &&
+    admitSnapshot .fresh 12345 .empty != admitSnapshot .fresh 0 .empty &&
+    admitSnapshot .current 0 .foreign == .invalidIdentity &&
+    admitSnapshot .current 0 .foreign != admitSnapshot .current 0 .canonical &&
+    admitSnapshot .future 12345 .foreign == .unsupportedVersion &&
+    admitSnapshot .future 12345 .foreign != .invalidIdentity
+
 def sensitivityPasses : Bool :=
-  atomicitySensitivity && staleReadSensitivity && unsupportedPrecedenceSensitivity
+  atomicitySensitivity && staleReadSensitivity && unsupportedPrecedenceSensitivity &&
+    schemaSeparatorSensitivity && snapshotIdentitySensitivity
 
 structure OracleCase where
   schema : Nat
@@ -136,9 +161,13 @@ def cases : List OracleCase := [
   { schema := 1, id := "concurrent_fresh_open", mode := "strict",
     scenario := "concurrent_fresh", initialVersion := .fresh,
     legacyRow := false, trace := freshConcurrentTrace },
-  { schema := 1, id := "forced_stale_fresh_reread", mode := "model-only",
+  { schema := 1, id := "forced_stale_fresh_reread", mode := "internal-fixture",
     scenario := "stale_reread", initialVersion := .fresh,
-    legacyRow := false, trace := staleReadTrace },
+    legacyRow := false, trace := staleReadPrefix ++ [.commit .right] },
+  -- SQLITE_FULL interrupts initialization before the schema and version can be staged.
+  { schema := 1, id := "admitted_disk_full_rollback", mode := "internal-fixture",
+    scenario := "disk_full_rollback", initialVersion := .fresh,
+    legacyRow := false, trace := [.observe .left, .begin .left, .fail .left] },
   -- The transaction model retains rollback, but the old public fixture contains
   -- foreign schema objects and is now rejected before initialization. Actual
   -- SQLITE_FULL rollback is checked separately at the production schema owner.

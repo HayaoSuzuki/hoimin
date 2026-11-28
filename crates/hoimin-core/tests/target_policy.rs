@@ -1,15 +1,111 @@
 #![cfg_attr(coverage_nightly, feature(coverage_attribute))]
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use camino::Utf8PathBuf;
+use camino::{Utf8Path, Utf8PathBuf};
 use hoimin_budget_math::auto_mutant_timeout;
 use hoimin_core::{
     ConfigError, DiscoveredFile, LineRange, LineSelection, MAX_JOBS, MAX_TIMEOUT, RawRunConfig,
     RunConfig, Selection, SymbolSelection, TargetError, TargetSlice, changed_is_normalized,
-    intersect_changed, resolve_explicit, targets_are_normalized,
+    intersect_changed, normalize_logical_path, resolve_explicit, targets_are_normalized,
 };
 use hoimin_core::{MutationOperator, MutationProfile};
+
+#[path = "support/line_coverage_oracle.rs"]
+mod line_coverage_oracle;
+#[path = "support/symbol_resolution_oracle.rs"]
+mod symbol_resolution_oracle;
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum PathHost {
+    Any,
+    Posix,
+    Windows,
+}
+
+#[derive(serde::Deserialize)]
+struct TargetPathFixture {
+    schema: u32,
+    mode: String,
+    id: String,
+    platform: PathHost,
+    root: Utf8PathBuf,
+    input: Utf8PathBuf,
+    normalized: Option<String>,
+}
+
+#[test]
+fn target_path_normalization_matches_lean() {
+    let corpus = include_str!("../../../formal/HoiminOracle/corpus/target-path.jsonl");
+    let mut ids = BTreeSet::new();
+    let mut run = 0;
+    for row in corpus.lines() {
+        let case: TargetPathFixture = serde_json::from_str(row).unwrap();
+        assert_eq!(case.schema, 1, "{}", case.id);
+        assert_eq!(case.mode, "strict", "{}", case.id);
+        assert!(ids.insert(case.id.clone()), "{}", case.id);
+        let applies = match case.platform {
+            PathHost::Any => true,
+            PathHost::Posix => cfg!(unix),
+            PathHost::Windows => cfg!(windows),
+        };
+        if !applies {
+            continue;
+        }
+        run += 1;
+
+        let normalized = match normalize_logical_path(&case.root, &case.input) {
+            Ok(path) => Some(path.into_string()),
+            Err(TargetError::PathOutsideRoot(input)) => {
+                assert_eq!(input.as_str(), case.input.as_str(), "{}", case.id);
+                None
+            }
+            Err(error) => panic!("{}: unexpected path error: {error}", case.id),
+        };
+        assert_eq!(normalized, case.normalized, "{}", case.id);
+
+        let mut selection = Selection {
+            root: case.root,
+            ..Selection::default()
+        };
+        let discovered_path = match case.normalized.as_deref() {
+            None => {
+                selection.sources.push(case.input.clone());
+                assert_eq!(
+                    resolve_explicit(&selection, &[]),
+                    Err(TargetError::PathOutsideRoot(case.input)),
+                    "{}",
+                    case.id,
+                );
+                continue;
+            }
+            Some("") => {
+                selection.sources.push(case.input);
+                "pkg/file.py"
+            }
+            Some(path)
+                if Utf8Path::new(path)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("py"))
+                    && hoimin_core::normalized_relative_path(path) =>
+            {
+                selection.files.push(case.input);
+                path
+            }
+            Some(_) => continue,
+        };
+        let targets = resolve_explicit(&selection, &[DiscoveredFile::python(discovered_path)])
+            .unwrap_or_else(|error| panic!("{}: {error}", case.id));
+        assert_eq!(targets.len(), 1, "{}", case.id);
+        assert_eq!(targets[0].path.as_str(), discovered_path, "{}", case.id);
+    }
+    assert_eq!(ids.len(), 240);
+    assert_eq!(
+        run,
+        157 + 40 * usize::from(cfg!(unix)) + 43 * usize::from(cfg!(windows))
+    );
+}
 
 fn raw_config() -> RawRunConfig {
     RawRunConfig {

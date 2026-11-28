@@ -66,7 +66,7 @@
         "value": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -81,7 +81,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -109,7 +109,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -119,6 +119,62 @@
     {
       "#meta": {
         "index": 2
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "WrongMutantId",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": false,
+        "counted": {
+          "#bigint": "0"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "MemoryExhausted",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "0"
+        },
+        "persistence": {
+          "tag": "Pending",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Persisting",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "MutantMismatch",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "OutOfMemory",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 3
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Cancel",
@@ -134,7 +190,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -162,63 +218,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 3
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Persist",
-        "value": {
-          "tag": "WrongRunId",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "TimedOut",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Finishing",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -232,7 +232,7 @@
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
         "value": {
-          "tag": "WrongMutantId",
+          "tag": "Correct",
           "value": {
             "#tup": []
           }
@@ -246,7 +246,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -274,7 +274,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -299,7 +299,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -327,7 +327,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -337,62 +337,6 @@
     {
       "#meta": {
         "index": 6
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Persist",
-        "value": {
-          "tag": "WrongMutantId",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "TimedOut",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Reading",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Timeout",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 7
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "EndOfSpool",
@@ -408,7 +352,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -436,7 +380,63 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "Correct",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "MemoryExhausted",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -464,7 +464,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -492,7 +492,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -517,7 +517,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -545,7 +545,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -570,7 +570,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -598,7 +598,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -608,6 +608,62 @@
     {
       "#meta": {
         "index": 11
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "Correct",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "MemoryExhausted",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "OutOfMemory",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 12
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Idle",
@@ -623,7 +679,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -651,7 +707,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -660,7 +716,7 @@
     },
     {
       "#meta": {
-        "index": 12
+        "index": 13
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
@@ -679,7 +735,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -707,60 +763,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 13
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "TimedOut",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -788,7 +791,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -816,7 +819,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -826,6 +829,62 @@
     {
       "#meta": {
         "index": 15
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "WrongRunId",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "MemoryExhausted",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "OutOfMemory",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 16
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
@@ -844,7 +903,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -872,60 +931,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 16
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "TimedOut",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -950,7 +956,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -978,7 +984,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -990,12 +996,9 @@
         "index": 18
       },
       "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Persist",
+        "tag": "Idle",
         "value": {
-          "tag": "WrongMutantId",
-          "value": {
-            "#tup": []
-          }
+          "#tup": []
         }
       },
       "ProcessResult::ProcessResultModel::s": {
@@ -1006,7 +1009,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -1034,7 +1037,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -1059,7 +1062,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -1087,7 +1090,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -1097,6 +1100,62 @@
     {
       "#meta": {
         "index": 20
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Persist",
+        "value": {
+          "tag": "Correct",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "MemoryExhausted",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "OutOfMemory",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 21
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Idle",
@@ -1112,7 +1171,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -1140,63 +1199,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 21
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Persist",
-        "value": {
-          "tag": "WrongMutantId",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "TimedOut",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -1221,7 +1224,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -1249,7 +1252,7 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }
@@ -1259,59 +1262,6 @@
     {
       "#meta": {
         "index": 23
-      },
-      "ProcessResult::ProcessResultModel::dispatch": {
-        "tag": "Idle",
-        "value": {
-          "#tup": []
-        }
-      },
-      "ProcessResult::ProcessResultModel::s": {
-        "cancelled": true,
-        "counted": {
-          "#bigint": "1"
-        },
-        "evidence": {
-          "closeTimedOut": false,
-          "termination": {
-            "tag": "TimedOut",
-            "value": {
-              "#tup": []
-            }
-          }
-        },
-        "exit": {
-          "#bigint": "130"
-        },
-        "persistence": {
-          "tag": "Retired",
-          "value": {
-            "#tup": []
-          }
-        },
-        "phase": {
-          "tag": "Verifying",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "Late",
-          "value": {
-            "#tup": []
-          }
-        },
-        "status": {
-          "tag": "Timeout",
-          "value": {
-            "#tup": []
-          }
-        }
-      }
-    },
-    {
-      "#meta": {
-        "index": 24
       },
       "ProcessResult::ProcessResultModel::dispatch": {
         "tag": "Persist",
@@ -1330,7 +1280,7 @@
         "evidence": {
           "closeTimedOut": false,
           "termination": {
-            "tag": "TimedOut",
+            "tag": "MemoryExhausted",
             "value": {
               "#tup": []
             }
@@ -1358,7 +1308,60 @@
           }
         },
         "status": {
-          "tag": "Timeout",
+          "tag": "OutOfMemory",
+          "value": {
+            "#tup": []
+          }
+        }
+      }
+    },
+    {
+      "#meta": {
+        "index": 24
+      },
+      "ProcessResult::ProcessResultModel::dispatch": {
+        "tag": "Idle",
+        "value": {
+          "#tup": []
+        }
+      },
+      "ProcessResult::ProcessResultModel::s": {
+        "cancelled": true,
+        "counted": {
+          "#bigint": "1"
+        },
+        "evidence": {
+          "closeTimedOut": false,
+          "termination": {
+            "tag": "MemoryExhausted",
+            "value": {
+              "#tup": []
+            }
+          }
+        },
+        "exit": {
+          "#bigint": "130"
+        },
+        "persistence": {
+          "tag": "Retired",
+          "value": {
+            "#tup": []
+          }
+        },
+        "phase": {
+          "tag": "Verifying",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "Late",
+          "value": {
+            "#tup": []
+          }
+        },
+        "status": {
+          "tag": "OutOfMemory",
           "value": {
             "#tup": []
           }

@@ -1,0 +1,46 @@
+{"admitted":true,"edits":[],"id":"canonical-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":true,"edits":[{"kind":"reverse_creation"}],"id":"reverse-creation-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":true,"edits":[{"kind":"shift_root_pages"}],"id":"different-root-pages-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":true,"edits":[{"after":"schema_version\u0009\u0009INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"tabs-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":true,"edits":[{"after":"schema_version\r\n    INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"line-breaks-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":true,"edits":[{"after":"schema_version\u000cINTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"form-feed-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"schema_version  INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"nbsp-in-identifier-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"schema_version  INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"em-space-in-identifier-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"schema_version integer","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"lowercase-type-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"\"schema_version\" INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"quoted-identifier-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"CHECK( length(digest)","before":"CHECK(length(digest)","kind":"replace","name":"fingerprints"}],"id":"space-after-parenthesis-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"schema_version INTEGER","before":"schema_version INTEGER NOT NULL","kind":"replace","name":"fingerprints"}],"id":"remove-not-null-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"length(digest) = 31","before":"length(digest) = 32","kind":"replace","name":"fingerprints"}],"id":"change-digest-check-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"fingerprint BLOB NOT NULL","before":"fingerprint BLOB NOT NULL REFERENCES fingerprints(digest)","kind":"replace","name":"runs"}],"id":"remove-foreign-key-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"id ASC","before":"id DESC","kind":"replace","name":"runs_resume"}],"id":"change-index-directions-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"complete, fingerprint","before":"fingerprint, complete","kind":"replace","name":"runs_resume"}],"id":"change-index-column-order-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"kind":"remove","name":"runs_resume"}],"id":"remove-resume-index-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"kind":"remove","name":"diagnostics_result"}],"id":"remove-diagnostic-index-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE TABLE extra(value INTEGER)"}],"id":"add-table-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE INDEX extra_index ON runs(id)"}],"id":"add-index-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE VIEW extra_view AS SELECT 1 AS value"}],"id":"add-view-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE TRIGGER extra_trigger AFTER INSERT ON runs BEGIN SELECT 1; END"}],"id":"add-trigger-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":false,"edits":[{"after":"schema_version  INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"},{"after":"id ASC","before":"id DESC","kind":"replace","name":"runs_resume"}],"id":"format-and-change-index-rollback","mode":"internal-fixture","schema":1,"wal":false}
+{"admitted":true,"edits":[],"id":"canonical-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":true,"edits":[{"kind":"reverse_creation"}],"id":"reverse-creation-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":true,"edits":[{"kind":"shift_root_pages"}],"id":"different-root-pages-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":true,"edits":[{"after":"schema_version\u0009\u0009INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"tabs-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":true,"edits":[{"after":"schema_version\r\n    INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"line-breaks-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":true,"edits":[{"after":"schema_version\u000cINTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"form-feed-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"schema_version  INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"nbsp-in-identifier-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"schema_version  INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"em-space-in-identifier-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"schema_version integer","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"lowercase-type-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"\"schema_version\" INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"}],"id":"quoted-identifier-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"CHECK( length(digest)","before":"CHECK(length(digest)","kind":"replace","name":"fingerprints"}],"id":"space-after-parenthesis-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"schema_version INTEGER","before":"schema_version INTEGER NOT NULL","kind":"replace","name":"fingerprints"}],"id":"remove-not-null-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"length(digest) = 31","before":"length(digest) = 32","kind":"replace","name":"fingerprints"}],"id":"change-digest-check-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"fingerprint BLOB NOT NULL","before":"fingerprint BLOB NOT NULL REFERENCES fingerprints(digest)","kind":"replace","name":"runs"}],"id":"remove-foreign-key-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"id ASC","before":"id DESC","kind":"replace","name":"runs_resume"}],"id":"change-index-directions-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"complete, fingerprint","before":"fingerprint, complete","kind":"replace","name":"runs_resume"}],"id":"change-index-column-order-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"kind":"remove","name":"runs_resume"}],"id":"remove-resume-index-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"kind":"remove","name":"diagnostics_result"}],"id":"remove-diagnostic-index-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE TABLE extra(value INTEGER)"}],"id":"add-table-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE INDEX extra_index ON runs(id)"}],"id":"add-index-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE VIEW extra_view AS SELECT 1 AS value"}],"id":"add-view-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"kind":"add","sql":"CREATE TRIGGER extra_trigger AFTER INSERT ON runs BEGIN SELECT 1; END"}],"id":"add-trigger-wal","mode":"internal-fixture","schema":1,"wal":true}
+{"admitted":false,"edits":[{"after":"schema_version  INTEGER","before":"schema_version INTEGER","kind":"replace","name":"fingerprints"},{"after":"id ASC","before":"id DESC","kind":"replace","name":"runs_resume"}],"id":"format-and-change-index-wal","mode":"internal-fixture","schema":1,"wal":true}

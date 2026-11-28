@@ -124,15 +124,15 @@ private def ensureAudit (audit : AuditSummary) : IO (Except UInt32 Unit) := do
     return .error 2
   return .ok ()
 
-private def writeCorpus (path : System.FilePath) : IO UInt32 := do
+private def writeCorpus (path : System.FilePath) (contents : String) : IO UInt32 := do
   if let some parent := path.parent then IO.FS.createDirAll parent
-  IO.FS.writeFile path renderShutdownCorpus
+  IO.FS.writeFile path contents
   return 0
 
-private def checkCorpus (path : System.FilePath) : IO UInt32 := do
+private def checkCorpus (path : System.FilePath) (contents : String) : IO UInt32 := do
   try
     let actual ← IO.FS.readFile path
-    if actual == renderShutdownCorpus then return 0
+    if actual == contents then return 0
     IO.eprintln s!"stale Lean shutdown corpus: {path}"
     return 1
   catch error =>
@@ -158,10 +158,12 @@ def main (args : List String) : IO UInt32 := do
   | .ok () => pure ()
   let args := match args with | "--" :: rest => rest | _ => args
   match args with
-  | ["--output", path] => writeCorpus path
-  | ["--check", path] => checkCorpus path
+  | ["--output", path] => writeCorpus path renderShutdownCorpus
+  | ["--check", path] => checkCorpus path renderShutdownCorpus
+  | ["--output-metrics", path] => writeCorpus path renderShutdownMetricsCorpus
+  | ["--check-metrics", path] => checkCorpus path renderShutdownMetricsCorpus
   | ["--stats"] => printStats audit
   | ["--sensitivity"] => printSensitivity
   | _ =>
-      IO.eprintln "usage: generate_shutdown (--output PATH | --check PATH | --stats | --sensitivity)"
+      IO.eprintln "usage: generate_shutdown (--output PATH | --check PATH | --output-metrics PATH | --check-metrics PATH | --stats | --sensitivity)"
       return 2

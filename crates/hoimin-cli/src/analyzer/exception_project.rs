@@ -9,6 +9,9 @@ const MAX_FILES: usize = 4096;
 const MAX_FILE_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 
+#[cfg(test)]
+mod acquisition_oracle_tests;
+
 #[derive(Clone)]
 pub(crate) struct ExceptionProject {
     selection: Selection,
@@ -72,6 +75,15 @@ impl ExceptionProject {
         &self,
         cancelled: &impl Fn() -> bool,
     ) -> Result<Arc<ExceptionIndex>, String> {
+        self.load_with_byte_limits(MAX_FILE_BYTES, MAX_TOTAL_BYTES, cancelled)
+    }
+
+    fn load_with_byte_limits(
+        &self,
+        file_bytes: usize,
+        total_bytes: usize,
+        cancelled: &impl Fn() -> bool,
+    ) -> Result<Arc<ExceptionIndex>, String> {
         if cancelled() {
             return Err("analyzer.cancelled".into());
         }
@@ -101,13 +113,13 @@ impl ExceptionProject {
                 cancelled,
             ))
         };
-        let mut remaining = MAX_TOTAL_BYTES;
+        let mut remaining = total_bytes;
         for path in paths {
             if cancelled() {
                 return Err("analyzer.cancelled".into());
             }
             let bytes = reader
-                .read_bounded(&path, MAX_FILE_BYTES.min(remaining))
+                .read_bounded(&path, file_bytes.min(remaining))
                 .map_err(|e| format!("{path}: {e}"))?;
             if self.prepared_inputs.as_ref().is_some_and(|inputs| {
                 inputs
@@ -120,7 +132,7 @@ impl ExceptionProject {
             }
             let decoded =
                 hoimin_core::decode_python_source(&bytes).map_err(|e| format!("{path}: {e}"))?;
-            if decoded.text().len() > MAX_FILE_BYTES {
+            if decoded.text().len() > file_bytes {
                 return Err(format!("{path}: decoded source byte limit exceeded"));
             }
             remaining = remaining

@@ -76,6 +76,13 @@ impl Repository {
         self.git(&["add", "."]).await;
         self.git(&["commit", "-qm", "fixture"]).await;
     }
+
+    async fn oid(&self, args: &[&str]) -> String {
+        String::from_utf8(self.git(args).await)
+            .unwrap()
+            .trim_ascii()
+            .to_owned()
+    }
     fn selection(&self) -> Selection {
         Selection {
             root: Utf8PathBuf::from_path_buf(self.root().to_owned()).unwrap(),
@@ -262,6 +269,139 @@ async fn scoped_changes_preserve_modification_deletion_binary_and_untracked_sele
     );
 }
 
+#[rstest::rstest]
+#[case::corrupt_object(false, Some(b"not a git object".as_slice()), "git rev-parse --verify --end-of-options")]
+#[case::dangling_branch(false, None, "git show-ref --verify --quiet -- HEAD")]
+#[case::dangling_detached_head(true, None, "git show-ref --verify --quiet -- HEAD")]
+#[tokio::test]
+async fn unreadable_head_stops_changed_target_resolution(
+    #[case] detached: bool,
+    #[case] replacement: Option<&[u8]>,
+    #[case] failing_command: &str,
+) {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 4\nc = 5 + 6\n");
+    repo.commit().await;
+    if detached {
+        repo.git(&["checkout", "--quiet", "--detach"]).await;
+    }
+    repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 9\nc = 5 + 6\n");
+
+    let selection = repo.selection();
+    let control = TargetHandler::resolve(&selection).await.unwrap();
+    assert_eq!(control.len(), 1);
+    assert_eq!(control[0].lines, [LineRange { start: 2, end: 2 }]);
+
+    let oid = repo.git(&["rev-parse", "HEAD"]).await;
+    let oid = std::str::from_utf8(&oid).unwrap().trim_ascii();
+    let object = repo
+        .root()
+        .join(".git/objects")
+        .join(&oid[..2])
+        .join(&oid[2..]);
+    #[cfg(windows)]
+    {
+        let mut permissions = std::fs::metadata(&object).unwrap().permissions();
+        permissions.set_readonly(false);
+        std::fs::set_permissions(&object, permissions).unwrap();
+    }
+    std::fs::remove_file(&object).unwrap();
+    if let Some(bytes) = replacement {
+        std::fs::write(&object, bytes).unwrap();
+    }
+
+    let error = TargetHandler::resolve(&selection).await.unwrap_err();
+    let text = error.to_string();
+    assert!(
+        text.contains(failing_command) && text.contains("exited with") && text.contains("128"),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn head_tag_does_not_supply_an_unborn_head_commit() {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\nb = 3 + 4\nc = 5 + 6\n");
+    repo.commit().await;
+    let seed = repo.oid(&["rev-parse", "HEAD"]).await;
+    repo.git(&["update-ref", "refs/tags/HEAD", &seed]).await;
+    repo.git(&["symbolic-ref", "HEAD", "refs/heads/unborn"])
+        .await;
+
+    let selected = TargetHandler::resolve(&repo.selection()).await.unwrap();
+    assert_eq!(selected.len(), 1);
+    assert_eq!(selected[0].lines, [LineRange { start: 1, end: 3 }]);
+}
+
+#[tokio::test]
+async fn diff_base_cannot_substitute_a_tag_for_an_unborn_head() {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\n");
+    repo.commit().await;
+    let seed = repo.oid(&["rev-parse", "HEAD"]).await;
+    repo.git(&["update-ref", "refs/tags/HEAD", &seed]).await;
+    repo.git(&["symbolic-ref", "HEAD", "refs/heads/unborn"])
+        .await;
+
+    let mut selection = repo.selection();
+    selection.changed = Some(hoimin_core::ChangedSelection::new(0, Some(seed)).unwrap());
+    let error = TargetHandler::resolve(&selection).await.unwrap_err();
+    assert!(error.to_string().contains("unable to get HEAD"), "{error}");
+}
+
+#[rstest::rstest]
+#[case::unrelated(false, "no merge base found")]
+#[case::criss_cross(true, "multiple merge bases found")]
+#[tokio::test]
+async fn diff_base_requires_a_unique_common_ancestor(
+    #[case] criss_cross: bool,
+    #[case] diagnostic: &str,
+) {
+    let repo = Repository::new().await;
+    repo.write("selected/app.py", "a = 1 + 2\n");
+    repo.commit().await;
+    let base = repo.oid(&["rev-parse", "HEAD"]).await;
+    let tree = repo.oid(&["rev-parse", "HEAD^{tree}"]).await;
+    let compare = if criss_cross {
+        let left = repo
+            .oid(&["commit-tree", &tree, "-p", &base, "-m", "left"])
+            .await;
+        let right = repo
+            .oid(&["commit-tree", &tree, "-p", &base, "-m", "right"])
+            .await;
+        let head = repo
+            .oid(&[
+                "commit-tree",
+                &tree,
+                "-p",
+                &left,
+                "-p",
+                &right,
+                "-m",
+                "head",
+            ])
+            .await;
+        repo.git(&["update-ref", "HEAD", &head]).await;
+        repo.oid(&[
+            "commit-tree",
+            &tree,
+            "-p",
+            &right,
+            "-p",
+            &left,
+            "-m",
+            "compare",
+        ])
+        .await
+    } else {
+        repo.oid(&["commit-tree", &tree, "-m", "unrelated"]).await
+    };
+    let mut selection = repo.selection();
+    selection.changed = Some(hoimin_core::ChangedSelection::new(0, Some(compare)).unwrap());
+    let error = TargetHandler::resolve(&selection).await.unwrap_err();
+    assert!(error.to_string().contains(diagnostic), "{error}");
+}
+
 #[tokio::test]
 async fn scoped_diff_base_and_unborn_sources_match_unscoped_resolution() {
     let repo = Repository::new().await;
@@ -369,11 +509,14 @@ async fn selected_and_unrelated_rename_directions_preserve_hunk_ranges(
 #[tokio::test]
 async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection() {
     let repo = Repository::new().await;
+    repo.git(&["config", "core.quotePath", "true"]).await;
+    let unicode_path = "unicode-雪.py";
     let names = [
         ":(exclude)*.py",
         "--option.py",
         "brackets[1].py",
         "spaces and\tquoted\".py",
+        unicode_path,
     ];
     for name in names.iter().chain(["ordinary.py"].iter()) {
         repo.write(name, "x = 1\n");
@@ -382,6 +525,14 @@ async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection
     for name in names.iter().chain(["ordinary.py"].iter()) {
         repo.write(name, "x = 9\n");
     }
+    let patch = repo
+        .git(&["diff", "--no-ext-diff", "--no-color", "--unified=0", "HEAD"])
+        .await;
+    assert!(
+        patch
+            .split(|byte| *byte == b'\n')
+            .any(|line| line == br#"+++ "b/unicode-\351\233\252.py""#)
+    );
     let mut selection = repo.selection();
     selection.sources.clear();
     selection.files = names.iter().map(|name| (*name).into()).collect();
@@ -403,6 +554,7 @@ async fn literal_pathspecs_preserve_supported_names_and_existing_colon_rejection
     // the other valid selected paths; do not broaden the portable-path contract.
     assert_eq!(actual.len(), names.len() - 1);
     assert!(actual.iter().all(|target| target.path != names[0]));
+    assert!(actual.iter().any(|target| target.path == unicode_path));
 }
 
 #[tokio::test]

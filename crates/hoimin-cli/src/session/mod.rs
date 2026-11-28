@@ -1,5 +1,15 @@
+#[cfg(test)]
+mod begin_transaction_oracle_tests;
+#[cfg(test)]
+mod finish_transaction_oracle_tests;
 mod ownership;
+#[cfg(test)]
+mod persist_transaction_oracle_tests;
+#[cfg(test)]
+mod resume_recheck_oracle_tests;
 mod schema;
+#[cfg(test)]
+mod session_dispatch_oracle_tests;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,7 +24,7 @@ use hoimin_core::{
     SessionLoaded, SessionResumeRef, SessionStarted, StoredResult, StoredResultLoaded,
     contract_ensure,
 };
-#[cfg(feature = "contracts")]
+#[cfg(any(test, feature = "contracts"))]
 use hoimin_core::{ByteSpan, MutationCandidate};
 use rusqlite::{
     Connection, ErrorCode, OptionalExtension, Transaction, TransactionBehavior, params,
@@ -115,12 +125,33 @@ impl SessionArtifacts {
     }
 }
 
+#[cfg(test)]
+type ResumeCandidateHook = Box<dyn FnOnce(&str) + Send>;
+
+#[cfg(test)]
+type SessionHook = Box<dyn FnOnce() + Send>;
+
+#[cfg(test)]
+fn run_session_hook(hook: Option<SessionHook>) {
+    if let Some(hook) = hook {
+        hook();
+    }
+}
+
 pub struct SessionHandler {
     connection: Connection,
     lock_directory: PathBuf,
     ownerships: HashMap<String, ownership::RunOwnership>,
     #[cfg(test)]
-    persist_after_reads: Option<Arc<Barrier>>,
+    persist_after_reads: Option<SessionHook>,
+    #[cfg(test)]
+    resume_after_candidate: Option<ResumeCandidateHook>,
+    #[cfg(test)]
+    begin_before_commit: Option<SessionHook>,
+    #[cfg(test)]
+    finish_before_commit: Option<SessionHook>,
+    #[cfg(test)]
+    persist_before_commit: Option<SessionHook>,
 }
 
 fn validate_resume_budget(
@@ -168,6 +199,14 @@ impl SessionHandler {
             ownerships: HashMap::new(),
             #[cfg(test)]
             persist_after_reads: None,
+            #[cfg(test)]
+            resume_after_candidate: None,
+            #[cfg(test)]
+            begin_before_commit: None,
+            #[cfg(test)]
+            finish_before_commit: None,
+            #[cfg(test)]
+            persist_before_commit: None,
         })
     }
 
@@ -236,6 +275,10 @@ impl SessionHandler {
             failure: corrupt("NULL run ID"),
         })?;
         let stored_limit = validate_resume_budget(id, stored_limit, request.max_mutants)?;
+        #[cfg(test)]
+        if let Some(after_candidate) = self.resume_after_candidate.take() {
+            after_candidate(&run_id);
+        }
         let ownership = if self.ownerships.contains_key(&run_id) {
             None
         } else {
@@ -413,6 +456,8 @@ impl SessionHandler {
                 )
             })
             .map_err(|error| failed(id, "session.begin", "insert run", &error))?;
+        #[cfg(test)]
+        run_session_hook(self.begin_before_commit.take());
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit run", &error))?;
@@ -477,10 +522,7 @@ impl SessionHandler {
             result_shape(&transaction, &run_id, &mutant_id)
                 .map_err(|error| failed(id, "session.persist", "read existing result", &error))?;
         #[cfg(test)]
-        if let Some(barrier) = &self.persist_after_reads {
-            barrier.wait();
-            barrier.wait();
-        }
+        run_session_hook(self.persist_after_reads.take());
         if let Some(stored) =
             decode_stored_result(&mutant_id, candidate_count, result_count, outcome_json)
                 .map_err(|failure| EffectFailed { id, failure })?
@@ -521,6 +563,8 @@ impl SessionHandler {
             &request.result.diagnostics,
             id,
         )?;
+        #[cfg(test)]
+        run_session_hook(self.persist_before_commit.take());
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit mutant result", &error))?;
@@ -570,6 +614,8 @@ impl SessionHandler {
                 },
             });
         }
+        #[cfg(test)]
+        run_session_hook(self.finish_before_commit.take());
         transaction
             .commit()
             .map_err(|error| failed(id, "session.commit", "commit run finish", &error))?;
@@ -619,7 +665,7 @@ impl SessionHandler {
         })
     }
 
-    #[cfg(feature = "contracts")]
+    #[cfg(any(test, feature = "contracts"))]
     fn read_result(&self, run_id: &str, mutant_id: &str) -> Result<MutantResult, String> {
         let raw = self
             .connection
@@ -678,7 +724,67 @@ pub(crate) struct SessionDispatcher {
     handler: Arc<Mutex<SessionHandler>>,
 }
 
+#[cfg(test)]
+#[derive(Debug)]
+pub(crate) struct SessionCommitPause {
+    pub(crate) entered: tokio::sync::oneshot::Sender<std::sync::Weak<Mutex<SessionHandler>>>,
+    pub(crate) release: std::sync::mpsc::Receiver<()>,
+}
+
+#[cfg(test)]
+impl SessionCommitPause {
+    fn into_hook(self, handler: std::sync::Weak<Mutex<SessionHandler>>) -> SessionHook {
+        Box::new(move || {
+            self.entered.send(handler).unwrap();
+            self.release
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+        })
+    }
+}
+
 impl SessionDispatcher {
+    #[cfg(test)]
+    pub(crate) fn pause_finish_before_commit(&self, pause: SessionCommitPause) {
+        self.handler.lock().unwrap().finish_before_commit =
+            Some(pause.into_hook(Arc::downgrade(&self.handler)));
+    }
+
+    #[cfg(test)]
+    pub(crate) fn pause_persist_before_commit(
+        &self,
+        pause: SessionCommitPause,
+        reject_commit: bool,
+    ) {
+        let mut handler = self.handler.lock().unwrap();
+        if reject_commit {
+            handler
+                .connection
+                .execute_batch(
+                    "CREATE TEMP TABLE persist_fault_parent(id INTEGER PRIMARY KEY);
+                 CREATE TEMP TABLE persist_fault(child INTEGER REFERENCES persist_fault_parent(id)
+                     DEFERRABLE INITIALLY DEFERRED);
+                 CREATE TEMP TRIGGER reject_result_commit AFTER INSERT ON main.results
+                 BEGIN INSERT INTO persist_fault VALUES(42); END;",
+                )
+                .expect("install deferred foreign-key failure before result persistence");
+        }
+        handler.persist_before_commit = Some(pause.into_hook(Arc::downgrade(&self.handler)));
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn wait_for_session_worker_drop(
+        handler: &std::sync::Weak<Mutex<SessionHandler>>,
+    ) {
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            while handler.upgrade().is_some() {
+                tokio::time::sleep(std::time::Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("session worker must release its handler");
+    }
+
     pub(crate) async fn open(path: impl AsRef<Path>) -> Result<Self, SessionError> {
         let path = path.as_ref().to_owned();
         let handler = tokio::task::spawn_blocking(move || SessionHandler::open(path))
@@ -930,7 +1036,7 @@ fn corrupt(message: &str) -> EffectFailure {
     }
 }
 
-#[cfg(feature = "contracts")]
+#[cfg(any(test, feature = "contracts"))]
 struct RawResult {
     sequence: i64,
     path: String,
@@ -947,7 +1053,7 @@ struct RawResult {
     resource_mode: String,
 }
 
-#[cfg(feature = "contracts")]
+#[cfg(any(test, feature = "contracts"))]
 impl RawResult {
     fn into_result(self, run_id: &str, mutant_id: &str) -> Result<MutantResult, String> {
         let nonnegative =
@@ -1009,7 +1115,11 @@ mod dispatch_tests {
         competitor.busy_timeout(Duration::ZERO).unwrap();
 
         let barrier = Arc::new(Barrier::new(2));
-        owner.persist_after_reads = Some(barrier.clone());
+        let worker_barrier = Arc::clone(&barrier);
+        owner.persist_after_reads = Some(Box::new(move || {
+            worker_barrier.wait();
+            worker_barrier.wait();
+        }));
         let persist = std::thread::spawn(move || owner.persist(&persist_request()));
 
         barrier.wait();

@@ -7,7 +7,8 @@ use camino::Utf8PathBuf;
 use hoimin_cli::target::TargetHandler;
 use hoimin_cli::target::git::{GitChangesResolved, ResolveGitChanges, handle_git};
 use hoimin_core::{
-    EffectId, LineRange, LineSelection, ResolveTargets, Selection, TargetError, TargetSlice,
+    EffectId, LineRange, LineSelection, ResolveTargets, Selection, SymbolSelection, TargetError,
+    TargetSlice,
 };
 use tempfile::TempDir;
 
@@ -71,6 +72,74 @@ impl FixtureRepo {
         .await
         .unwrap()
     }
+}
+
+#[derive(Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+enum SymbolObservation {
+    Ok { targets: Vec<TargetSlice> },
+    MissingDefinition { message: String },
+}
+
+#[derive(serde::Deserialize)]
+struct SymbolFile {
+    path: Utf8PathBuf,
+    is_python: bool,
+    definitions: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct SymbolFixture {
+    id: String,
+    sources: Vec<Utf8PathBuf>,
+    files: Vec<SymbolFile>,
+    selectors: Vec<SymbolSelection>,
+    definition_check: Option<SymbolObservation>,
+}
+
+#[tokio::test]
+async fn symbol_target_definition_validation_matches_lean() {
+    use std::fmt::Write;
+
+    let corpus = include_str!("../../../formal/HoiminOracle/corpus/symbol-resolution.jsonl");
+    let mut checked = 0;
+    for row in corpus.lines() {
+        let case: SymbolFixture = serde_json::from_str(row).unwrap();
+        let Some(expected) = case.definition_check else {
+            continue;
+        };
+        checked += 1;
+        let temp = tempfile::tempdir().unwrap();
+        let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        for source in &case.sources {
+            fs::create_dir_all(root.join(source)).unwrap();
+        }
+        for file in case.files {
+            assert!(file.is_python, "{}", case.id);
+            let path = root.join(file.path);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut contents = String::new();
+            for definition in file.definitions {
+                writeln!(contents, "def {definition}():\n    pass\n").unwrap();
+            }
+            fs::write(path, contents).unwrap();
+        }
+        let selection = Selection {
+            root,
+            sources: case.sources,
+            symbols: case.selectors,
+            ..Selection::default()
+        };
+        let observed = match TargetHandler::resolve(&selection).await {
+            Ok(targets) => SymbolObservation::Ok { targets },
+            Err(TargetError::DiscoveryFailed(message)) => {
+                SymbolObservation::MissingDefinition { message }
+            }
+            Err(error) => panic!("{}: unexpected symbol target error: {error}", case.id),
+        };
+        assert_eq!(observed, expected, "{}", case.id);
+    }
+    assert_eq!(checked, 3);
 }
 
 #[test]

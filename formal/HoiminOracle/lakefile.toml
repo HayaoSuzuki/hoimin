@@ -231,6 +231,146 @@ name = "generate_resume_diagnostic"
 root = "ResumeDiagnosticAuditMain"
 
 [[lean_exe]]
+name = "generate_run_fingerprint"
+root = "RunFingerprintAuditMain"
+
+[[lean_exe]]
+name = "generate_plan_records"
+root = "PlanRecordsAuditMain"
+
+[[lean_exe]]
+name = "generate_plan_verify"
+root = "PlanVerifyAuditMain"
+
+[[lean_exe]]
+name = "generate_plan_discovery_budget"
+root = "PlanDiscoveryBudgetAuditMain"
+
+[[lean_exe]]
+name = "generate_verify_selection_flow"
+root = "VerifySelectionFlowAuditMain"
+
+[[lean_exe]]
+name = "generate_workspace_integrity"
+root = "WorkspaceIntegrityAuditMain"
+
+[[lean_exe]]
+name = "generate_workspace_restore"
+root = "WorkspaceRestoreAuditMain"
+
+[[lean_exe]]
+name = "generate_worker_recovery"
+root = "WorkerRecoveryAuditMain"
+
+[[lean_exe]]
+name = "generate_workspace_capacity"
+root = "WorkspaceCapacityAuditMain"
+
+[[lean_exe]]
+name = "generate_worker_grant_publication"
+root = "WorkerGrantPublicationAuditMain"
+
+[[lean_exe]]
+name = "generate_workspace_mutation"
+root = "WorkspaceMutationAuditMain"
+
+[[lean_exe]]
+name = "generate_workspace_mutation_write"
+root = "WorkspaceMutationWriteAuditMain"
+
+[[lean_exe]]
+name = "generate_worker_environment"
+root = "WorkerEnvironmentAuditMain"
+
+[[lean_exe]]
+name = "generate_workspace_selection"
+root = "WorkspaceSelectionAuditMain"
+
+[[lean_exe]]
+name = "generate_fingerprint_preflight"
+root = "FingerprintPreflightAuditMain"
+
+[[lean_exe]]
+name = "generate_session_artifacts"
+root = "SessionArtifactsAuditMain"
+
+[[lean_exe]]
+name = "generate_session_admission"
+root = "SessionAdmissionAuditMain"
+
+[[lean_exe]]
+name = "generate_session_wal_admission"
+root = "SessionWalAdmissionAuditMain"
+
+[[lean_exe]]
+name = "generate_session_wal_retry"
+root = "SessionWalRetryAuditMain"
+
+[[lean_exe]]
+name = "generate_session_uri"
+root = "SessionUriAuditMain"
+
+[[lean_exe]]
+name = "generate_session_header"
+root = "SessionHeaderAuditMain"
+
+[[lean_exe]]
+name = "generate_session_catalog"
+root = "SessionCatalogAuditMain"
+
+[[lean_exe]]
+name = "generate_session_configuration"
+root = "SessionConfigurationAuditMain"
+
+[[lean_exe]]
+name = "generate_stored_result"
+root = "StoredResultAuditMain"
+
+[[lean_exe]]
+name = "generate_resume_selection"
+root = "ResumeSelectionAuditMain"
+
+[[lean_exe]]
+name = "generate_resume_recheck"
+root = "ResumeRecheckAuditMain"
+
+[[lean_exe]]
+name = "generate_finish_transaction"
+root = "FinishTransactionAuditMain"
+
+[[lean_exe]]
+name = "generate_begin_transaction"
+root = "BeginTransactionAuditMain"
+
+[[lean_exe]]
+name = "generate_persist_transaction"
+root = "PersistTransactionAuditMain"
+
+[[lean_exe]]
+name = "generate_session_dispatch"
+root = "SessionDispatchAuditMain"
+
+[[lean_exe]]
+name = "generate_process_group"
+root = "ProcessGroupAuditMain"
+
+[[lean_exe]]
+name = "generate_cgroup_cleanup"
+root = "CgroupCleanupAuditMain"
+
+[[lean_exe]]
+name = "generate_cgroup_member"
+root = "CgroupMemberAuditMain"
+
+[[lean_exe]]
+name = "generate_cgroup_lifecycle"
+root = "CgroupLifecycleAuditMain"
+
+[[lean_exe]]
+name = "generate_cgroup_startup"
+root = "CgroupStartupAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 
@@ -241,3 +381,7 @@ root = "SamplingAuditMain"
 [[lean_exe]]
 name = "generate_reduce_spec"
 root = "ReduceSpecAuditMain"
+
+[[lean_exe]]
+name = "generate_worker_metrics"
+root = "WorkerMetricsAuditMain"

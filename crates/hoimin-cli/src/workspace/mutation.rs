@@ -149,6 +149,8 @@ fn mutation_context<'source>(
 
 #[cfg(test)]
 mod tests {
+    mod apply_oracle;
+
     use std::fs;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::mpsc::sync_channel;

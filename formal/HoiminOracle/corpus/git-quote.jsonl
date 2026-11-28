@@ -1,0 +1,547 @@
+{"expected":{"kind":"decoded","value":"a/prefix-\u00003.py"},"id":"octal-0","input":"\"a/prefix-\\0003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00013.py"},"id":"octal-1","input":"\"a/prefix-\\0013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00023.py"},"id":"octal-2","input":"\"a/prefix-\\0023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00033.py"},"id":"octal-3","input":"\"a/prefix-\\0033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00043.py"},"id":"octal-4","input":"\"a/prefix-\\0043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00053.py"},"id":"octal-5","input":"\"a/prefix-\\0053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00063.py"},"id":"octal-6","input":"\"a/prefix-\\0063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00073.py"},"id":"octal-7","input":"\"a/prefix-\\0073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00083.py"},"id":"octal-8","input":"\"a/prefix-\\0103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00093.py"},"id":"octal-9","input":"\"a/prefix-\\0113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\n3.py"},"id":"octal-10","input":"\"a/prefix-\\0123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u000b3.py"},"id":"octal-11","input":"\"a/prefix-\\0133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u000c3.py"},"id":"octal-12","input":"\"a/prefix-\\0143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\r3.py"},"id":"octal-13","input":"\"a/prefix-\\0153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u000e3.py"},"id":"octal-14","input":"\"a/prefix-\\0163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u000f3.py"},"id":"octal-15","input":"\"a/prefix-\\0173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00103.py"},"id":"octal-16","input":"\"a/prefix-\\0203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00113.py"},"id":"octal-17","input":"\"a/prefix-\\0213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00123.py"},"id":"octal-18","input":"\"a/prefix-\\0223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00133.py"},"id":"octal-19","input":"\"a/prefix-\\0233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00143.py"},"id":"octal-20","input":"\"a/prefix-\\0243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00153.py"},"id":"octal-21","input":"\"a/prefix-\\0253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00163.py"},"id":"octal-22","input":"\"a/prefix-\\0263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00173.py"},"id":"octal-23","input":"\"a/prefix-\\0273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00183.py"},"id":"octal-24","input":"\"a/prefix-\\0303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u00193.py"},"id":"octal-25","input":"\"a/prefix-\\0313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u001a3.py"},"id":"octal-26","input":"\"a/prefix-\\0323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u001b3.py"},"id":"octal-27","input":"\"a/prefix-\\0333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u001c3.py"},"id":"octal-28","input":"\"a/prefix-\\0343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u001d3.py"},"id":"octal-29","input":"\"a/prefix-\\0353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u001e3.py"},"id":"octal-30","input":"\"a/prefix-\\0363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\u001f3.py"},"id":"octal-31","input":"\"a/prefix-\\0373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix- 3.py"},"id":"octal-32","input":"\"a/prefix-\\0403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-!3.py"},"id":"octal-33","input":"\"a/prefix-\\0413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\"3.py"},"id":"octal-34","input":"\"a/prefix-\\0423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-#3.py"},"id":"octal-35","input":"\"a/prefix-\\0433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-$3.py"},"id":"octal-36","input":"\"a/prefix-\\0443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-%3.py"},"id":"octal-37","input":"\"a/prefix-\\0453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-&3.py"},"id":"octal-38","input":"\"a/prefix-\\0463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-'3.py"},"id":"octal-39","input":"\"a/prefix-\\0473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-(3.py"},"id":"octal-40","input":"\"a/prefix-\\0503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-)3.py"},"id":"octal-41","input":"\"a/prefix-\\0513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-*3.py"},"id":"octal-42","input":"\"a/prefix-\\0523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-+3.py"},"id":"octal-43","input":"\"a/prefix-\\0533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-,3.py"},"id":"octal-44","input":"\"a/prefix-\\0543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix--3.py"},"id":"octal-45","input":"\"a/prefix-\\0553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-.3.py"},"id":"octal-46","input":"\"a/prefix-\\0563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-/3.py"},"id":"octal-47","input":"\"a/prefix-\\0573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-03.py"},"id":"octal-48","input":"\"a/prefix-\\0603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-13.py"},"id":"octal-49","input":"\"a/prefix-\\0613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-23.py"},"id":"octal-50","input":"\"a/prefix-\\0623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-33.py"},"id":"octal-51","input":"\"a/prefix-\\0633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-43.py"},"id":"octal-52","input":"\"a/prefix-\\0643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-53.py"},"id":"octal-53","input":"\"a/prefix-\\0653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-63.py"},"id":"octal-54","input":"\"a/prefix-\\0663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-73.py"},"id":"octal-55","input":"\"a/prefix-\\0673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-83.py"},"id":"octal-56","input":"\"a/prefix-\\0703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-93.py"},"id":"octal-57","input":"\"a/prefix-\\0713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-:3.py"},"id":"octal-58","input":"\"a/prefix-\\0723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-;3.py"},"id":"octal-59","input":"\"a/prefix-\\0733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-<3.py"},"id":"octal-60","input":"\"a/prefix-\\0743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-=3.py"},"id":"octal-61","input":"\"a/prefix-\\0753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix->3.py"},"id":"octal-62","input":"\"a/prefix-\\0763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-?3.py"},"id":"octal-63","input":"\"a/prefix-\\0773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-@3.py"},"id":"octal-64","input":"\"a/prefix-\\1003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-A3.py"},"id":"octal-65","input":"\"a/prefix-\\1013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-B3.py"},"id":"octal-66","input":"\"a/prefix-\\1023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-C3.py"},"id":"octal-67","input":"\"a/prefix-\\1033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-D3.py"},"id":"octal-68","input":"\"a/prefix-\\1043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-E3.py"},"id":"octal-69","input":"\"a/prefix-\\1053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-F3.py"},"id":"octal-70","input":"\"a/prefix-\\1063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-G3.py"},"id":"octal-71","input":"\"a/prefix-\\1073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-H3.py"},"id":"octal-72","input":"\"a/prefix-\\1103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-I3.py"},"id":"octal-73","input":"\"a/prefix-\\1113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-J3.py"},"id":"octal-74","input":"\"a/prefix-\\1123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-K3.py"},"id":"octal-75","input":"\"a/prefix-\\1133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-L3.py"},"id":"octal-76","input":"\"a/prefix-\\1143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-M3.py"},"id":"octal-77","input":"\"a/prefix-\\1153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-N3.py"},"id":"octal-78","input":"\"a/prefix-\\1163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-O3.py"},"id":"octal-79","input":"\"a/prefix-\\1173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-P3.py"},"id":"octal-80","input":"\"a/prefix-\\1203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-Q3.py"},"id":"octal-81","input":"\"a/prefix-\\1213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-R3.py"},"id":"octal-82","input":"\"a/prefix-\\1223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-S3.py"},"id":"octal-83","input":"\"a/prefix-\\1233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-T3.py"},"id":"octal-84","input":"\"a/prefix-\\1243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-U3.py"},"id":"octal-85","input":"\"a/prefix-\\1253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-V3.py"},"id":"octal-86","input":"\"a/prefix-\\1263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-W3.py"},"id":"octal-87","input":"\"a/prefix-\\1273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-X3.py"},"id":"octal-88","input":"\"a/prefix-\\1303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-Y3.py"},"id":"octal-89","input":"\"a/prefix-\\1313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-Z3.py"},"id":"octal-90","input":"\"a/prefix-\\1323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-[3.py"},"id":"octal-91","input":"\"a/prefix-\\1333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-\\3.py"},"id":"octal-92","input":"\"a/prefix-\\1343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-]3.py"},"id":"octal-93","input":"\"a/prefix-\\1353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-^3.py"},"id":"octal-94","input":"\"a/prefix-\\1363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-_3.py"},"id":"octal-95","input":"\"a/prefix-\\1373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-`3.py"},"id":"octal-96","input":"\"a/prefix-\\1403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-a3.py"},"id":"octal-97","input":"\"a/prefix-\\1413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-b3.py"},"id":"octal-98","input":"\"a/prefix-\\1423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-c3.py"},"id":"octal-99","input":"\"a/prefix-\\1433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-d3.py"},"id":"octal-100","input":"\"a/prefix-\\1443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-e3.py"},"id":"octal-101","input":"\"a/prefix-\\1453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-f3.py"},"id":"octal-102","input":"\"a/prefix-\\1463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-g3.py"},"id":"octal-103","input":"\"a/prefix-\\1473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-h3.py"},"id":"octal-104","input":"\"a/prefix-\\1503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-i3.py"},"id":"octal-105","input":"\"a/prefix-\\1513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-j3.py"},"id":"octal-106","input":"\"a/prefix-\\1523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-k3.py"},"id":"octal-107","input":"\"a/prefix-\\1533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-l3.py"},"id":"octal-108","input":"\"a/prefix-\\1543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-m3.py"},"id":"octal-109","input":"\"a/prefix-\\1553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-n3.py"},"id":"octal-110","input":"\"a/prefix-\\1563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-o3.py"},"id":"octal-111","input":"\"a/prefix-\\1573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-p3.py"},"id":"octal-112","input":"\"a/prefix-\\1603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-q3.py"},"id":"octal-113","input":"\"a/prefix-\\1613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-r3.py"},"id":"octal-114","input":"\"a/prefix-\\1623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-s3.py"},"id":"octal-115","input":"\"a/prefix-\\1633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-t3.py"},"id":"octal-116","input":"\"a/prefix-\\1643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-u3.py"},"id":"octal-117","input":"\"a/prefix-\\1653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-v3.py"},"id":"octal-118","input":"\"a/prefix-\\1663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-w3.py"},"id":"octal-119","input":"\"a/prefix-\\1673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-x3.py"},"id":"octal-120","input":"\"a/prefix-\\1703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-y3.py"},"id":"octal-121","input":"\"a/prefix-\\1713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-z3.py"},"id":"octal-122","input":"\"a/prefix-\\1723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-{3.py"},"id":"octal-123","input":"\"a/prefix-\\1733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-|3.py"},"id":"octal-124","input":"\"a/prefix-\\1743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-}3.py"},"id":"octal-125","input":"\"a/prefix-\\1753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-~3.py"},"id":"octal-126","input":"\"a/prefix-\\1763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/prefix-3.py"},"id":"octal-127","input":"\"a/prefix-\\1773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-128","input":"\"a/prefix-\\2003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-129","input":"\"a/prefix-\\2013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-130","input":"\"a/prefix-\\2023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-131","input":"\"a/prefix-\\2033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-132","input":"\"a/prefix-\\2043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-133","input":"\"a/prefix-\\2053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-134","input":"\"a/prefix-\\2063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-135","input":"\"a/prefix-\\2073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-136","input":"\"a/prefix-\\2103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-137","input":"\"a/prefix-\\2113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-138","input":"\"a/prefix-\\2123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-139","input":"\"a/prefix-\\2133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-140","input":"\"a/prefix-\\2143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-141","input":"\"a/prefix-\\2153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-142","input":"\"a/prefix-\\2163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-143","input":"\"a/prefix-\\2173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-144","input":"\"a/prefix-\\2203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-145","input":"\"a/prefix-\\2213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-146","input":"\"a/prefix-\\2223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-147","input":"\"a/prefix-\\2233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-148","input":"\"a/prefix-\\2243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-149","input":"\"a/prefix-\\2253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-150","input":"\"a/prefix-\\2263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-151","input":"\"a/prefix-\\2273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-152","input":"\"a/prefix-\\2303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-153","input":"\"a/prefix-\\2313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-154","input":"\"a/prefix-\\2323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-155","input":"\"a/prefix-\\2333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-156","input":"\"a/prefix-\\2343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-157","input":"\"a/prefix-\\2353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-158","input":"\"a/prefix-\\2363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-159","input":"\"a/prefix-\\2373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-160","input":"\"a/prefix-\\2403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-161","input":"\"a/prefix-\\2413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-162","input":"\"a/prefix-\\2423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-163","input":"\"a/prefix-\\2433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-164","input":"\"a/prefix-\\2443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-165","input":"\"a/prefix-\\2453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-166","input":"\"a/prefix-\\2463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-167","input":"\"a/prefix-\\2473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-168","input":"\"a/prefix-\\2503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-169","input":"\"a/prefix-\\2513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-170","input":"\"a/prefix-\\2523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-171","input":"\"a/prefix-\\2533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-172","input":"\"a/prefix-\\2543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-173","input":"\"a/prefix-\\2553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-174","input":"\"a/prefix-\\2563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-175","input":"\"a/prefix-\\2573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-176","input":"\"a/prefix-\\2603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-177","input":"\"a/prefix-\\2613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-178","input":"\"a/prefix-\\2623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-179","input":"\"a/prefix-\\2633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-180","input":"\"a/prefix-\\2643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-181","input":"\"a/prefix-\\2653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-182","input":"\"a/prefix-\\2663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-183","input":"\"a/prefix-\\2673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-184","input":"\"a/prefix-\\2703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-185","input":"\"a/prefix-\\2713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-186","input":"\"a/prefix-\\2723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-187","input":"\"a/prefix-\\2733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-188","input":"\"a/prefix-\\2743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-189","input":"\"a/prefix-\\2753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-190","input":"\"a/prefix-\\2763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-191","input":"\"a/prefix-\\2773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-192","input":"\"a/prefix-\\3003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-193","input":"\"a/prefix-\\3013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-194","input":"\"a/prefix-\\3023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-195","input":"\"a/prefix-\\3033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-196","input":"\"a/prefix-\\3043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-197","input":"\"a/prefix-\\3053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-198","input":"\"a/prefix-\\3063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-199","input":"\"a/prefix-\\3073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-200","input":"\"a/prefix-\\3103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-201","input":"\"a/prefix-\\3113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-202","input":"\"a/prefix-\\3123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-203","input":"\"a/prefix-\\3133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-204","input":"\"a/prefix-\\3143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-205","input":"\"a/prefix-\\3153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-206","input":"\"a/prefix-\\3163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-207","input":"\"a/prefix-\\3173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-208","input":"\"a/prefix-\\3203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-209","input":"\"a/prefix-\\3213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-210","input":"\"a/prefix-\\3223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-211","input":"\"a/prefix-\\3233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-212","input":"\"a/prefix-\\3243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-213","input":"\"a/prefix-\\3253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-214","input":"\"a/prefix-\\3263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-215","input":"\"a/prefix-\\3273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-216","input":"\"a/prefix-\\3303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-217","input":"\"a/prefix-\\3313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-218","input":"\"a/prefix-\\3323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-219","input":"\"a/prefix-\\3333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-220","input":"\"a/prefix-\\3343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-221","input":"\"a/prefix-\\3353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-222","input":"\"a/prefix-\\3363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-223","input":"\"a/prefix-\\3373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-224","input":"\"a/prefix-\\3403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-225","input":"\"a/prefix-\\3413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-226","input":"\"a/prefix-\\3423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-227","input":"\"a/prefix-\\3433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-228","input":"\"a/prefix-\\3443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-229","input":"\"a/prefix-\\3453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-230","input":"\"a/prefix-\\3463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-231","input":"\"a/prefix-\\3473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-232","input":"\"a/prefix-\\3503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-233","input":"\"a/prefix-\\3513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-234","input":"\"a/prefix-\\3523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-235","input":"\"a/prefix-\\3533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-236","input":"\"a/prefix-\\3543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-237","input":"\"a/prefix-\\3553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-238","input":"\"a/prefix-\\3563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-239","input":"\"a/prefix-\\3573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-240","input":"\"a/prefix-\\3603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-241","input":"\"a/prefix-\\3613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-242","input":"\"a/prefix-\\3623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-243","input":"\"a/prefix-\\3633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-244","input":"\"a/prefix-\\3643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-245","input":"\"a/prefix-\\3653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-246","input":"\"a/prefix-\\3663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-247","input":"\"a/prefix-\\3673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-248","input":"\"a/prefix-\\3703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-249","input":"\"a/prefix-\\3713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-250","input":"\"a/prefix-\\3723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-251","input":"\"a/prefix-\\3733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-252","input":"\"a/prefix-\\3743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-253","input":"\"a/prefix-\\3753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-254","input":"\"a/prefix-\\3763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"octal-255","input":"\"a/prefix-\\3773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-256","input":"\"a/prefix-\\4003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-257","input":"\"a/prefix-\\4013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-258","input":"\"a/prefix-\\4023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-259","input":"\"a/prefix-\\4033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-260","input":"\"a/prefix-\\4043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-261","input":"\"a/prefix-\\4053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-262","input":"\"a/prefix-\\4063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-263","input":"\"a/prefix-\\4073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-264","input":"\"a/prefix-\\4103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-265","input":"\"a/prefix-\\4113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-266","input":"\"a/prefix-\\4123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-267","input":"\"a/prefix-\\4133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-268","input":"\"a/prefix-\\4143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-269","input":"\"a/prefix-\\4153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-270","input":"\"a/prefix-\\4163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-271","input":"\"a/prefix-\\4173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-272","input":"\"a/prefix-\\4203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-273","input":"\"a/prefix-\\4213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-274","input":"\"a/prefix-\\4223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-275","input":"\"a/prefix-\\4233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-276","input":"\"a/prefix-\\4243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-277","input":"\"a/prefix-\\4253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-278","input":"\"a/prefix-\\4263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-279","input":"\"a/prefix-\\4273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-280","input":"\"a/prefix-\\4303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-281","input":"\"a/prefix-\\4313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-282","input":"\"a/prefix-\\4323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-283","input":"\"a/prefix-\\4333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-284","input":"\"a/prefix-\\4343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-285","input":"\"a/prefix-\\4353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-286","input":"\"a/prefix-\\4363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-287","input":"\"a/prefix-\\4373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-288","input":"\"a/prefix-\\4403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-289","input":"\"a/prefix-\\4413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-290","input":"\"a/prefix-\\4423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-291","input":"\"a/prefix-\\4433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-292","input":"\"a/prefix-\\4443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-293","input":"\"a/prefix-\\4453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-294","input":"\"a/prefix-\\4463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-295","input":"\"a/prefix-\\4473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-296","input":"\"a/prefix-\\4503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-297","input":"\"a/prefix-\\4513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-298","input":"\"a/prefix-\\4523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-299","input":"\"a/prefix-\\4533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-300","input":"\"a/prefix-\\4543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-301","input":"\"a/prefix-\\4553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-302","input":"\"a/prefix-\\4563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-303","input":"\"a/prefix-\\4573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-304","input":"\"a/prefix-\\4603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-305","input":"\"a/prefix-\\4613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-306","input":"\"a/prefix-\\4623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-307","input":"\"a/prefix-\\4633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-308","input":"\"a/prefix-\\4643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-309","input":"\"a/prefix-\\4653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-310","input":"\"a/prefix-\\4663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-311","input":"\"a/prefix-\\4673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-312","input":"\"a/prefix-\\4703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-313","input":"\"a/prefix-\\4713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-314","input":"\"a/prefix-\\4723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-315","input":"\"a/prefix-\\4733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-316","input":"\"a/prefix-\\4743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-317","input":"\"a/prefix-\\4753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-318","input":"\"a/prefix-\\4763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-319","input":"\"a/prefix-\\4773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-320","input":"\"a/prefix-\\5003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-321","input":"\"a/prefix-\\5013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-322","input":"\"a/prefix-\\5023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-323","input":"\"a/prefix-\\5033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-324","input":"\"a/prefix-\\5043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-325","input":"\"a/prefix-\\5053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-326","input":"\"a/prefix-\\5063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-327","input":"\"a/prefix-\\5073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-328","input":"\"a/prefix-\\5103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-329","input":"\"a/prefix-\\5113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-330","input":"\"a/prefix-\\5123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-331","input":"\"a/prefix-\\5133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-332","input":"\"a/prefix-\\5143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-333","input":"\"a/prefix-\\5153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-334","input":"\"a/prefix-\\5163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-335","input":"\"a/prefix-\\5173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-336","input":"\"a/prefix-\\5203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-337","input":"\"a/prefix-\\5213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-338","input":"\"a/prefix-\\5223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-339","input":"\"a/prefix-\\5233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-340","input":"\"a/prefix-\\5243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-341","input":"\"a/prefix-\\5253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-342","input":"\"a/prefix-\\5263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-343","input":"\"a/prefix-\\5273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-344","input":"\"a/prefix-\\5303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-345","input":"\"a/prefix-\\5313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-346","input":"\"a/prefix-\\5323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-347","input":"\"a/prefix-\\5333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-348","input":"\"a/prefix-\\5343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-349","input":"\"a/prefix-\\5353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-350","input":"\"a/prefix-\\5363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-351","input":"\"a/prefix-\\5373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-352","input":"\"a/prefix-\\5403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-353","input":"\"a/prefix-\\5413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-354","input":"\"a/prefix-\\5423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-355","input":"\"a/prefix-\\5433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-356","input":"\"a/prefix-\\5443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-357","input":"\"a/prefix-\\5453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-358","input":"\"a/prefix-\\5463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-359","input":"\"a/prefix-\\5473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-360","input":"\"a/prefix-\\5503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-361","input":"\"a/prefix-\\5513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-362","input":"\"a/prefix-\\5523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-363","input":"\"a/prefix-\\5533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-364","input":"\"a/prefix-\\5543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-365","input":"\"a/prefix-\\5553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-366","input":"\"a/prefix-\\5563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-367","input":"\"a/prefix-\\5573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-368","input":"\"a/prefix-\\5603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-369","input":"\"a/prefix-\\5613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-370","input":"\"a/prefix-\\5623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-371","input":"\"a/prefix-\\5633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-372","input":"\"a/prefix-\\5643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-373","input":"\"a/prefix-\\5653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-374","input":"\"a/prefix-\\5663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-375","input":"\"a/prefix-\\5673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-376","input":"\"a/prefix-\\5703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-377","input":"\"a/prefix-\\5713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-378","input":"\"a/prefix-\\5723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-379","input":"\"a/prefix-\\5733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-380","input":"\"a/prefix-\\5743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-381","input":"\"a/prefix-\\5753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-382","input":"\"a/prefix-\\5763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-383","input":"\"a/prefix-\\5773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-384","input":"\"a/prefix-\\6003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-385","input":"\"a/prefix-\\6013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-386","input":"\"a/prefix-\\6023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-387","input":"\"a/prefix-\\6033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-388","input":"\"a/prefix-\\6043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-389","input":"\"a/prefix-\\6053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-390","input":"\"a/prefix-\\6063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-391","input":"\"a/prefix-\\6073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-392","input":"\"a/prefix-\\6103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-393","input":"\"a/prefix-\\6113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-394","input":"\"a/prefix-\\6123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-395","input":"\"a/prefix-\\6133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-396","input":"\"a/prefix-\\6143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-397","input":"\"a/prefix-\\6153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-398","input":"\"a/prefix-\\6163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-399","input":"\"a/prefix-\\6173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-400","input":"\"a/prefix-\\6203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-401","input":"\"a/prefix-\\6213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-402","input":"\"a/prefix-\\6223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-403","input":"\"a/prefix-\\6233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-404","input":"\"a/prefix-\\6243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-405","input":"\"a/prefix-\\6253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-406","input":"\"a/prefix-\\6263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-407","input":"\"a/prefix-\\6273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-408","input":"\"a/prefix-\\6303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-409","input":"\"a/prefix-\\6313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-410","input":"\"a/prefix-\\6323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-411","input":"\"a/prefix-\\6333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-412","input":"\"a/prefix-\\6343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-413","input":"\"a/prefix-\\6353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-414","input":"\"a/prefix-\\6363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-415","input":"\"a/prefix-\\6373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-416","input":"\"a/prefix-\\6403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-417","input":"\"a/prefix-\\6413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-418","input":"\"a/prefix-\\6423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-419","input":"\"a/prefix-\\6433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-420","input":"\"a/prefix-\\6443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-421","input":"\"a/prefix-\\6453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-422","input":"\"a/prefix-\\6463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-423","input":"\"a/prefix-\\6473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-424","input":"\"a/prefix-\\6503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-425","input":"\"a/prefix-\\6513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-426","input":"\"a/prefix-\\6523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-427","input":"\"a/prefix-\\6533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-428","input":"\"a/prefix-\\6543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-429","input":"\"a/prefix-\\6553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-430","input":"\"a/prefix-\\6563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-431","input":"\"a/prefix-\\6573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-432","input":"\"a/prefix-\\6603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-433","input":"\"a/prefix-\\6613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-434","input":"\"a/prefix-\\6623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-435","input":"\"a/prefix-\\6633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-436","input":"\"a/prefix-\\6643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-437","input":"\"a/prefix-\\6653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-438","input":"\"a/prefix-\\6663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-439","input":"\"a/prefix-\\6673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-440","input":"\"a/prefix-\\6703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-441","input":"\"a/prefix-\\6713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-442","input":"\"a/prefix-\\6723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-443","input":"\"a/prefix-\\6733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-444","input":"\"a/prefix-\\6743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-445","input":"\"a/prefix-\\6753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-446","input":"\"a/prefix-\\6763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-447","input":"\"a/prefix-\\6773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-448","input":"\"a/prefix-\\7003.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-449","input":"\"a/prefix-\\7013.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-450","input":"\"a/prefix-\\7023.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-451","input":"\"a/prefix-\\7033.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-452","input":"\"a/prefix-\\7043.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-453","input":"\"a/prefix-\\7053.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-454","input":"\"a/prefix-\\7063.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-455","input":"\"a/prefix-\\7073.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-456","input":"\"a/prefix-\\7103.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-457","input":"\"a/prefix-\\7113.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-458","input":"\"a/prefix-\\7123.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-459","input":"\"a/prefix-\\7133.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-460","input":"\"a/prefix-\\7143.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-461","input":"\"a/prefix-\\7153.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-462","input":"\"a/prefix-\\7163.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-463","input":"\"a/prefix-\\7173.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-464","input":"\"a/prefix-\\7203.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-465","input":"\"a/prefix-\\7213.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-466","input":"\"a/prefix-\\7223.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-467","input":"\"a/prefix-\\7233.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-468","input":"\"a/prefix-\\7243.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-469","input":"\"a/prefix-\\7253.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-470","input":"\"a/prefix-\\7263.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-471","input":"\"a/prefix-\\7273.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-472","input":"\"a/prefix-\\7303.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-473","input":"\"a/prefix-\\7313.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-474","input":"\"a/prefix-\\7323.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-475","input":"\"a/prefix-\\7333.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-476","input":"\"a/prefix-\\7343.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-477","input":"\"a/prefix-\\7353.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-478","input":"\"a/prefix-\\7363.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-479","input":"\"a/prefix-\\7373.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-480","input":"\"a/prefix-\\7403.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-481","input":"\"a/prefix-\\7413.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-482","input":"\"a/prefix-\\7423.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-483","input":"\"a/prefix-\\7433.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-484","input":"\"a/prefix-\\7443.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-485","input":"\"a/prefix-\\7453.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-486","input":"\"a/prefix-\\7463.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-487","input":"\"a/prefix-\\7473.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-488","input":"\"a/prefix-\\7503.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-489","input":"\"a/prefix-\\7513.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-490","input":"\"a/prefix-\\7523.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-491","input":"\"a/prefix-\\7533.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-492","input":"\"a/prefix-\\7543.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-493","input":"\"a/prefix-\\7553.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-494","input":"\"a/prefix-\\7563.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-495","input":"\"a/prefix-\\7573.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-496","input":"\"a/prefix-\\7603.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-497","input":"\"a/prefix-\\7613.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-498","input":"\"a/prefix-\\7623.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-499","input":"\"a/prefix-\\7633.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-500","input":"\"a/prefix-\\7643.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-501","input":"\"a/prefix-\\7653.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-502","input":"\"a/prefix-\\7663.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-503","input":"\"a/prefix-\\7673.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-504","input":"\"a/prefix-\\7703.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-505","input":"\"a/prefix-\\7713.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-506","input":"\"a/prefix-\\7723.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-507","input":"\"a/prefix-\\7733.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-508","input":"\"a/prefix-\\7743.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-509","input":"\"a/prefix-\\7753.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-510","input":"\"a/prefix-\\7763.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-511","input":"\"a/prefix-\\7773.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\\after.py"},"id":"named-92","input":"\"a/before\\\\after.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\"after.py"},"id":"named-34","input":"\"a/before\\\"after.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\u0007after.py"},"id":"named-7","input":"\"a/before\\aafter.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\u0008after.py"},"id":"named-8","input":"\"a/before\\bafter.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\u0009after.py"},"id":"named-9","input":"\"a/before\\tafter.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\nafter.py"},"id":"named-10","input":"\"a/before\\nafter.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\u000bafter.py"},"id":"named-11","input":"\"a/before\\vafter.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\u000cafter.py"},"id":"named-12","input":"\"a/before\\fafter.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/before\rafter.py"},"id":"named-13","input":"\"a/before\\rafter.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":""},"id":"empty","input":"\"\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"a/café-雪-𐐀.py"},"id":"literal-unicode","input":"\"a/café-雪-𐐀.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"\\\"\u0007\u0008\u0009\n\u000b\u000c\r"},"id":"consecutive-named","input":"\"\\\\\\\"\\a\\b\\t\\n\\v\\f\\r\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"\"A\\B"},"id":"named-mixed-with-octal","input":"\"\\\"\\101\\\\\\102\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"é"},"id":"utf8-two","input":"\"\\303\\251\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"雪"},"id":"utf8-three","input":"\"\\351\\233\\252\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"𐐀"},"id":"utf8-four","input":"\"\\360\\220\\220\\200\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"decoded","value":"􏿿"},"id":"utf8-max-scalar","input":"\"\\364\\217\\277\\277\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"utf8-overlong","input":"\"\\300\\257\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"utf8-surrogate","input":"\"\\355\\240\\200\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"utf8-above-max","input":"\"\\364\\220\\200\\200\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"utf8-interrupted","input":"\"\\351\\233\\n雪\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"utf8-incomplete","input":"\"\\360\\220\\220\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"Git diff path is not valid UTF-8"},"id":"utf8-error-after-valid","input":"\"\\303\\251\\200\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid quoted Git path"},"id":"missing-opening","input":"a/file.py\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid quoted Git path"},"id":"missing-closing","input":"\"a/file.py","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid quoted Git path"},"id":"framing-before-overflow","input":"\"\\400","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid Git path escape"},"id":"trailing-backslash","input":"\"a/file\\\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid Git path escape"},"id":"unknown-named","input":"\"a/file\\x\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid Git path escape"},"id":"non-octal-lead","input":"\"\\8\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-one-digit","input":"\"\\1\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-two-digits","input":"\"\\12\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-invalid-second-digit","input":"\"\\193\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-invalid-third-digit","input":"\"\\12x\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid Git path escape"},"id":"utf8-validation-after-escapes","input":"\"\\377\\x\"","mode":"internal-fixture","schema":1}
+{"expected":{"kind":"error","message":"invalid octal Git path escape"},"id":"octal-overflow-before-bad-escape","input":"\"\\400\\x\"","mode":"internal-fixture","schema":1}

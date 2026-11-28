@@ -7,6 +7,8 @@ mod collecting_writer;
 mod jsonl_report;
 #[path = "support/mutation_outcome.rs"]
 mod mutation_outcome;
+#[path = "support/progress_duplicate_oracle.rs"]
+mod progress_duplicate_oracle;
 use collecting_writer::CollectingWriter;
 
 use std::{

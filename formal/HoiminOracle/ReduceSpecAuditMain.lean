@@ -33,11 +33,17 @@ def timingInputs : List (Nat × Nat × Nat × Nat) :=
   [0,1,20,21].flatMap fun n => [0,1,20,100].flatMap fun o =>
     [0,1,19,20,94,95,96,100,101].map fun r => (n,20,o,r)
 
-def timingRows : List Json := timingInputs.map fun (n,d,o,r) =>
-  row "pair" s!"pair-{n}-{d}-{o}-{r}"
+def pairRow (id : String) (n d o r : Nat) : Json :=
+  row "pair" id
     (Json.mkObj [("numerator",toJson n),("denominator",toJson d),
       ("original",toJson o),("reduced",toJson r)])
     (toJson (pairPass n d o r))
+
+def timingRows : List Json := timingInputs.map fun (n,d,o,r) =>
+  pairRow s!"pair-{n}-{d}-{o}-{r}" n d o r
+
+def fullWidthTimingRows : List Json := fullWidthTimingInputs.map fun (id,n,d,o,r) =>
+  pairRow s!"pair-full-width-{id}" n d o r
 
 def matrixRows : List Json :=
   let outcomes := [Outcome.killed,.survived,.inconclusive]
@@ -58,18 +64,22 @@ def overlapRows : List Json :=
       (Json.mkObj [("removed",toJson (Span.mk 1 a b)),("kept",toJson (Span.mk 2 c d))])
       (toJson (overlaps ⟨1,a,b⟩ ⟨2,c,d⟩))
 
-def traceRow (index : Nat) (events : List Event) : Json :=
+def traceRow (id : String) (events : List Event) : Json :=
   let states := events.scanl (step baseContext) {deadline:=4}
-  row "trace" s!"trace-{index}" (Json.mkObj [
+  row "trace" id (Json.mkObj [
     ("context",toJson baseContext),("deadline",toJson (4:Nat)),("events",toJson events)])
     (toJson (states.map fun s => Json.mkObj [
       ("now",toJson s.now),("stopped",toJson s.stopped),
       ("best",toJson (s.best.map (·.id))),("safe",toJson (stateSafe s))]))
 
-def corpus (depth : Nat) : String := String.join <|
-  ((certificationCases.map certificationRow) ++ timingRows ++ matrixRows ++ medianRows ++
-    overlapRows ++ ((tracesUpTo depth).zipIdx.map fun (t,i) => traceRow i t)).map
-      (fun (j : Json) => j.compress ++ "\n")
+def corpus (depth : Nat) : String :=
+  let indexedTraces := (tracesUpTo depth).zipIdx
+  let traceRows := indexedTraces.map fun (events, index) => traceRow s!"trace-{index}" events
+  let retentionRows := bestRetentionCases.map fun (id, events) => traceRow s!"trace-best-{id}" events
+  String.join <|
+    ((certificationCases.map certificationRow) ++ timingRows ++ matrixRows ++ medianRows ++
+      overlapRows ++ traceRows ++ fullWidthTimingRows ++ retentionRows).map
+        (fun (j : Json) => j.compress ++ "\n")
 
 def checkAudit (depth : Nat) : IO Unit := do
   unless sensitivity.all (fun (_,a,b) => a != b) do
@@ -101,5 +111,8 @@ def main (rawArgs : List String) : IO Unit := do
     for (name,a,b) in sensitivity do IO.println s!"{name}: correct={a} broken={b} detected={a != b}"
   | ["--stats"] | ["--stats",_] =>
     let ts := tracesUpTo depth
-    IO.println s!"depth={depth} alphabet={alphabet.length} traces={ts.length} transitions={(ts.map List.length).foldl (·+·) 0} certification={certificationCases.length} pairs={timingRows.length} results={matrixRows.length} medians={medianRows.length} overlaps={overlapRows.length} rows={certificationCases.length+timingRows.length+matrixRows.length+medianRows.length+overlapRows.length+ts.length} sensitivity={sensitivity.length}"
+    let pairs := timingRows.length + fullWidthTimingRows.length
+    let rows := certificationCases.length + pairs + matrixRows.length + medianRows.length +
+      overlapRows.length + ts.length + bestRetentionCases.length
+    IO.println s!"depth={depth} alphabet={alphabet.length} traces={ts.length} transitions={(ts.map List.length).foldl (·+·) 0} certification={certificationCases.length} pairs={pairs} results={matrixRows.length} medians={medianRows.length} overlaps={overlapRows.length} bestRetention={bestRetentionCases.length} rows={rows} sensitivity={sensitivity.length}"
   | _ => throw (IO.userError "--output PATH | --check PATH | --stats [1..3] | --sensitivity")

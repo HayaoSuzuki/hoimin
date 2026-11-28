@@ -135,3 +135,31 @@ new limit correctly made that premise unreachable. Its strict case now uses 10
 billion waves at `MAX_TIMEOUT`, preserving the same `Duration::MAX` capacity
 saturation observation while remaining configurable on 64-bit targets. The
 updated top-budget corpus and Rust adapter pass before the final mutation run.
+
+## Resource size arguments
+
+The resource size model covers memory, retained output, copy size, workspace
+size, and the disk reserve in `run` and `plan`. It converts decimal and binary
+units with natural-number arithmetic and rejects the scaled result above
+`u64::MAX`. Lean proves that every parsed byte count fits that bound. The
+model checks all size strings before rejecting semantically invalid numeric
+limits. Both passes use the fixed configuration field order, independent of
+the order of options in the invocation.
+
+The 272 fixtures include default sizes, accepted and rejected spellings,
+the last fitting value for each unit, its successor, conflicting size fields,
+and the precedence of job and process limits. Each fixture runs through both
+public CLI parsers. For accepted plans, the adapter also serializes the
+normalized plan settings to JSON, reads them back, and checks that the
+execution limits are preserved. Target resolution and runtime resource
+enforcement are outside this comparison.
+
+The sensitivity check detects clamping instead of rejecting a size overflow,
+treating binary units as decimal, accepting digit separators, and reversing
+the field order for diagnostics.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_timeout_limit -- --check-resource-sizes corpus/resource-sizes.jsonl)
+(cd formal/HoiminOracle && lake exe generate_timeout_limit -- --sensitivity)
+CARGO_BUILD_JOBS=1 cargo test --locked -p hoimin-cli --test cli_config resource_size_normalization_matches_lean
+```
