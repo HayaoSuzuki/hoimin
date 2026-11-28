@@ -351,6 +351,10 @@ name = "generate_session_dispatch"
 root = "SessionDispatchAuditMain"
 
 [[lean_exe]]
+name = "generate_process_group"
+root = "ProcessGroupAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 

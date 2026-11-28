@@ -2406,3 +2406,35 @@ single-job Rust used a 3 GiB limit.
 (cd formal/HoiminOracle && lake exe generate_session_dispatch -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cancelled_begin_and_resume_match_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of Unix process group cleanup
+
+The portable supervisor keeps a process group identifier while the
+root can authorize signals. Observing the root reap converts the
+identifier to a probe target. Lean proves that every later operation
+preserves the loss of signal authority, including when the first
+post-reap probe fails. It also proves that new quiescence evidence
+requires a probe that reports absence. A successful signal, a missing
+identifier, and a probe that returns `EPERM` leave quiescence unproven.
+
+The generator checks closure over two states reachable without an
+attachment and eight states reachable after attachment. The 290
+histories cover each modeled transition and destruction from each
+reachable state. Rust replays the actual supervisor against the
+existing syscall substitute for a synthetic group ID. It compares
+calls, replies, state, and the final destructor call. The cases cover
+`ESRCH`, `EPERM`, and `EIO` for existence checks and signals, as well
+as an injected termination failure. Eight sensitivity checks cover
+signal authority, probe ordering, and quiescence evidence.
+
+All 290 histories matched on macOS in default and `contracts` builds.
+The portable resource suite passed 27 tests in each build with one
+existing ignored test. The process handler integration suite passed
+30 tests, and the workflow suite passed 222. Lean used a 2 GiB limit
+and single-job Rust used a 3 GiB limit.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_process_group -- --check corpus/process-group.jsonl)
+(cd formal/HoiminOracle && lake exe generate_process_group -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib unix_process_group_histories_match_lean_oracle -- --test-threads=1
+```
