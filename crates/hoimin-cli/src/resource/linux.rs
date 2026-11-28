@@ -498,16 +498,18 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
     Ok(PathBuf::from(OsString::from_vec(bytes)))
 }
 
+#[cfg(any(target_os = "linux", test))]
+mod lifecycle;
+
 #[cfg(target_os = "linux")]
 mod platform {
-    use std::collections::HashMap;
     use std::ffi::{OsStr, OsString};
     use std::fs;
     use std::io;
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::process::CommandExt;
     use std::path::{Path, PathBuf};
-    use std::sync::atomic::{AtomicU8, Ordering};
+    use std::sync::atomic::Ordering;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
 
@@ -515,12 +517,16 @@ mod platform {
     use tokio::process::{Child, Command};
     use uuid::Uuid;
 
+    #[cfg(test)]
+    use super::CgroupEventCounters;
+    use super::lifecycle::{
+        LinuxRunCgroup, RootCgroup, RootEntry, RootSignal, RunState, read_events,
+    };
     use super::{
-        CgroupCapabilities, CgroupEventCounters, INTERNAL_LAUNCHER_ARG,
-        begin_cgroup_member_cleanup, classify_violations, cleanup_error, find_unified_mounts,
-        finish_cgroup_member_cleanup, normalized_memory_limit, parse_cgroup_event_counters,
-        parse_member_pids, path_from_bytes, remove_cgroup_dir, resolve_unified_cgroup,
-        run_cleanup_after_accounting, signal_verified_member, violations_since, wrap_launcher_argv,
+        CgroupCapabilities, INTERNAL_LAUNCHER_ARG, begin_cgroup_member_cleanup,
+        classify_violations, cleanup_error, find_unified_mounts, finish_cgroup_member_cleanup,
+        normalized_memory_limit, parse_member_pids, path_from_bytes, remove_cgroup_dir,
+        resolve_unified_cgroup, signal_verified_member, wrap_launcher_argv,
     };
     use crate::resource::{ProcessSupervisor, ResourceError};
 
@@ -760,41 +766,6 @@ mod platform {
         }
     }
 
-    #[derive(Debug)]
-    struct LinuxRunCgroup {
-        path: PathBuf,
-        diagnostics: Vec<String>,
-        state: Mutex<RunState>,
-        close_gate: Mutex<()>,
-    }
-
-    #[derive(Debug, Default)]
-    struct RunState {
-        closed: bool,
-        cleaned: bool,
-        roots: HashMap<Uuid, RootEntry>,
-    }
-
-    #[derive(Debug)]
-    struct RootEntry {
-        root: Arc<RootCgroup>,
-        signal: Arc<RootSignal>,
-        active: bool,
-        counters: CgroupEventCounters,
-    }
-
-    #[derive(Debug)]
-    struct RootCgroup {
-        id: Uuid,
-        path: PathBuf,
-        cleanup_gate: Mutex<()>,
-    }
-
-    #[derive(Debug, Default)]
-    struct RootSignal {
-        violations: AtomicU8,
-    }
-
     impl LinuxRunCgroup {
         fn prepare_root(
             self: &Arc<Self>,
@@ -905,143 +876,8 @@ mod platform {
             self.terminate_root_with(root, live_root_pid, cleanup_cgroup)
         }
 
-        fn terminate_root_with(
-            &self,
-            root: &RootCgroup,
-            live_root_pid: Option<i32>,
-            cleanup: impl FnOnce(&Path, Option<i32>) -> Result<(), ResourceError>,
-        ) -> Result<(), ResourceError> {
-            let _cleanup_guard = root
-                .cleanup_gate
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let accounting = (!state.cleaned)
-                .then(|| Self::refresh_events(&mut state).err())
-                .flatten();
-            let Some(entry) = state.roots.get_mut(&root.id) else {
-                return accounting.map_or(Ok(()), Err);
-            };
-            let was_active = entry.active;
-            entry.active = false;
-            drop(state);
-            let mut cleaned = false;
-            let result = run_cleanup_after_accounting(accounting, || {
-                let result = cleanup(&root.path, live_root_pid);
-                cleaned = result.is_ok();
-                result
-            });
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if cleaned {
-                state.roots.remove(&root.id);
-            } else if let Some(entry) = state.roots.get_mut(&root.id) {
-                entry.active = was_active;
-            }
-            result
-        }
-
-        fn refresh_events(state: &mut RunState) -> Result<(), ResourceError> {
-            for entry in state.roots.values_mut().filter(|entry| entry.active) {
-                let next = read_events(&entry.root.path)?;
-                let violations = violations_since(entry.counters, next);
-                entry.counters = next;
-                if violations != 0 {
-                    entry
-                        .signal
-                        .violations
-                        .fetch_or(violations, Ordering::AcqRel);
-                }
-            }
-            Ok(())
-        }
-
         fn close(&self) -> Result<(), ResourceError> {
             self.close_with(cleanup_cgroup)
-        }
-
-        fn close_with(
-            &self,
-            mut cleanup: impl FnMut(&Path, Option<i32>) -> Result<(), ResourceError>,
-        ) -> Result<(), ResourceError> {
-            let _close_guard = self
-                .close_gate
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            state.closed = true;
-            if state.cleaned {
-                return Ok(());
-            }
-            let mut roots: Vec<_> = state
-                .roots
-                .values()
-                .map(|entry| Arc::clone(&entry.root))
-                .collect();
-            drop(state);
-            roots.sort_by_key(|root| root.id);
-            let _root_guards: Vec<_> = roots
-                .iter()
-                .map(|root| {
-                    root.cleanup_gate
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                })
-                .collect();
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            let accounting = Self::refresh_events(&mut state).err();
-            let active_roots: Vec<_> = state
-                .roots
-                .iter_mut()
-                .filter_map(|(id, entry)| {
-                    let was_active = entry.active;
-                    entry.active = false;
-                    was_active.then_some(*id)
-                })
-                .collect();
-            drop(state);
-            let mut first_error = None;
-            for root in &roots {
-                match cleanup(&root.path, None) {
-                    Ok(()) => {
-                        self.state
-                            .lock()
-                            .unwrap_or_else(std::sync::PoisonError::into_inner)
-                            .roots
-                            .remove(&root.id);
-                    }
-                    Err(error) if first_error.is_none() => first_error = Some(error),
-                    Err(_) => {}
-                }
-            }
-            let run_cleanup = cleanup(&self.path, None);
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if run_cleanup.is_ok() {
-                state.roots.clear();
-                state.cleaned = true;
-            } else {
-                for id in active_roots {
-                    if let Some(entry) = state.roots.get_mut(&id) {
-                        entry.active = true;
-                    }
-                }
-            }
-            let cleanup = first_error.map_or(run_cleanup, Err);
-            run_cleanup_after_accounting(accounting, || cleanup)
         }
     }
 
@@ -1343,14 +1179,6 @@ mod platform {
             ));
         }
         Ok(())
-    }
-
-    fn read_events(path: &Path) -> Result<CgroupEventCounters, ResourceError> {
-        let memory = fs::read(path.join("memory.events"))
-            .map_err(|error| ResourceError::io("read cgroup memory events", error))?;
-        let pids = fs::read(path.join("pids.events"))
-            .map_err(|error| ResourceError::io("read cgroup process events", error))?;
-        parse_cgroup_event_counters(&memory, &pids)
     }
 
     fn verify_migration(run_path: &Path, launcher: &OsStr) -> Result<(), ResourceError> {
@@ -2353,6 +2181,9 @@ fn path_from_bytes(bytes: Vec<u8>) -> Result<PathBuf, ResourceError> {
 
 #[cfg(test)]
 mod cleanup_oracle_tests;
+
+#[cfg(test)]
+mod lifecycle_oracle_tests;
 
 #[cfg(all(test, unix))]
 mod member_oracle_tests;

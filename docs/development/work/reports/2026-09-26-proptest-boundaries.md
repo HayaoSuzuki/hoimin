@@ -2499,3 +2499,41 @@ that child. The repository's pinned toolchain ran the macOS tests.
 (cd formal/HoiminOracle && lake exe generate_cgroup_member -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cgroup_member_recheck_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of cgroup close and root cleanup lifecycle
+
+An individual root cleanup suspends accounting for its root while
+holding that root's gate. Failure restores the prior activity state.
+Success removes the entry even when accounting produced an error.
+A later termination of the removed root skips its cleanup callback.
+
+Run close publishes the closed state and captures root paths before
+waiting for the root gates. It holds those gates during each root
+callback and the recursive run callback. If a root disappears while
+close waits, the captured path gets an idempotent absence check.
+Successful recursive cleanup clears all entries, even if an earlier
+root callback failed. A failed recursive cleanup restores accounting
+only for remaining roots and leaves the run closed for retry.
+
+The 356 cases include 32 controlled overlaps. Rust uses the shared
+Linux lifecycle implementation, real threads, Mutex gates, and
+counter files in temporary directories. Scripted callbacks stand in
+for cgroup removal. The replay compares gate ownership, state at
+every callback, error precedence, and state after retries. Seven
+sensitivity variants check accounting, publication, gate ownership,
+and the path snapshot. The lifecycle functions were moved into a shared
+internal module, and their formatted bodies matched the prior version.
+
+All 356 cases matched on macOS in default and `contracts` builds.
+The resource suite passed 125 tests in each configuration with one
+existing ignored test. The workflow suite passed 222. A standalone
+Linux smoke compiled the shared lifecycle module in an existing
+container with Rust `1.99.0-nightly` and the locked `uuid` version.
+It reproduced a close waiting for a root gate, a failed recursive
+cleanup restoring the surviving root, and a successful retry.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_cgroup_lifecycle -- --check corpus/cgroup-lifecycle.jsonl)
+(cd formal/HoiminOracle && lake exe generate_cgroup_lifecycle -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cgroup_lifecycle_matches_lean_oracle -- --test-threads=1
+```

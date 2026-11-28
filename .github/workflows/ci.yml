@@ -798,6 +798,9 @@ jobs:
             HoiminOracle.CgroupMemberModel
             HoiminOracle.CgroupMemberCases
             CgroupMemberAuditMain
+            HoiminOracle.CgroupLifecycleModel
+            HoiminOracle.CgroupLifecycleCases
+            CgroupLifecycleAuditMain
             HoiminOracle.RelativePathCases
             HoiminOracle.TargetPathModel
             HoiminOracle.TargetPathCases
@@ -913,6 +916,7 @@ jobs:
             'generate_process_group|corpus/process-group.jsonl|sensitivity'
             'generate_cgroup_cleanup|corpus/cgroup-cleanup.jsonl|sensitivity'
             'generate_cgroup_member|corpus/cgroup-member.jsonl|sensitivity'
+            'generate_cgroup_lifecycle|corpus/cgroup-lifecycle.jsonl|sensitivity'
             'generate_exception_hierarchy|corpus/exception-hierarchy.jsonl|sensitivity'
             'generate_sampling|corpus/sampling.jsonl|sensitivity'
             'generate_reduce_spec|corpus/reduce-spec.jsonl|sensitivity'

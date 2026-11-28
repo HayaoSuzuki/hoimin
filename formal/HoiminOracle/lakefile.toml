@@ -363,6 +363,10 @@ name = "generate_cgroup_member"
 root = "CgroupMemberAuditMain"
 
 [[lean_exe]]
+name = "generate_cgroup_lifecycle"
+root = "CgroupLifecycleAuditMain"
+
+[[lean_exe]]
 name = "generate_exception_hierarchy"
 root = "ExceptionHierarchyAuditMain"
 
