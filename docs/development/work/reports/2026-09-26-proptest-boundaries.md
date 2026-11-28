@@ -2537,3 +2537,40 @@ cleanup restoring the surviving root, and a successful retry.
 (cd formal/HoiminOracle && lake exe generate_cgroup_lifecycle -- --sensitivity)
 CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cgroup_lifecycle_matches_lean_oracle -- --test-threads=1
 ```
+
+## Lean model of cgroup root preparation and attach
+
+Preparation checks run closure and memory limits before creating a
+directory. Publication follows the memory, process, and OOM-group
+writes and the initial counter read. Lean proves that a failed
+preparation publishes no root. The replay checks that recursive
+cleanup removes a partially configured directory.
+
+Attach waits for the launcher to stop before locking the shared run
+state. The subsequent closure check handles a run that closed while
+the launcher was stopping. Attach writes membership, marks the root
+active, and attempts to continue the launcher in that order. A failed
+continue leaves a registered active root for cleanup.
+
+The 106 cases cover invalid child IDs, fault precedence, partial
+preparation, a close during the stop wait, and final cleanup. The
+Rust replay runs the shared startup methods with temporary files and
+scripted OS effects. It also verifies lock availability at the stop
+wait and lock ownership throughout the other callbacks. Seven
+sensitivity variants exercise order, publication, and authorization.
+
+All 106 cases matched on macOS in default and `contracts` builds.
+The resource suite passed 126 tests in each configuration with one
+existing ignored test. The workflow suite passed 222. A standalone
+Linux smoke used the production attach wrapper and its real stop
+wait and continue against an owned child in an existing container.
+The child observed its PID in a temporary membership file after
+continuation. A closed run left its launcher stopped for cleanup.
+The Linux smoke used Rust `1.99.0-nightly` and the locked versions of
+`libc` and `uuid`.
+
+```sh
+(cd formal/HoiminOracle && lake exe generate_cgroup_startup -- --check corpus/cgroup-startup.jsonl)
+(cd formal/HoiminOracle && lake exe generate_cgroup_startup -- --sensitivity)
+CARGO_BUILD_JOBS=1 CARGO_PROFILE_TEST_DEBUG=0 CARGO_INCREMENTAL=0 cargo test --locked -p hoimin-cli --lib cgroup_startup_matches_lean_oracle -- --test-threads=1
+```

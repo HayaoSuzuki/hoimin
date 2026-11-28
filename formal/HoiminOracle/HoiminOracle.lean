@@ -188,6 +188,7 @@ import HoiminOracle.ProcessGroupModel
 import HoiminOracle.CgroupCleanupModel
 import HoiminOracle.CgroupMemberModel
 import HoiminOracle.CgroupLifecycleModel
+import HoiminOracle.CgroupStartupModel
 import HoiminOracle.ImportRootModel
 import HoiminOracle.TargetPathModel
 import HoiminOracle.OperatorSelectorModel

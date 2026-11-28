@@ -519,9 +519,9 @@ mod platform {
 
     #[cfg(test)]
     use super::CgroupEventCounters;
-    use super::lifecycle::{
-        LinuxRunCgroup, RootCgroup, RootEntry, RootSignal, RunState, read_events,
-    };
+    #[cfg(test)]
+    use super::lifecycle::RootEntry;
+    use super::lifecycle::{LinuxRunCgroup, RootCgroup, RootSignal, RunState};
     use super::{
         CgroupCapabilities, INTERNAL_LAUNCHER_ARG, begin_cgroup_member_cleanup,
         classify_violations, cleanup_error, find_unified_mounts, finish_cgroup_member_cleanup,
@@ -771,44 +771,14 @@ mod platform {
             self: &Arc<Self>,
             limits: ProcessLimits,
         ) -> Result<ProcessSupervisor, ResourceError> {
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if state.closed {
-                return Err(ResourceError::RunClosed);
-            }
-            // Reject invalid limits before creating a root cgroup or launching a child.
-            system_memory_limit(limits.max_memory_bytes)?;
-            Self::refresh_events(&mut state)?;
-            let path = create_unique_child(&self.path, "root")?;
             let mut diagnostics = Vec::new();
-            write_memory_limit(
-                &path.join("memory.max"),
-                limits.max_memory_bytes,
-                &mut diagnostics,
+            let (root, signal) = self.prepare_root_with(
+                limits.max_processes,
+                || system_memory_limit(limits.max_memory_bytes).map(|_| ()),
+                |parent| create_unique_child(parent, "root"),
+                |path| write_memory_limit(path, limits.max_memory_bytes, &mut diagnostics),
+                write_exact_limit,
             )?;
-            write_exact_limit(
-                &path.join("pids.max"),
-                limits.max_processes.to_string().as_bytes(),
-            )?;
-            write_exact_limit(&path.join("memory.oom.group"), b"1")?;
-            let counters = read_events(&path)?;
-            let root = Arc::new(RootCgroup {
-                id: Uuid::new_v4(),
-                path,
-                cleanup_gate: Mutex::new(()),
-            });
-            let signal = Arc::new(RootSignal::default());
-            state.roots.insert(
-                root.id,
-                RootEntry {
-                    root: Arc::clone(&root),
-                    signal: Arc::clone(&signal),
-                    active: false,
-                    counters,
-                },
-            );
             Ok(ProcessSupervisor::Linux(LinuxSupervisor {
                 run: Arc::clone(self),
                 root,
@@ -824,32 +794,26 @@ mod platform {
             signal: &Arc<RootSignal>,
             child: &Child,
         ) -> Result<i32, ResourceError> {
-            let pid = i32::try_from(child.id().ok_or(ResourceError::MissingProcessId)?)
-                .map_err(|_| ResourceError::InvalidCgroupData("child pid overflow".into()))?;
-            wait_for_launcher_stop(pid)?;
-            let mut state = self
-                .state
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if state.closed {
-                return Err(ResourceError::RunClosed);
-            }
-            Self::refresh_events(&mut state)?;
-            fs::write(root.path.join("cgroup.procs"), pid.to_string())
-                .map_err(|error| ResourceError::io("attach stopped root to cgroup", error))?;
-            let entry = state.roots.get_mut(&root.id).ok_or_else(|| {
-                ResourceError::InvalidCgroupData("prepared root cgroup is missing".into())
-            })?;
-            entry.active = true;
-            debug_assert!(Arc::ptr_eq(&entry.signal, signal));
-            // SAFETY: pid is the stopped launcher child owned by this supervisor.
-            if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
-                return Err(ResourceError::io(
-                    "continue attached cgroup launcher",
-                    io::Error::last_os_error(),
-                ));
-            }
-            Ok(pid)
+            self.attach_root_with(
+                root,
+                signal,
+                child.id(),
+                wait_for_launcher_stop,
+                |path, pid| {
+                    fs::write(path, pid.to_string())
+                        .map_err(|error| ResourceError::io("attach stopped root to cgroup", error))
+                },
+                |pid| {
+                    // SAFETY: pid is the stopped launcher child owned by this supervisor.
+                    if unsafe { libc::kill(pid, libc::SIGCONT) } != 0 {
+                        return Err(ResourceError::io(
+                            "continue attached cgroup launcher",
+                            io::Error::last_os_error(),
+                        ));
+                    }
+                    Ok(())
+                },
+            )
         }
 
         fn classify_root(
@@ -2184,6 +2148,9 @@ mod cleanup_oracle_tests;
 
 #[cfg(test)]
 mod lifecycle_oracle_tests;
+
+#[cfg(test)]
+mod startup_oracle_tests;
 
 #[cfg(all(test, unix))]
 mod member_oracle_tests;

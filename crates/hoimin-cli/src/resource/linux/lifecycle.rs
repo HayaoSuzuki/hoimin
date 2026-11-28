@@ -48,6 +48,77 @@ pub(super) struct RootSignal {
 }
 
 impl LinuxRunCgroup {
+    pub(super) fn prepare_root_with(
+        &self,
+        max_processes: u32,
+        validate_limit: impl FnOnce() -> Result<(), ResourceError>,
+        create_root: impl FnOnce(&Path) -> Result<PathBuf, ResourceError>,
+        write_memory: impl FnOnce(&Path) -> Result<(), ResourceError>,
+        mut write_limit: impl FnMut(&Path, &[u8]) -> Result<(), ResourceError>,
+    ) -> Result<(Arc<RootCgroup>, Arc<RootSignal>), ResourceError> {
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.closed {
+            return Err(ResourceError::RunClosed);
+        }
+        // Reject invalid limits before creating a root cgroup or launching a child.
+        validate_limit()?;
+        Self::refresh_events(&mut state)?;
+        let path = create_root(&self.path)?;
+        write_memory(&path.join("memory.max"))?;
+        write_limit(&path.join("pids.max"), max_processes.to_string().as_bytes())?;
+        write_limit(&path.join("memory.oom.group"), b"1")?;
+        let counters = read_events(&path)?;
+        let root = Arc::new(RootCgroup {
+            id: Uuid::new_v4(),
+            path,
+            cleanup_gate: Mutex::new(()),
+        });
+        let signal = Arc::new(RootSignal::default());
+        state.roots.insert(
+            root.id,
+            RootEntry {
+                root: Arc::clone(&root),
+                signal: Arc::clone(&signal),
+                active: false,
+                counters,
+            },
+        );
+        Ok((root, signal))
+    }
+
+    pub(super) fn attach_root_with(
+        &self,
+        root: &RootCgroup,
+        signal: &Arc<RootSignal>,
+        child_id: Option<u32>,
+        wait_for_stop: impl FnOnce(i32) -> Result<(), ResourceError>,
+        write_membership: impl FnOnce(&Path, i32) -> Result<(), ResourceError>,
+        resume: impl FnOnce(i32) -> Result<(), ResourceError>,
+    ) -> Result<i32, ResourceError> {
+        let pid = i32::try_from(child_id.ok_or(ResourceError::MissingProcessId)?)
+            .map_err(|_| ResourceError::InvalidCgroupData("child pid overflow".into()))?;
+        wait_for_stop(pid)?;
+        let mut state = self
+            .state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if state.closed {
+            return Err(ResourceError::RunClosed);
+        }
+        Self::refresh_events(&mut state)?;
+        write_membership(&root.path.join("cgroup.procs"), pid)?;
+        let entry = state.roots.get_mut(&root.id).ok_or_else(|| {
+            ResourceError::InvalidCgroupData("prepared root cgroup is missing".into())
+        })?;
+        entry.active = true;
+        debug_assert!(Arc::ptr_eq(&entry.signal, signal));
+        resume(pid)?;
+        Ok(pid)
+    }
+
     pub(super) fn terminate_root_with(
         &self,
         root: &RootCgroup,
@@ -184,7 +255,7 @@ impl LinuxRunCgroup {
     }
 }
 
-pub(super) fn read_events(path: &Path) -> Result<CgroupEventCounters, ResourceError> {
+fn read_events(path: &Path) -> Result<CgroupEventCounters, ResourceError> {
     let memory = fs::read(path.join("memory.events"))
         .map_err(|error| ResourceError::io("read cgroup memory events", error))?;
     let pids = fs::read(path.join("pids.events"))
